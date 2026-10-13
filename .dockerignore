@@ -1,0 +1,13 @@
+var/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.db
+*.db-wal
+*.db-shm
+**/node_modules/
+opal_listener/tests/
+docs/
+specs/

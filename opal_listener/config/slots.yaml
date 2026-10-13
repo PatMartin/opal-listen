@@ -1,0 +1,27 @@
+version: 1
+# slot_type: list (values + aliases), number (spoken or digit numbers), text (free text, needs open STT)
+slots:
+  - name: room_name
+    slot_type: list
+    description: Rooms with controllable lights
+    values:
+      - value: kitchen
+        aliases: [cooking area]
+      - value: living_room
+        aliases: [lounge, family room]
+      - value: bedroom
+        aliases: [master bedroom]
+      - value: bathroom
+        aliases: [washroom]
+      - value: office
+        aliases: [study]
+      - value: garage
+        aliases: []
+  - name: temperature
+    slot_type: number
+    description: Temperature in degrees
+    values: []
+  - name: duration_minutes
+    slot_type: number
+    description: Timer duration in minutes
+    values: []

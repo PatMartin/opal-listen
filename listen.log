@@ -1,0 +1,429 @@
+INFO:     Started server process [48236]
+INFO:     Waiting for application startup.
+2026-09-29 22:07:16,917 INFO alembic.runtime.migration: Context impl SQLiteImpl.
+2026-09-29 22:07:16,918 INFO alembic.runtime.migration: Will assume non-transactional DDL.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     192.168.1.246:55050 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:55050 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:52254 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:52254 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:52254 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:52254 - "GET /api/v1/wakewords/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:52254 - "GET /api/v1/wakewords/ HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51600 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51600 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51600 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51600 - "OPTIONS /api/v1/wakewords/ HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51600 - "POST /api/v1/wakewords/ HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1817, in _execute_context
+    context = constructor(
+        dialect, self, conn, execution_options, *args, **kw
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1496, in _init_compiled
+    flattened_processors[key](compiled_params[key])
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/sql/type_api.py", line 2103, in process
+    fixed_process_param(value, dialect)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlmodel/sql/sqltypes.py", line 34, in process_bind_param
+    raise ValueError(
+    ...<3 lines>...
+    )
+ValueError: Datetime values must have timezone information. Use datetime.now(timezone.utc), or annotate the field with NaiveDatetime for naive storage.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/httptools_impl.py", line 422, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1215, in __call__
+    await super().__call__(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 91, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 149, in simple_response
+    await self.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 2786, in app
+    await route.handle(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1817, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 2869, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1843, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1308, in handle
+    await effective_context.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 165, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 151, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 727, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 362, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 240, in _run_sync_endpoint
+    return function(**arguments)
+  File "/gh/opal/opal-listen/opal_listener/view/api/wakewords.py", line 23, in create_wakeword
+    result = WakewordRead.model_validate(catalog.create_wakeword(session, data))
+                                         ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/opal_listener/service/catalog.py", line 72, in create_wakeword
+    session.flush()
+    ~~~~~~~~~~~~~^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 4353, in flush
+    self._flush(objects)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 4488, in _flush
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 4449, in _flush
+    flush_context.execute()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/unitofwork.py", line 465, in execute
+    rec.execute(self)
+    ~~~~~~~~~~~^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/unitofwork.py", line 641, in execute
+    util.preloaded.orm_persistence.save_obj(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self.mapper,
+        ^^^^^^^^^^^^
+        uow.states_for_mapper_hierarchy(self.mapper, False, False),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        uow,
+        ^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/persistence.py", line 94, in save_obj
+    _emit_insert_statements(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        base_mapper,
+        ^^^^^^^^^^^^
+    ...<3 lines>...
+        insert,
+        ^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/persistence.py", line 1234, in _emit_insert_statements
+    result = connection.execute(
+        statement,
+        params,
+        execution_options=execution_options,
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1823, in _execute_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str(statement), parameters, None, None
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1817, in _execute_context
+    context = constructor(
+        dialect, self, conn, execution_options, *args, **kw
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1496, in _init_compiled
+    flattened_processors[key](compiled_params[key])
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/sql/type_api.py", line 2103, in process
+    fixed_process_param(value, dialect)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlmodel/sql/sqltypes.py", line 34, in process_bind_param
+    raise ValueError(
+    ...<3 lines>...
+    )
+sqlalchemy.exc.StatementError: (builtins.ValueError) Datetime values must have timezone information. Use datetime.now(timezone.utc), or annotate the field with NaiveDatetime for naive storage.
+[SQL: INSERT INTO wakewords (name, enabled, confidence_threshold, created_at, updated_at) VALUES (?, ?, ?, ?, ?)]
+[parameters: [{'name': 'nabu', 'enabled': True, 'updated_at': datetime.datetime(2026, 9, 30, 2, 7, 46, 490863), 'confidence_threshold': 0.8, 'created_at': datetime.datetime(2026, 9, 30, 2, 7, 46, 490842)}]]
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51284 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:51284 - "GET /api/v1/wakewords/ HTTP/1.1" 200 OK
+INFO:     192.168.1.246:60164 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:60164 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     192.168.1.246:60164 - "OPTIONS /api/v1/wakewords/ HTTP/1.1" 200 OK
+INFO:     192.168.1.246:60164 - "POST /api/v1/wakewords/ HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1817, in _execute_context
+    context = constructor(
+        dialect, self, conn, execution_options, *args, **kw
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1496, in _init_compiled
+    flattened_processors[key](compiled_params[key])
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/sql/type_api.py", line 2103, in process
+    fixed_process_param(value, dialect)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlmodel/sql/sqltypes.py", line 34, in process_bind_param
+    raise ValueError(
+    ...<3 lines>...
+    )
+ValueError: Datetime values must have timezone information. Use datetime.now(timezone.utc), or annotate the field with NaiveDatetime for naive storage.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/httptools_impl.py", line 422, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1215, in __call__
+    await super().__call__(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 91, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 149, in simple_response
+    await self.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 2786, in app
+    await route.handle(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1817, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 2869, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1843, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 1308, in handle
+    await effective_context.app(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 165, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 151, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 727, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 362, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 240, in _run_sync_endpoint
+    return function(**arguments)
+  File "/gh/opal/opal-listen/opal_listener/view/api/wakewords.py", line 23, in create_wakeword
+    result = WakewordRead.model_validate(catalog.create_wakeword(session, data))
+                                         ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/opal_listener/service/catalog.py", line 72, in create_wakeword
+    session.flush()
+    ~~~~~~~~~~~~~^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 4353, in flush
+    self._flush(objects)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 4488, in _flush
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 122, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 4449, in _flush
+    flush_context.execute()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/unitofwork.py", line 465, in execute
+    rec.execute(self)
+    ~~~~~~~~~~~^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/unitofwork.py", line 641, in execute
+    util.preloaded.orm_persistence.save_obj(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self.mapper,
+        ^^^^^^^^^^^^
+        uow.states_for_mapper_hierarchy(self.mapper, False, False),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        uow,
+        ^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/persistence.py", line 94, in save_obj
+    _emit_insert_statements(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        base_mapper,
+        ^^^^^^^^^^^^
+    ...<3 lines>...
+        insert,
+        ^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/orm/persistence.py", line 1234, in _emit_insert_statements
+    result = connection.execute(
+        statement,
+        params,
+        execution_options=execution_options,
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1421, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1643, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1823, in _execute_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str(statement), parameters, None, None
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1817, in _execute_context
+    context = constructor(
+        dialect, self, conn, execution_options, *args, **kw
+    )
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1496, in _init_compiled
+    flattened_processors[key](compiled_params[key])
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlalchemy/sql/type_api.py", line 2103, in process
+    fixed_process_param(value, dialect)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/gh/opal/opal-listen/.venv/lib/python3.13/site-packages/sqlmodel/sql/sqltypes.py", line 34, in process_bind_param
+    raise ValueError(
+    ...<3 lines>...
+    )
+sqlalchemy.exc.StatementError: (builtins.ValueError) Datetime values must have timezone information. Use datetime.now(timezone.utc), or annotate the field with NaiveDatetime for naive storage.
+[SQL: INSERT INTO wakewords (name, enabled, confidence_threshold, created_at, updated_at) VALUES (?, ?, ?, ?, ?)]
+[parameters: [{'name': 'nabu', 'enabled': True, 'updated_at': datetime.datetime(2026, 9, 30, 2, 7, 56, 580626), 'confidence_threshold': 0.8, 'created_at': datetime.datetime(2026, 9, 30, 2, 7, 56, 580605)}]]
+INFO:     127.0.0.1:58060 - "GET /api/v1/recognition/status HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [48236]

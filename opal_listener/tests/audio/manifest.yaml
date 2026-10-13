@@ -1,0 +1,79 @@
+# Audio fixtures processed through the full pipeline (wakeword -> VAD -> Vosk STT -> intent -> slots).
+# WAVs are generated from `text` by generate_fixtures.py (espeak + sox) and committed.
+# expect.wakeword: null means the wakeword must NOT be detected (false-positive check).
+fixtures:
+  # --- golden: must always match ---------------------------------------------------------------
+  - file: golden_kitchen_light_on.wav
+    text: "computer. turn on the kitchen light"
+    voice: en-us
+    speed: 150
+    set: golden
+    expect: {wakeword: computer, intent_name: light_turn_on, slot_values: {room_name: kitchen}}
+  - file: golden_bedroom_lights_off.wav
+    text: "computer. turn off the bedroom lights"
+    voice: en-us
+    speed: 150
+    set: golden
+    expect: {wakeword: computer, intent_name: light_turn_off, slot_values: {room_name: bedroom}}
+  - file: golden_lounge_light_on_alias.wav
+    text: "computer. switch on the lounge light"
+    voice: en-us+f3
+    speed: 140
+    set: golden
+    expect: {wakeword: computer, intent_name: light_turn_on, slot_values: {room_name: living_room}}
+  - file: golden_temperature_21.wav
+    text: "computer. set the temperature to twenty one degrees"
+    voice: en-us
+    speed: 150
+    set: golden
+    expect: {wakeword: computer, intent_name: set_temperature, slot_values: {temperature: 21}}
+  - file: golden_timer_5.wav
+    text: "computer. set a timer for five minutes"
+    voice: en-us+m3
+    speed: 145
+    set: golden
+    expect: {wakeword: computer, intent_name: timer_set, slot_values: {duration_minutes: 5}}
+  - file: golden_what_time.wav
+    text: "computer. what time is it"
+    voice: en-us
+    speed: 150
+    set: golden
+    expect: {wakeword: computer, intent_name: get_time, slot_values: {}}
+  - file: golden_office_lights_off_female.wav
+    text: "computer. turn off the office lights"
+    voice: en-us+f2
+    speed: 140
+    set: golden
+    expect: {wakeword: computer, intent_name: light_turn_off, slot_values: {room_name: office}}
+  # --- negative: wakeword heard, command must be no_match ---------------------------------------
+  - file: negative_weather.wav
+    text: "computer. what is the weather like tomorrow"
+    voice: en-us
+    speed: 150
+    set: negative
+    expect: {wakeword: computer, intent_name: no_match}
+  - file: negative_open_door.wav
+    text: "computer. open the front door"
+    voice: en-us+f3
+    speed: 145
+    set: negative
+    expect: {wakeword: computer, intent_name: no_match}
+  # --- wakeword false positives: no wakeword must be detected ----------------------------------
+  - file: nowake_commuter.wav
+    text: "the commuter train was late again this morning"
+    voice: en-us
+    speed: 150
+    set: no_wakeword
+    expect: {wakeword: null}
+  - file: nowake_command_only.wav
+    text: "turn on the kitchen light"
+    voice: en-us
+    speed: 150
+    set: no_wakeword
+    expect: {wakeword: null, intent_name: light_turn_on, slot_values: {room_name: kitchen}}
+  - file: nowake_conversation.wav
+    text: "I think we should compute the total before lunch"
+    voice: en-us+m3
+    speed: 150
+    set: no_wakeword
+    expect: {wakeword: null}

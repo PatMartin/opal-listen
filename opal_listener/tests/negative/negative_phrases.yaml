@@ -1,0 +1,16 @@
+# Negative text set: utterances that must produce intent_name == no_match (default config).
+negative:
+  - {text: "", reason: empty_transcript}
+  - {text: "um uh", reason: empty_transcript}
+  - {text: "what is the weather like tomorrow"}
+  - {text: "open the front door"}
+  - {text: "play some music in the kitchen"}
+  - {text: "turn on the light", reason: missing_slot}
+  - {text: "turn on the attic light", reason: missing_slot}
+  - {text: "turn on the kitten light"}
+  - {text: "set the temperature to warm"}
+  - {text: "the kitchen is on fire"}
+  - {text: "tell me a joke"}
+  - {text: "computer"}
+  - {text: "lights"}
+  - {text: "turn the television on in the kitchen"}

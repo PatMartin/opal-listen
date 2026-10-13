@@ -1,0 +1,12 @@
+version: 1
+# vosk_model_path defaults to $OPAL_LISTENER_VOSK_MODEL_PATH when not set here.
+stt:
+  listener_provider: vosk
+  stt_mode: grammar
+  stt_refiner: none
+  whisper_model: tiny.en
+  whisper_compute_type: int8
+  wakeword_trigger: partial
+  audio_device: ""
+  audio_capture_rate: 0
+  audio_block_ms: 100

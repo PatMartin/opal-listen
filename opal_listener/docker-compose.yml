@@ -1,0 +1,36 @@
+# Run from this directory:  docker compose up -d --build
+# Vosk models are mounted read-only from VOSK_MODELS_DIR; SQLite data and backups live in the volume.
+name: opal-listener
+
+services:
+  listener:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        EXTRAS: ${OPAL_LISTENER_EXTRAS:-}   # set to "whisper" to include faster-whisper
+    image: opal-listener:0.1.0
+    restart: unless-stopped
+    ports:
+      - "${OPAL_LISTENER_PORT:-8000}:8000"
+    environment:
+      OPAL_LISTENER_DATA_DIR: /data
+      OPAL_LISTENER_CONFIG_DIR: /config
+      OPAL_LISTENER_VOSK_MODEL_PATH: /models/${VOSK_MODEL_NAME:-vosk-model-small-en-us-0.15}
+    volumes:
+      - listener_data:/data
+      - ./config:/config:ro
+      - ${VOSK_MODELS_DIR:-/nabu/ears/vosk/models}:/models:ro
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - "${AUDIO_GID:-29}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  listener_data:

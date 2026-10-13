@@ -1,0 +1,11 @@
+version: 1
+settings:
+  auto_start_listener: false
+  cooldown_ms: 1500
+  dedup_window_ms: 2000
+  auto_capture_failures: true
+  filler_words: uh,um,er,please
+  slot_fuzzy_min_score: 0.85
+  token_fuzzy_min_score: 0.8
+  audio_watchdog_timeout_ms: 3000
+  max_recognition_logs: 10000

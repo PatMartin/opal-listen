@@ -1,0 +1,26 @@
+# Golden text set: normalized utterances that must always resolve to this intent + slots
+# (default config, default profile). Also loaded into the regression_tests table by
+# test_regression_suite.py so the same set is exercised through /api/v1/regression/run.
+golden:
+  - {text: "computer, turn on the kitchen light", intent_name: light_turn_on, slot_values: {room_name: kitchen}}
+  - {text: "turn on kitchen lights please", intent_name: light_turn_on, slot_values: {room_name: kitchen}}
+  - {text: "switch on the lounge light", intent_name: light_turn_on, slot_values: {room_name: living_room}}
+  - {text: "turn the family room lights on", intent_name: light_turn_on, slot_values: {room_name: living_room}}
+  - {text: "lights on in the study", intent_name: light_turn_on, slot_values: {room_name: office}}
+  - {text: "Turn off the bedroom light.", intent_name: light_turn_off, slot_values: {room_name: bedroom}}
+  - {text: "switch off the washroom lights", intent_name: light_turn_off, slot_values: {room_name: bathroom}}
+  - {text: "turn the garage light off", intent_name: light_turn_off, slot_values: {room_name: garage}}
+  - {text: "set the temperature to twenty one degrees", intent_name: set_temperature, slot_values: {temperature: 21}}
+  - {text: "set temperature to 19", intent_name: set_temperature, slot_values: {temperature: 19}}
+  - {text: "make it seventy two degrees", intent_name: set_temperature, slot_values: {temperature: 72}}
+  - {text: "set a timer for five minutes", intent_name: timer_set, slot_values: {duration_minutes: 5}}
+  - {text: "start a ten minute timer", intent_name: timer_set, slot_values: {duration_minutes: 10}}
+  - {text: "set timer for one hundred twenty minutes", intent_name: timer_set, slot_values: {duration_minutes: 120}}
+  - {text: "what time is it", intent_name: get_time, slot_values: {}}
+  - {text: "um what is the time", intent_name: get_time, slot_values: {}}
+  - {text: "never mind", intent_name: cancel, slot_values: {}}
+  - {text: "computer cancel", intent_name: cancel, slot_values: {}}
+  # small slips handled by fuzzy matching (missing/extra words, inflections)
+  - {text: "turn on kitchen light", intent_name: light_turn_on, slot_values: {room_name: kitchen}}
+  - {text: "turn on the kitchen light now", intent_name: light_turn_on, slot_values: {room_name: kitchen}}
+  - {text: "set the temperatures to twenty", intent_name: set_temperature, slot_values: {temperature: 20}}

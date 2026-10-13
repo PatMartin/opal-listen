@@ -1,0 +1,1081 @@
+<!doctype html>
+<!--
+  opal-listen.html - single-file web GUI for the opal_listener REST API.
+
+  Mirrors the REST resources and the `opal listen` CLI groups 1:1: every view shows the REST operations
+  it calls and the equivalent CLI command. No build step and no external dependencies (works offline).
+
+  Serve it from the API (same origin, no CORS setup):  http://<host>:8000/ui/opal-listen.html
+  Opened from disk it talks to the API base URL entered in the header (that origin must be allowed in
+  OPAL_LISTENER_CORS_ORIGINS).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>opal listen</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7280; --border: #dfe3ea;
+    --accent: #3b5bdb; --ok: #2f9e44; --warn: #e8590c; --err: #e03131; --code: #f1f3f5;
+    --get: #1971c2; --post: #2f9e44; --put: #e67700; --patch: #9c36b5; --delete: #e03131;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --panel: #1a1e24; --text: #e6e8eb; --muted: #9aa3ae; --border: #2c323b;
+            --accent: #748ffc; --code: #232830; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 17px; margin: 0 12px 0 0; white-space: nowrap; }
+  header .grow { flex: 1; }
+  header input { width: 230px; }
+  .layout { display: grid; grid-template-columns: 190px 1fr; min-height: calc(100vh - 50px); }
+  nav { background: var(--panel); border-right: 1px solid var(--border); padding: 8px 0; }
+  nav .group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 12px 16px 4px; }
+  nav a { display: block; padding: 5px 16px; color: var(--text); text-decoration: none; }
+  nav a.active { background: var(--bg); border-left: 3px solid var(--accent); padding-left: 13px; font-weight: 600; }
+  main { padding: 16px 20px 60px; max-width: 1300px; }
+  h2 { margin: 0 0 4px; font-size: 20px; }
+  h3 { margin: 0 0 8px; font-size: 15px; }
+  .sub { color: var(--muted); margin-bottom: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  tr.click { cursor: pointer; } tr.click:hover { background: var(--bg); }
+  code, pre, textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  code { background: var(--code); padding: 1px 4px; border-radius: 3px; }
+  pre { background: var(--code); padding: 10px; border-radius: 6px; overflow: auto; max-height: 420px; margin: 0; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input, select, textarea { background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; }
+  input[type=number] { width: 90px; } input[type=checkbox] { width: auto; }
+  textarea { width: 100%; min-height: 80px; }
+  label { display: inline-flex; gap: 5px; align-items: center; }
+  label.block { display: block; margin: 6px 0; } label.block > span { display: block; font-size: 12px; color: var(--muted); }
+  label.block input:not([type=checkbox]), label.block select { width: 100%; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 5px; padding: 5px 11px; cursor: pointer; white-space: nowrap; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+  button.danger { background: var(--err); }
+  button.small { padding: 2px 8px; font-size: 12px; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .op { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .op b { font-weight: 700; }
+  .m-GET { color: var(--get); } .m-POST { color: var(--post); } .m-PUT { color: var(--put); } .m-PATCH { color: var(--patch); } .m-DELETE { color: var(--delete); }
+  .cli { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
+  .ops { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 12px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 12px; background: var(--code); }
+  .badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .badge.warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .badge.err { background: color-mix(in srgb, var(--err) 20%, transparent); color: var(--err); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .muted { color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 3px; background: var(--code); border-radius: 10px; padding: 0 4px 0 8px; margin: 1px 3px 1px 0; font-size: 12px; }
+  .chip button { background: none; color: var(--muted); padding: 0 4px; }
+  .meter { height: 14px; background: var(--code); border-radius: 7px; overflow: hidden; flex: 1; min-width: 200px; }
+  .meter div { height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), var(--warn), var(--err)); transition: width .1s; }
+  .result { border-left: 4px solid var(--muted); }
+  .result.matched { border-left-color: var(--ok); } .result.nomatch { border-left-color: var(--warn); }
+  .big { font-size: 17px; font-weight: 600; }
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: 460px; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--ok); border-radius: 6px; padding: 8px 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); white-space: pre-wrap; }
+  .toast.err { border-left-color: var(--err); }
+  dialog { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); min-width: 460px; max-width: 760px; padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  .hint { font-size: 12px; color: var(--muted); }
+  .pager { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>opal listen</h1>
+  <span id="hdrState" class="badge">…</span>
+  <span id="hdrProfile" class="muted"></span>
+  <span class="grow"></span>
+  <form data-form="setBase" class="row">
+    <label class="muted">API <input name="base" id="baseInput" autocomplete="off"></label>
+    <button class="ghost small" type="submit">Connect</button>
+  </form>
+</header>
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+<div id="toasts"></div>
+<dialog id="dlg"><div id="dlgBody"></div></dialog>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------------------------------
+// REST <-> CLI <-> view parity table (same operations as OPERATION_COMMANDS in opal_listener/cli/main.py)
+// [FastAPI function name, method, path, `opal listen` command, view]
+// ---------------------------------------------------------------------------------------------------
+const ROUTES = [
+  ["list_wakewords", "GET", "/api/v1/wakewords/", "wakewords list", "wakewords"],
+  ["create_wakeword", "POST", "/api/v1/wakewords/", "wakewords add", "wakewords"],
+  ["get_wakeword", "GET", "/api/v1/wakewords/{wakeword_id}", "wakewords get", "wakewords"],
+  ["update_wakeword", "PATCH", "/api/v1/wakewords/{wakeword_id}", "wakewords update", "wakewords"],
+  ["delete_wakeword", "DELETE", "/api/v1/wakewords/{wakeword_id}", "wakewords remove", "wakewords"],
+  ["list_intents", "GET", "/api/v1/intents/", "intents list", "intents"],
+  ["create_intent", "POST", "/api/v1/intents/", "intents add", "intents"],
+  ["get_intent", "GET", "/api/v1/intents/{intent_id}", "intents get", "intents"],
+  ["update_intent", "PATCH", "/api/v1/intents/{intent_id}", "intents update", "intents"],
+  ["delete_intent", "DELETE", "/api/v1/intents/{intent_id}", "intents remove", "intents"],
+  ["list_phrases", "GET", "/api/v1/intents/{intent_id}/phrases", "intents phrases", "intents"],
+  ["add_phrase", "POST", "/api/v1/intents/{intent_id}/phrases", "intents add-phrase", "intents"],
+  ["delete_phrase", "DELETE", "/api/v1/intents/{intent_id}/phrases/{phrase_id}", "intents remove-phrase", "intents"],
+  ["list_slots", "GET", "/api/v1/slots/", "slots list", "slots"],
+  ["create_slot", "POST", "/api/v1/slots/", "slots add", "slots"],
+  ["get_slot", "GET", "/api/v1/slots/{slot_id}", "slots get", "slots"],
+  ["update_slot", "PATCH", "/api/v1/slots/{slot_id}", "slots update", "slots"],
+  ["delete_slot", "DELETE", "/api/v1/slots/{slot_id}", "slots remove", "slots"],
+  ["list_slot_values", "GET", "/api/v1/slots/{slot_id}/values", "slots values", "slots"],
+  ["add_slot_value", "POST", "/api/v1/slots/{slot_id}/values", "slots add-value", "slots"],
+  ["delete_slot_value", "DELETE", "/api/v1/slots/{slot_id}/values/{value_id}", "slots remove-value", "slots"],
+  ["list_aliases", "GET", "/api/v1/slots/{slot_id}/values/{value_id}/aliases", "slots aliases", "slots"],
+  ["add_alias", "POST", "/api/v1/slots/{slot_id}/values/{value_id}/aliases", "slots add-alias", "slots"],
+  ["delete_alias", "DELETE", "/api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}", "slots remove-alias", "slots"],
+  ["list_profiles", "GET", "/api/v1/profiles/", "profiles list", "profiles"],
+  ["create_profile", "POST", "/api/v1/profiles/", "profiles add", "profiles"],
+  ["get_profile", "GET", "/api/v1/profiles/{profile_id}", "profiles get", "profiles"],
+  ["update_profile", "PATCH", "/api/v1/profiles/{profile_id}", "profiles update", "profiles"],
+  ["delete_profile", "DELETE", "/api/v1/profiles/{profile_id}", "profiles remove", "profiles"],
+  ["activate_profile", "POST", "/api/v1/profiles/{profile_id}/activate", "profiles activate", "profiles"],
+  ["get_all_settings", "GET", "/api/v1/settings/", "settings list", "settings"],
+  ["patch_listen_settings", "PATCH", "/api/v1/settings/", "settings set", "settings"],
+  ["test_text", "POST", "/api/v1/recognition/test_text", "test text", "test"],
+  ["test_audio", "POST", "/api/v1/recognition/test_audio", "test audio", "test"],
+  ["start_pipeline", "POST", "/api/v1/recognition/start", "pipeline start", "pipeline"],
+  ["stop_pipeline", "POST", "/api/v1/recognition/stop", "pipeline stop", "pipeline"],
+  ["get_status", "GET", "/api/v1/recognition/status", "pipeline status", "pipeline"],
+  ["stream_results", "GET", "/api/v1/recognition/stream", "test listen / listen-debug", "test"],
+  ["list_logs", "GET", "/api/v1/logs/", "logs list", "logs"],
+  ["count_logs", "GET", "/api/v1/logs/count", "logs count", "logs"],
+  ["get_log", "GET", "/api/v1/logs/{log_id}", "logs get", "logs"],
+  ["list_failed_utterances", "GET", "/api/v1/failed_utterances/", "failed list", "failed"],
+  ["create_failed_utterance", "POST", "/api/v1/failed_utterances/", "failed add", "failed"],
+  ["get_failed_utterance", "GET", "/api/v1/failed_utterances/{fu_id}", "failed get", "failed"],
+  ["update_failed_utterance", "PATCH", "/api/v1/failed_utterances/{fu_id}", "failed update", "failed"],
+  ["delete_failed_utterance", "DELETE", "/api/v1/failed_utterances/{fu_id}", "failed remove", "failed"],
+  ["promote_to_phrase", "POST", "/api/v1/failed_utterances/{fu_id}/promote", "failed promote", "failed"],
+  ["list_regression_tests", "GET", "/api/v1/regression/", "regression list", "regression"],
+  ["create_regression_test", "POST", "/api/v1/regression/", "regression add", "regression"],
+  ["get_regression_test", "GET", "/api/v1/regression/{test_id}", "regression get", "regression"],
+  ["update_regression_test", "PATCH", "/api/v1/regression/{test_id}", "regression update", "regression"],
+  ["delete_regression_test", "DELETE", "/api/v1/regression/{test_id}", "regression remove", "regression"],
+  ["run_regression_tests", "POST", "/api/v1/regression/run", "test regression", "regression"],
+  ["get_last_performance", "GET", "/api/v1/performance/last", "perf last", "perf"],
+  ["get_performance_summary", "GET", "/api/v1/performance/summary", "perf summary", "perf"],
+  ["get_performance_history", "GET", "/api/v1/performance/history", "perf history", "perf"],
+  ["health_check", "GET", "/api/v1/health/", "system doctor", "system"],
+  ["get_audio_devices", "GET", "/api/v1/health/audio_devices", "system devices", "system"],
+  ["get_listen_health_live", "GET", "/api/v1/health/live", "system live", "system"],
+  ["get_listen_health_ready", "GET", "/api/v1/health/ready", "system ready", "system"],
+  ["list_backups", "GET", "/api/v1/backup/list", "config backups", "config"],
+  ["create_backup", "POST", "/api/v1/backup/create", "config backup", "config"],
+  ["download_backup", "GET", "/api/v1/backup/download/{filename}", "config download", "config"],
+  ["restore_backup", "POST", "/api/v1/backup/restore/{filename}", "config restore", "config"],
+  ["delete_backup", "DELETE", "/api/v1/backup/{filename}", "config delete-backup", "config"],
+  ["export_config", "GET", "/api/v1/backup/export", "config export", "config"],
+  ["import_config", "POST", "/api/v1/backup/import", "config import", "config"],
+  ["validate_config", "GET", "/api/v1/backup/validate", "config validate", "config"],
+  ["validate_listen_backup_payload", "POST", "/api/v1/backup/validate", "config validate --from-dir", "config"],
+  ["root", "GET", "/", "system info", "system"],
+  ["healthz", "GET", "/healthz", "system ping", "system"],
+];
+const ROUTE = Object.fromEntries(ROUTES.map(r => [r[0], { name: r[0], method: r[1], path: r[2], cli: r[3], view: r[4] }]));
+
+const NAV = [
+  ["Overview", [["system", "System"], ["pipeline", "Pipeline"]]],
+  ["Configure", [["wakewords", "Wakewords"], ["intents", "Intents"], ["slots", "Slots"], ["profiles", "Profiles"], ["settings", "Settings"]]],
+  ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["regression", "Regression"], ["logs", "Logs"], ["perf", "Performance"]]],
+  ["Admin", [["config", "Config & backups"], ["api", "API & parity"]]],
+];
+const VAD_KEYS = { energy_threshold_dbfs: -45, noise_margin_db: 10, speech_start_ms: 150, silence_end_ms: 700,
+  no_speech_timeout_ms: 4000, max_utterance_ms: 8000, pre_roll_ms: 1000, use_stt_endpoint: true };
+const STREAM_EVENTS = ["status", "wakeword_candidate", "wakeword_confirmed", "wakeword_rejected", "speech_start",
+  "speech_end", "result", "audio_level", "partial"];
+
+const S = {
+  base: localStorage.getItem("opal_api") || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000"),
+  timers: [], es: null, startedHere: false, lastResult: null,
+  logs: { limit: 25, offset: 0, intent: "", matched: "" },
+  failed: { limit: 25, offset: 0, reviewed: "", promoted: "" },
+  history: { limit: 50, offset: 0 },
+};
+
+// ---------------------------------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------------------------------
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const enc = encodeURIComponent;
+
+function detail(payload) {
+  const d = payload && typeof payload === "object" && "detail" in payload ? payload.detail : payload;
+  if (Array.isArray(d)) return d.map(x => typeof x === "object" ? [(x.loc || []).filter(p => p !== "body").join("."), x.msg].filter(Boolean).join(": ") : String(x)).join("\n");
+  return typeof d === "string" ? d : JSON.stringify(d);
+}
+
+async function api(method, path, { query, body, form, headers } = {}) {
+  let url = S.base + path;
+  if (query) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== "") q.append(k, v);
+    if (q.toString()) url += "?" + q;
+  }
+  const init = { method, headers: { ...headers } };
+  if (form) init.body = form;
+  else if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
+  let res;
+  try { res = await fetch(url, init); } catch (err) { throw new Error(`Cannot reach the API at ${S.base} (${err.message})`); }
+  const text = await res.text();
+  let data = null;
+  if (text) { try { data = JSON.parse(text); } catch { data = text; } }
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${detail(data)}`);
+  return data;
+}
+
+// Fetch the current strong ETag of a resource, for a subsequent mutation's mandatory If-Match.
+async function etagOf(path) {
+  const res = await fetch(S.base + path, { method: "GET" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ETag for ${path}`);
+  const etag = res.headers.get("etag");
+  if (!etag) throw new Error(`server did not return an ETag for ${path}`);
+  return etag;
+}
+
+// PATCH/DELETE with the mandatory strong If-Match header (OPAL v1.2): fetches the ETag from
+// etagPath (default: the mutation path itself) then performs the mutation.
+async function apiWithEtag(method, path, { etagPath, ...opts } = {}) {
+  const ifMatch = await etagOf(etagPath || path);
+  return api(method, path, { ...opts, headers: { ...opts.headers, "If-Match": ifMatch } });
+}
+
+function toast(msg, isError = false) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isError ? " err" : "");
+  el.textContent = msg;
+  $("#toasts").appendChild(el);
+  setTimeout(() => el.remove(), isError ? 9000 : 3500);
+}
+
+function cell(v) {
+  if (v === null || v === undefined || v === "") return '<span class="muted">–</span>';
+  if (typeof v === "boolean") return v ? '<span class="ok">✓</span>' : '<span class="muted">✗</span>';
+  if (typeof v === "number") return esc(Number.isInteger(v) ? v : v.toFixed(3).replace(/0+$/, "").replace(/\.$/, ""));
+  if (typeof v === "object") return Object.keys(v).length ? `<code>${esc(JSON.stringify(v))}</code>` : '<span class="muted">{}</span>';
+  if (/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(v)) return esc(v.replace("T", " ").slice(0, 19));
+  return esc(v);
+}
+
+// cols: array of [key, label] or [key, label, (row) => html]
+function table(rows, cols, { actions, rowAct, empty = "Nothing here yet." } = {}) {
+  if (!rows || !rows.length) return `<p class="muted">${esc(empty)}</p>`;
+  const head = cols.map(c => `<th>${esc(c[1])}</th>`).join("") + (actions ? "<th></th>" : "");
+  const body = rows.map(r => {
+    const attrs = rowAct ? ` class="click" ${rowAct(r)}` : "";
+    const tds = cols.map(c => `<td>${c[2] ? c[2](r) : cell(r[c[0]])}</td>`).join("");
+    return `<tr${attrs}>${tds}${actions ? `<td class="row" style="justify-content:flex-end">${actions(r)}</td>` : ""}</tr>`;
+  }).join("");
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function kv(obj) {
+  return table(Object.entries(obj || {}).map(([k, v]) => ({ k, v })), [["k", "key"], ["v", "value", r => cell(r.v)]]);
+}
+
+function op(name) {
+  const r = ROUTE[name];
+  return `<span class="op" title="opal listen ${esc(r.cli)}"><b class="m-${r.method}">${r.method}</b> ${esc(r.path)}</span>`;
+}
+function opsLine(names) {
+  return `<div class="ops">${names.map(n => `<span>${op(n)} <span class="cli">· opal listen ${esc(ROUTE[n].cli)}</span></span>`).join("")}</div>`;
+}
+function card(title, opNames, body, extra = "") {
+  const ops = (opNames || []).map(op).join(" ");
+  return `<div class="card"><div class="card-head"><h3>${title}</h3><span class="row">${extra}${ops}</span></div>${body}</div>`;
+}
+function btn(label, act, data = {}, cls = "") {
+  const attrs = Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(" ");
+  return `<button type="button" class="${cls}" data-act="${act}" ${attrs}>${label}</button>`;
+}
+
+function formValues(form) {
+  const out = {};
+  for (const el of form.elements) {
+    if (!el.name) continue;
+    if (el.type === "checkbox" && el.dataset.group) { (out[el.name] ||= []); if (el.checked) out[el.name].push(el.value); }
+    else if (el.type === "checkbox") out[el.name] = el.checked;
+    else if (el.type === "number") out[el.name] = el.value === "" ? null : Number(el.value);
+    else if (el.type === "file") out[el.name] = el.files[0] || null;
+    else if (el.type === "radio") { if (el.checked) out[el.name] = el.value; }
+    else out[el.name] = el.value;
+  }
+  return out;
+}
+
+function parseJson(text, label) {
+  if (!text || !text.trim()) return {};
+  try { return JSON.parse(text); } catch (err) { throw new Error(`${label} is not valid JSON: ${err.message}`); }
+}
+
+function modal(html) { $("#dlgBody").innerHTML = html; $("#dlg").showModal(); }
+function closeModal() { $("#dlg").close(); }
+
+function download(filename, text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function every(ms, fn) { fn(); S.timers.push(setInterval(fn, ms)); }
+
+async function guard(fn, button) {
+  if (button) button.disabled = true;
+  try { await fn(); } catch (err) { if (err.message !== "cancelled") toast(err.message, true); } finally { if (button) button.disabled = false; }
+}
+
+const confirmOr = msg => { if (!confirm(msg)) throw new Error("cancelled"); };
+
+// ---------------------------------------------------------------------------------------------------
+// shared renderers
+// ---------------------------------------------------------------------------------------------------
+function resultCard(r) {
+  const cls = r.matched ? "matched" : "nomatch";
+  const slots = Object.keys(r.slot_values || {}).length ? `<code>${esc(JSON.stringify(r.slot_values))}</code>` : "";
+  const summary = {
+    wakeword: r.wakeword, transcript: r.transcript, normalized_transcript: r.normalized_transcript,
+    intent_name: r.intent_name, slot_values: r.slot_values, wakeword_confidence: r.wakeword_confidence,
+    stt_confidence: r.stt_confidence, intent_confidence: r.intent_confidence, matched: r.matched,
+    no_match_reason: r.no_match_reason, matched_phrase: r.matched_phrase, profile_name: r.profile_name,
+    wakeword_latency_ms: r.wakeword_latency_ms, stt_latency_ms: r.stt_latency_ms,
+    intent_latency_ms: r.intent_latency_ms, total_latency_ms: r.total_latency_ms, audio_level: r.audio_level,
+    deduplicated: r.deduplicated, source: r.source, recognition_log_id: r.recognition_log_id,
+  };
+  const failBtn = !r.matched && r.transcript
+    ? btn("Record as failed utterance", "failedFromResult", { text: r.transcript, log: r.recognition_log_id ?? "" }, "ghost small") : "";
+  return `<div class="card result ${cls}">
+    <div class="card-head"><div><span class="badge ${r.matched ? "ok" : "warn"}">${r.matched ? "MATCH" : "NO MATCH"}</span>
+      <span class="big">${esc(r.intent_name)}</span> ${slots}
+      <span class="muted">${r.no_match_reason ? esc(r.no_match_reason) : ""}</span></div>
+      <span class="row">${failBtn}<span class="muted">${esc(r.source)} · ${cell(r.created_at)}</span></span></div>
+    <div class="cols"><div>${kv(summary)}</div>
+    <div><h3>Alternatives</h3>${table(r.alternatives, [["intent_name", "intent"], ["confidence", "confidence"], ["phrase", "phrase"]], { empty: "No candidates." })}</div></div>
+  </div>`;
+}
+
+function regressionRunTable(run) {
+  return `<p><span class="badge ${run.failed ? "err" : "ok"}">${run.passed}/${run.total} passed</span> pass rate ${cell(run.pass_rate)}</p>` +
+    table(run.results, [["test_id", "id"], ["name", "name"], ["phrase", "phrase"], ["expected_intent", "expected"],
+      ["actual_intent", "actual"], ["expected_slots", "expected slots"], ["actual_slots", "actual slots"],
+      ["passed", "passed", r => r.passed ? '<span class="ok">PASS</span>' : '<span class="err">FAIL</span>'],
+      ["failure_reason", "reason"]]);
+}
+
+function statusBadge(s) {
+  const cls = { ok: "ok", warning: "warn", error: "err" }[s] || "";
+  return `<span class="badge ${cls}">${esc(s)}</span>`;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// views (one per CLI group); each returns HTML, actions below
+// ---------------------------------------------------------------------------------------------------
+const VIEWS = {};
+
+VIEWS.system = async () => {
+  const [info, ping, health, devices, live, ready] = await Promise.allSettled([
+    api("GET", "/"), api("GET", "/healthz"), api("GET", "/api/v1/health/"), api("GET", "/api/v1/health/audio_devices"),
+    api("GET", "/api/v1/health/live"), api("GET", "/api/v1/health/ready"),
+  ]);
+  const val = p => p.status === "fulfilled" ? p.value : null;
+  const err = p => p.status === "rejected" ? `<p class="err">${esc(p.reason.message)}</p>` : "";
+  const h = val(health);
+  const probe = p => { const v = val(p); return v ? `${statusBadge(v.status)} <span class="muted">ready: ${cell(v.ready)}</span>` : ""; };
+  return `<h2>System</h2><div class="sub">Service info, liveness, startup health checks and audio devices.</div>
+    <div class="cols">
+      ${card("Info", ["root"], err(info) + kv(val(info)))}
+      ${card("Ping", ["healthz"], err(ping) + kv(val(ping)))}
+    </div>
+    <div class="cols">
+      ${card("Liveness", ["get_listen_health_live"], err(live) + probe(live))}
+      ${card("Readiness", ["get_listen_health_ready"], err(ready) + probe(ready))}
+    </div>
+    ${card("Doctor", ["health_check"], err(health) + (h ? `<p>overall ${statusBadge(h.status)} <span class="muted">checked ${cell(h.checked_at)}</span></p>` +
+      table(h.checks, [["name", "check"], ["status", "status", r => statusBadge(r.status)], ["detail", "detail"]]) : ""),
+      btn("Re-run", "refresh", {}, "ghost small"))}
+    ${card("Audio input devices", ["get_audio_devices"], err(devices) +
+      table(val(devices), [["index", "index"], ["name", "name"], ["max_input_channels", "channels"], ["default_sample_rate", "default rate"], ["is_default", "default"]], { empty: "No input devices." }))}`;
+};
+
+VIEWS.pipeline = async () => {
+  setTimeout(() => every(2000, async () => {
+    const el = $("#pipeStatus");
+    if (!el) return;
+    try { el.innerHTML = kv(await api("GET", "/api/v1/recognition/status")); } catch (e) { el.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  }), 0);
+  return `<h2>Pipeline</h2><div class="sub">Live microphone pipeline: wakeword → VAD → STT → intent. Status refreshes every 2 s.</div>
+    ${card("Control", ["start_pipeline", "stop_pipeline"], `<div class="row">${btn("Start", "pipeStart")} ${btn("Stop", "pipeStop", {}, "danger")}
+      <a href="#/test">Watch live results on the Test page →</a></div>`)}
+    ${card("Status", ["get_status"], `<div id="pipeStatus"><p class="muted">Loading…</p></div>`)}`;
+};
+
+VIEWS.wakewords = async () => {
+  const items = await api("GET", "/api/v1/wakewords/");
+  const rows = table(items, [
+    ["id", "id"],
+    ["name", "name", r => `<input name="name" value="${esc(r.name)}" data-ww="${r.id}">`],
+    ["confidence_threshold", "threshold", r => `<input type="number" step="0.01" min="0" max="1" value="${r.confidence_threshold}" data-ww-th="${r.id}">`],
+    ["enabled", "enabled", r => `<input type="checkbox" ${r.enabled ? "checked" : ""} data-ww-en="${r.id}">`],
+    ["updated_at", "updated"],
+  ], { actions: r => btn("Save", "wwSave", { id: r.id }, "small") + btn("Get", "wwGet", { id: r.id }, "ghost small") + btn("Delete", "wwDelete", { id: r.id, name: r.name }, "danger small") });
+  return `<h2>Wakewords</h2><div class="sub">Words that open a command session. Names are normalized (lowercase words).</div>
+    ${opsLine(["list_wakewords", "create_wakeword", "get_wakeword", "update_wakeword", "delete_wakeword"])}
+    ${card("Wakewords", ["list_wakewords"], rows)}
+    ${card("Add wakeword", ["create_wakeword"], `<form data-form="wwAdd" class="row">
+      <input name="name" placeholder="name, e.g. hey opal" required>
+      <label>threshold <input type="number" name="confidence_threshold" step="0.01" min="0" max="1" value="0.8"></label>
+      <label><input type="checkbox" name="enabled" checked> enabled</label>
+      <button type="submit">Add</button></form>`)}`;
+};
+
+VIEWS.intents = async ([id]) => {
+  if (id) return intentDetail(id);
+  const items = await api("GET", "/api/v1/intents/");
+  return `<h2>Intents</h2><div class="sub">Intents with training phrases. Click an intent to edit its phrases.</div>
+    ${opsLine(["list_intents", "create_intent", "get_intent", "update_intent", "delete_intent", "list_phrases", "add_phrase", "delete_phrase"])}
+    ${card("Intents", ["list_intents"], table(items, [["id", "id"], ["name", "name"], ["enabled", "enabled"], ["confidence_threshold", "threshold"],
+      ["phrases", "phrases", r => String(r.phrases.length)], ["description", "description"]], { rowAct: r => `data-act="go" data-to="#/intents/${r.id}"` }))}
+    ${card("Add intent", ["create_intent"], `<form data-form="intentAdd">
+      <div class="row"><input name="name" placeholder="snake_case name" required>
+        <label>threshold <input type="number" name="confidence_threshold" step="0.01" min="0" max="1" value="0.7"></label>
+        <label><input type="checkbox" name="enabled" checked> enabled</label></div>
+      <label class="block"><span>description</span><input name="description"></label>
+      <label class="block"><span>phrases, one per line — syntax: {slot} placeholder, [optional], (alt | ernatives)</span>
+        <textarea class="mono" name="phrases" placeholder="turn on [the] {room_name} (light | lights)"></textarea></label>
+      <button type="submit">Add intent</button></form>`)}`;
+};
+
+async function intentDetail(id) {
+  const [intent, phrases] = await Promise.all([api("GET", `/api/v1/intents/${id}`), api("GET", `/api/v1/intents/${id}/phrases`)]);
+  return `<p><a href="#/intents">← Intents</a></p><h2>${esc(intent.name)}</h2><div class="sub">${esc(intent.description || "")}</div>
+    <div class="cols">
+    ${card("Settings", ["get_intent", "update_intent"], `<form data-form="intentUpdate" data-id="${intent.id}">
+      <label class="block"><span>name</span><input name="name" value="${esc(intent.name)}"></label>
+      <label class="block"><span>description</span><input name="description" value="${esc(intent.description || "")}"></label>
+      <div class="row"><label>threshold <input type="number" name="confidence_threshold" step="0.01" min="0" max="1" value="${intent.confidence_threshold}"></label>
+      <label><input type="checkbox" name="enabled" ${intent.enabled ? "checked" : ""}> enabled</label></div>
+      <p class="row"><button type="submit">Save</button> ${btn("Delete intent", "intentDelete", { id: intent.id, name: intent.name }, "danger")}</p></form>
+      <p class="hint">Created ${cell(intent.created_at)} · updated ${cell(intent.updated_at)}</p>`)}
+    ${card("Quick test", ["test_text"], `<form data-form="quickTest" class="row"><input name="text" style="flex:1" placeholder="say something…" required>
+      <button type="submit">Test</button></form><div id="quickResult"></div>`)}
+    </div>
+    ${card("Phrases", ["list_phrases", "delete_phrase"], table(phrases, [["id", "id"], ["phrase", "phrase", r => `<code>${esc(r.phrase)}</code>`], ["created_at", "created"]],
+      { actions: r => btn("Delete", "phraseDelete", { intent: intent.id, id: r.id }, "danger small"), empty: "No phrases: this intent can never match." }))}
+    ${card("Add phrase", ["add_phrase"], `<form data-form="phraseAdd" data-id="${intent.id}" class="row">
+      <input name="phrase" style="flex:1" class="mono" placeholder="switch on [the] {room_name} (light | lights)" required>
+      <button type="submit">Add</button></form><p class="hint">Invalid phrases (unknown slot, bad syntax) are rejected and nothing is saved.</p>`)}`;
+}
+
+VIEWS.slots = async ([id]) => {
+  if (id) return slotDetail(id);
+  const items = await api("GET", "/api/v1/slots/");
+  const values = r => r.values.map(v => esc(v.value) + (v.aliases.length ? ` <span class="muted">(${v.aliases.map(a => esc(a.alias)).join(", ")})</span>` : "")).join(", ");
+  return `<h2>Slots</h2><div class="sub">Slot types: <code>list</code> (values + aliases), <code>number</code> (spoken numbers), <code>text</code> (free text, needs open STT).</div>
+    ${opsLine(["list_slots", "create_slot", "get_slot", "update_slot", "delete_slot", "list_slot_values", "add_slot_value", "delete_slot_value", "list_aliases", "add_alias", "delete_alias"])}
+    ${card("Slots", ["list_slots"], table(items, [["id", "id"], ["name", "name"], ["slot_type", "type"], ["values", "values", values], ["description", "description"]],
+      { rowAct: r => `data-act="go" data-to="#/slots/${r.id}"` }))}
+    ${card("Add slot", ["create_slot", "add_slot_value", "add_alias"], `<form data-form="slotAdd">
+      <div class="row"><input name="name" placeholder="snake_case name" required>
+        <select name="slot_type"><option>list</option><option>number</option><option>text</option></select>
+        <input name="description" placeholder="description" style="flex:1"></div>
+      <label class="block"><span>values (list slots), one per line: <code>value: alias, alias</code></span>
+        <textarea class="mono" name="values" placeholder="kitchen: cooking area&#10;living_room: lounge, family room"></textarea></label>
+      <button type="submit">Add slot</button></form>`)}`;
+};
+
+async function slotDetail(id) {
+  const [slot, values] = await Promise.all([api("GET", `/api/v1/slots/${id}`), api("GET", `/api/v1/slots/${id}/values`)]);
+  const aliasCell = v => v.aliases.map(a => `<span class="chip">${esc(a.alias)}${btn("×", "aliasDelete", { slot: slot.id, value: v.id, id: a.id }, "")}</span>`).join("") +
+    `<form data-form="aliasAdd" data-slot="${slot.id}" data-value="${v.id}" class="row" style="display:inline-flex"><input name="alias" placeholder="new alias" size="12" required><button class="small" type="submit">+</button></form>`;
+  return `<p><a href="#/slots">← Slots</a></p><h2>${esc(slot.name)}</h2><div class="sub">${esc(slot.slot_type)} slot · ${esc(slot.description || "")}</div>
+    ${card("Settings", ["get_slot", "update_slot", "delete_slot"], `<form data-form="slotUpdate" data-id="${slot.id}" class="row">
+      <input name="name" value="${esc(slot.name)}">
+      <select name="slot_type">${["list", "number", "text"].map(t => `<option ${t === slot.slot_type ? "selected" : ""}>${t}</option>`).join("")}</select>
+      <input name="description" value="${esc(slot.description || "")}" placeholder="description" style="flex:1">
+      <button type="submit">Save</button> ${btn("Delete slot", "slotDelete", { id: slot.id, name: slot.name }, "danger")}</form>
+      <p class="hint">A slot used by a phrase cannot be deleted (the change is validated first).</p>`)}
+    ${card("Values & aliases", ["list_slot_values", "list_aliases", "add_alias", "delete_alias", "delete_slot_value"],
+      table(values, [["id", "id"], ["value", "value", r => `<b>${esc(r.value)}</b>`], ["aliases", "aliases (normalize to the value)", aliasCell]],
+        { actions: r => btn("Aliases", "aliasList", { slot: slot.id, value: r.id }, "ghost small") + btn("Delete", "valueDelete", { slot: slot.id, id: r.id, name: r.value }, "danger small"), empty: "No values." }))}
+    ${card("Add value", ["add_slot_value", "add_alias"], `<form data-form="valueAdd" data-id="${slot.id}" class="row">
+      <input name="value" placeholder="canonical value" required><input name="aliases" placeholder="aliases, comma separated" style="flex:1">
+      <button type="submit">Add</button></form>`)}`;
+}
+
+function profileForm(p, lists) {
+  const group = (name, all, selected) => all.length ? all.map(n => `<label><input type="checkbox" data-group="1" name="${name}" value="${esc(n)}" ${selected.includes(n) ? "checked" : ""}> ${esc(n)}</label>`).join(" ") : '<span class="muted">none</span>';
+  const th = p.confidence_thresholds || {};
+  const mp = p.model_paths || {};
+  return `<form data-form="profileSave" data-id="${p.id ?? ""}">
+    <div class="row"><label class="block" style="flex:1"><span>name</span><input name="name" value="${esc(p.name || "")}" required></label>
+      <label class="block" style="flex:2"><span>description</span><input name="description" value="${esc(p.description || "")}"></label>
+      <label><input type="checkbox" name="is_active" ${p.is_active ? "checked" : ""}> active</label></div>
+    <p><b>Confidence thresholds</b> <span class="hint">floors: effective = max(item threshold, profile threshold); blank = unset</span></p>
+    <div class="row">${["wakeword", "intent", "stt"].map(k => `<label>${k} <input type="number" name="th_${k}" step="0.01" min="0" max="1" value="${th[k] ?? ""}"></label>`).join("")}</div>
+    <label class="block"><span>vad_settings (JSON) — keys: ${Object.keys(VAD_KEYS).join(", ")}</span>
+      <textarea class="mono" name="vad" placeholder='${esc(JSON.stringify({ silence_end_ms: 700 }))}'>${esc(Object.keys(p.vad_settings || {}).length ? JSON.stringify(p.vad_settings, null, 2) : "")}</textarea></label>
+    <div class="row"><label class="block" style="flex:1"><span>model_paths.vosk_model</span><input name="mp_vosk_model" value="${esc(mp.vosk_model || "")}"></label>
+      <label class="block" style="flex:1"><span>model_paths.whisper_model</span><input name="mp_whisper_model" value="${esc(mp.whisper_model || "")}"></label></div>
+    <p><b>Wakewords</b> <span class="hint">none checked = all enabled</span><br>${group("wakeword_names", lists.wakewords, p.wakeword_names || [])}</p>
+    <p><b>Enabled intents</b> <span class="hint">none checked = all</span><br>${group("enabled_intents", lists.intents, p.enabled_intents || [])}</p>
+    <p><b>Enabled slots</b> <span class="hint">none checked = all</span><br>${group("enabled_slots", lists.slots, p.enabled_slots || [])}</p>
+    <button type="submit">${p.id ? "Save profile" : "Add profile"}</button></form>`;
+}
+
+async function profileLists() {
+  const [w, i, s] = await Promise.all([api("GET", "/api/v1/wakewords/"), api("GET", "/api/v1/intents/"), api("GET", "/api/v1/slots/")]);
+  return { wakewords: w.map(x => x.name), intents: i.map(x => x.name), slots: s.map(x => x.name) };
+}
+
+VIEWS.profiles = async ([id]) => {
+  const lists = await profileLists();
+  if (id) {
+    const p = await api("GET", `/api/v1/profiles/${id}`);
+    return `<p><a href="#/profiles">← Profiles</a></p><h2>${esc(p.name)} ${p.is_active ? '<span class="badge ok">active</span>' : ""}</h2>
+      <div class="sub">Lists and maps replace the stored values on save.</div>
+      ${card("Edit profile", ["get_profile", "update_profile"], profileForm(p, lists),
+        (p.is_active ? "" : btn("Activate", "profileActivate", { id: p.id }, "small")) + btn("Delete", "profileDelete", { id: p.id, name: p.name }, "danger small"))}`;
+  }
+  const items = await api("GET", "/api/v1/profiles/");
+  return `<h2>Profiles</h2><div class="sub">Exactly one profile is active; it selects wakewords, thresholds, VAD settings, models and enabled intents/slots.</div>
+    ${opsLine(["list_profiles", "create_profile", "get_profile", "update_profile", "delete_profile", "activate_profile"])}
+    ${card("Profiles", ["list_profiles"], table(items, [["id", "id"], ["name", "name"], ["is_active", "active"], ["confidence_thresholds", "thresholds"],
+      ["vad_settings", "vad"], ["enabled_intents", "intents"], ["description", "description"]],
+      { rowAct: r => `data-act="go" data-to="#/profiles/${r.id}"`,
+        actions: r => (r.is_active ? "" : btn("Activate", "profileActivate", { id: r.id }, "small")) + btn("Delete", "profileDelete", { id: r.id, name: r.name }, "danger small") }))}
+    ${card("Add profile", ["create_profile"], profileForm({}, lists))}`;
+};
+
+VIEWS.settings = async () => {
+  const settings = await api("GET", "/api/v1/settings/");
+  const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
+  return `<h2>Settings</h2><div class="sub">Values are validated by type and range on save; changes are applied atomically via PATCH with the current ETag.</div>
+    ${opsLine(["get_all_settings", "patch_listen_settings"])}
+    ${card("Settings", ["get_all_settings", "patch_listen_settings"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
+      ["value", "value", r => `<input data-setting="${esc(r.key)}" value="${esc(r.value)}" style="width:100%">`]],
+      { actions: r => btn("Save", "settingSave", { key: r.key }, "small") }))}`;
+};
+
+VIEWS.test = async () => {
+  return `<h2>Test</h2><div class="sub">Text, audio files and the live microphone go through the same normalization, intent and slot pipeline.</div>
+    <div class="cols">
+    ${card("Text", ["test_text"], `<form data-form="testText">
+      <input name="text" style="width:100%" placeholder="computer, turn on the kitchen light" required>
+      <p class="row"><label><input type="checkbox" name="save_log" checked> save to logs</label> <button type="submit">Test text</button></p></form>`)}
+    ${card("Audio file", ["test_audio"], `<form data-form="testAudio">
+      <input type="file" name="file" accept=".wav,audio/wav" required>
+      <p class="row"><label><input type="checkbox" name="require_wakeword"> require wakeword</label>
+        <label><input type="checkbox" name="save_log" checked> save to logs</label> <button type="submit">Test audio</button></p></form>
+      <p class="hint">16-bit PCM WAV, mono or stereo, any rate (resampled to 16 kHz).</p>`)}
+    </div>
+    <div id="testResult"></div>
+    ${card("Live listen", ["stream_results", "start_pipeline", "stop_pipeline"], `<div class="row">
+      ${btn("Listen", "listenStart", { debug: 0 })} ${btn("Listen (debug)", "listenStart", { debug: 1 })} ${btn("Stop", "listenStop", {}, "danger")}
+      <label><input type="checkbox" id="autoStart" checked> start the pipeline if it is not running (and stop it afterwards)</label></div>
+      <div class="row" style="margin-top:10px"><span id="liveState" class="badge">idle</span><div class="meter"><div id="meterBar"></div></div><span id="meterText" class="op">– dBFS</span></div>
+      <p id="partial" class="muted"></p><div id="liveResults"></div>
+      <details><summary class="muted">event log</summary><pre id="events"></pre></details>`)}
+    ${card("Regression run", ["run_regression_tests"], `<div class="row">${btn("Run regression tests", "regressionRun", { target: "testRegression" })}
+      <label><input type="checkbox" id="regAll"> include disabled</label></div><div id="testRegression"></div>`)}`;
+};
+
+VIEWS.failed = async () => {
+  const f = S.failed;
+  const items = await api("GET", "/api/v1/failed_utterances/", { query: { limit: f.limit, offset: f.offset, reviewed: f.reviewed, promoted: f.promoted } });
+  const sel = (name, value) => `<select data-filter="failed.${name}"><option value="" ${value === "" ? "selected" : ""}>any</option>
+    <option value="true" ${value === "true" ? "selected" : ""}>yes</option><option value="false" ${value === "false" ? "selected" : ""}>no</option></select>`;
+  return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here. Promote them to training phrases (slot values become placeholders) and a regression test.</div>
+    ${opsLine(["list_failed_utterances", "create_failed_utterance", "get_failed_utterance", "update_failed_utterance", "delete_failed_utterance", "promote_to_phrase"])}
+    ${card("Failed utterances", ["list_failed_utterances"], `<div class="row">reviewed ${sel("reviewed", f.reviewed)} promoted ${sel("promoted", f.promoted)}</div>` +
+      table(items, [["id", "id"], ["transcript", "transcript"], ["expected_intent", "expected"], ["reviewed", "reviewed"], ["promoted_to_phrase", "promoted"],
+        ["notes", "notes"], ["recognition_log_id", "log"], ["created_at", "created"]],
+        { actions: r => btn("Promote", "failedPromote", { id: r.id }, "small") + btn("Edit", "failedEdit", { id: r.id }, "ghost small") + btn("Delete", "failedDelete", { id: r.id }, "danger small") }) +
+      pager("failed", items.length))}
+    ${card("Add failed utterance", ["create_failed_utterance"], `<form data-form="failedAdd" class="row">
+      <input name="transcript" placeholder="what was said" style="flex:2" required><input name="expected_intent" placeholder="expected intent">
+      <input name="notes" placeholder="notes" style="flex:1"><button type="submit">Add</button></form>`)}`;
+};
+
+function pager(key, count) {
+  const p = S[key];
+  return `<div class="pager">${btn("‹ Prev", "page", { key, dir: -1 }, "ghost small")}<span class="muted">rows ${p.offset + 1}–${p.offset + count}</span>
+    ${btn("Next ›", "page", { key, dir: 1 }, "ghost small")} <label class="muted">per page <select data-filter="${key}.limit">${[10, 25, 50, 100, 500]
+      .map(n => `<option ${n === p.limit ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>`;
+}
+
+VIEWS.regression = async () => {
+  const [tests, intents] = await Promise.all([api("GET", "/api/v1/regression/"), api("GET", "/api/v1/intents/")]);
+  const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option>${esc(n)}</option>`).join("");
+  return `<h2>Regression</h2><div class="sub">Phrases that must keep resolving to the expected intent and slots (use <code>no_match</code> for negative tests).</div>
+    ${opsLine(["list_regression_tests", "create_regression_test", "get_regression_test", "update_regression_test", "delete_regression_test", "run_regression_tests"])}
+    ${card("Run", ["run_regression_tests"], `<div class="row">${btn("Run regression tests", "regressionRun", { target: "regResult" })}
+      <label><input type="checkbox" id="regAll"> include disabled</label></div><div id="regResult"></div>`)}
+    ${card("Tests", ["list_regression_tests"], table(tests, [["id", "id"], ["name", "name"], ["phrase", "phrase"], ["expected_intent", "expected"],
+      ["expected_slots", "expected slots"], ["enabled", "enabled"], ["last_result", "last", r => r.last_result === null ? cell(null) : r.last_result ? '<span class="ok">PASS</span>' : '<span class="err">FAIL</span>'],
+      ["last_run_at", "last run"]], { actions: r => btn("Edit", "regressionEdit", { id: r.id }, "ghost small") + btn("Delete", "regressionDelete", { id: r.id }, "danger small") }))}
+    ${card("Add test", ["create_regression_test"], `<form data-form="regressionAdd">
+      <div class="row"><input name="name" placeholder="name" required><input name="phrase" placeholder="phrase" style="flex:1" required>
+        <select name="expected_intent">${options}</select><label><input type="checkbox" name="enabled" checked> enabled</label></div>
+      <label class="block"><span>expected_slots (JSON)</span><textarea class="mono" name="expected_slots" style="min-height:50px" placeholder='{"room_name": "kitchen"}'></textarea></label>
+      <button type="submit">Add test</button></form>`)}`;
+};
+
+VIEWS.logs = async () => {
+  const l = S.logs;
+  const [logs, count, intents] = await Promise.all([
+    api("GET", "/api/v1/logs/", { query: { limit: l.limit, offset: l.offset, intent_name: l.intent, matched: l.matched } }),
+    api("GET", "/api/v1/logs/count"), api("GET", "/api/v1/intents/"),
+  ]);
+  const intentSel = `<select data-filter="logs.intent"><option value="">any intent</option>${["no_match", ...intents.map(i => i.name)]
+    .map(n => `<option ${n === l.intent ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  const matchedSel = `<select data-filter="logs.matched"><option value="">matched + no_match</option><option value="true" ${l.matched === "true" ? "selected" : ""}>matched</option>
+    <option value="false" ${l.matched === "false" ? "selected" : ""}>no_match</option></select>`;
+  return `<h2>Recognition logs</h2><div class="sub">Every recognition (mic, audio, text) with transcripts, slots, confidences and latencies. Click a row for details.</div>
+    ${opsLine(["list_logs", "count_logs", "get_log"])}
+    ${card("Counts", ["count_logs"], `<div class="row"><span class="badge">total ${count.total}</span><span class="badge ok">matched ${count.matched}</span><span class="badge warn">no_match ${count.no_match}</span></div>`)}
+    ${card("Logs", ["list_logs"], `<div class="row">${intentSel} ${matchedSel}</div>` + table(logs, [["id", "id"], ["created_at", "time"], ["source", "source"],
+      ["wakeword", "wakeword"], ["normalized_transcript", "transcript"], ["intent_name", "intent"], ["slot_values", "slots"], ["intent_confidence", "conf"],
+      ["matched", "matched"], ["no_match_reason", "reason"], ["total_latency_ms", "ms"]], { rowAct: r => `data-act="logShow" data-id="${r.id}"` }) + pager("logs", logs.length))}`;
+};
+
+VIEWS.perf = async () => {
+  const h = S.history;
+  const [last, summary, history] = await Promise.all([
+    api("GET", "/api/v1/performance/last"), api("GET", "/api/v1/performance/summary", { query: { limit: 100 } }),
+    api("GET", "/api/v1/performance/history", { query: { limit: h.limit, offset: h.offset } }),
+  ]);
+  const flat = Object.fromEntries(Object.entries(summary).filter(([, v]) => typeof v !== "object" || v === null));
+  const latency = Object.entries(summary).filter(([, v]) => v && typeof v === "object").map(([k, v]) => ({ metric: k, ...v }));
+  return `<h2>Performance</h2><div class="sub">Latency (ms), confidence and match rate. Summary covers the last 100 recognitions.</div>
+    ${opsLine(["get_last_performance", "get_performance_summary", "get_performance_history"])}
+    <div class="cols">
+      ${card("Last recognition", ["get_last_performance"], last ? kv(last) : '<p class="muted">No recognitions yet.</p>')}
+      ${card("Summary", ["get_performance_summary"], kv(flat) + table(latency, [["metric", "latency"], ["avg", "avg"], ["p50", "p50"], ["p95", "p95"], ["max", "max"]]))}
+    </div>
+    ${card("History", ["get_performance_history"], chart(history) + table(history, [["id", "id"], ["created_at", "time"], ["recognition_log_id", "log"],
+      ["wakeword_latency_ms", "wake ms"], ["stt_latency_ms", "stt ms"], ["intent_latency_ms", "intent ms"], ["total_latency_ms", "total ms"],
+      ["wakeword_confidence", "wake conf"], ["intent_confidence", "intent conf"], ["matched", "matched"]]) + pager("history", history.length))}`;
+};
+
+function chart(rows) {
+  const data = [...rows].reverse().filter(r => r.total_latency_ms !== null);
+  if (!data.length) return "";
+  const max = Math.max(...data.map(r => r.total_latency_ms), 1);
+  const w = 900, hgt = 120, bw = w / data.length;
+  const bars = data.map((r, i) => {
+    const bh = Math.max(2, (r.total_latency_ms / max) * (hgt - 16));
+    return `<rect x="${i * bw + 1}" y="${hgt - bh}" width="${Math.max(1, bw - 2)}" height="${bh}" fill="var(--${r.matched ? "ok" : "warn"})"><title>${r.total_latency_ms} ms · ${r.matched ? "matched" : "no_match"}</title></rect>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${w} ${hgt}" width="100%" height="${hgt}" role="img" aria-label="total latency">${bars}
+    <text x="4" y="12" font-size="11" fill="var(--muted)">total_latency_ms (max ${max})</text></svg>`;
+}
+
+VIEWS.config = async () => {
+  const backups = await api("GET", "/api/v1/backup/list");
+  return `<h2>Config & backups</h2><div class="sub">Every change is validated before it is applied; imports and restores take an automatic backup and roll back on failure.</div>
+    ${opsLine(["validate_config", "validate_listen_backup_payload", "export_config", "import_config", "list_backups", "create_backup", "download_backup", "restore_backup", "delete_backup"])}
+    ${card("Validate", ["validate_config"], `${btn("Validate server config dir + database", "configValidate")}<div id="validateResult"></div>`)}
+    ${card("Configuration bundle (JSON)", ["export_config", "validate_listen_backup_payload", "import_config"], `<div class="row">
+        ${btn("Export", "configExport", {}, "ghost")} ${btn("Download JSON", "configDownload", {}, "ghost")}
+        <label class="muted">load file <input type="file" id="bundleFile" accept=".json,application/json"></label></div>
+      <textarea class="mono" id="bundleText" style="min-height:220px;margin-top:8px" placeholder="Export, load a file, or paste a bundle {wakewords, stt, intents, slots, profiles, settings}"></textarea>
+      <div class="row">${btn("Validate bundle", "bundleValidate", {}, "ghost")} ${btn("Import bundle", "bundleImport", {}, "danger")}
+        ${btn("Import server ./config/ YAML", "configImportServer", {}, "danger")}</div>
+      <div id="bundleResult"></div><p class="hint">YAML files: use <code>opal listen config export --out-dir</code> / <code>import --from-dir</code>.</p>`)}
+    ${card("Backups", ["list_backups", "create_backup", "download_backup", "restore_backup", "delete_backup"],
+      `<p>${btn("Create backup", "backupCreate")}</p>` + table(backups, [["filename", "file"], ["size_bytes", "bytes"], ["created_at", "created"]],
+        { actions: r => `<a class="op" href="${esc(S.base)}/api/v1/backup/download/${enc(r.filename)}" download>download</a> ` +
+          btn("Restore", "backupRestore", { name: r.filename }, "small") + btn("Delete", "backupDelete", { name: r.filename }, "danger small"), empty: "No backups." }))}`;
+};
+
+VIEWS.api = async () => {
+  const spec = await api("GET", "/openapi.json");
+  const ops = [];
+  for (const [path, item] of Object.entries(spec.paths)) {
+    for (const [method, o] of Object.entries(item)) {
+      const suffix = path.replace(/\W/g, "_") + "_" + method;
+      const name = o.operationId.endsWith(suffix) ? o.operationId.slice(0, -suffix.length) : o.operationId;
+      ops.push({ name, method: method.toUpperCase(), path, summary: o.summary || "", route: ROUTE[name] });
+    }
+  }
+  const mapped = ops.filter(o => o.route).length;
+  const missingUi = Object.keys(ROUTE).filter(n => !ops.some(o => o.name === n));
+  return `<h2>API & parity</h2><div class="sub">Every REST operation, its <code>opal listen</code> command and the view that uses it.
+    Interactive docs: <a href="${esc(S.base)}/docs" target="_blank">${esc(S.base)}/docs</a></div>
+    ${card("Operations", [], `<p><span class="badge ${mapped === ops.length ? "ok" : "err"}">${mapped}/${ops.length} operations mapped to CLI + UI</span>
+      ${missingUi.length ? `<span class="badge warn">not on server: ${missingUi.map(esc).join(", ")}</span>` : ""}</p>` +
+      table(ops, [["method", "method", r => `<b class="m-${r.method}">${r.method}</b>`], ["path", "path", r => `<code>${esc(r.path)}</code>`], ["summary", "summary"],
+        ["name", "operation"], ["cli", "CLI", r => r.route ? `<span class="cli">opal listen ${esc(r.route.cli)}</span>` : '<span class="err">unmapped</span>'],
+        ["view", "view", r => r.route ? `<a href="#/${r.route.view}">${esc(r.route.view)}</a>` : "–"]]))}
+    ${card("Request console", [], `<form data-form="rawRequest">
+      <div class="row"><select name="method">${["GET", "POST", "PUT", "PATCH", "DELETE"].map(m => `<option>${m}</option>`).join("")}</select>
+        <input name="path" value="/api/v1/recognition/status" style="flex:1" class="mono"><button type="submit">Send</button></div>
+      <label class="block"><span>JSON body (optional)</span><textarea class="mono" name="body" style="min-height:60px"></textarea></label></form>
+      <pre id="rawResult" class="muted">response appears here</pre>`)}`;
+};
+
+// ---------------------------------------------------------------------------------------------------
+// click actions (data-act) and form handlers (data-form)
+// ---------------------------------------------------------------------------------------------------
+const ACT = {
+  go: d => { location.hash = d.to; },
+  refresh: () => render(),
+  closeModal: () => closeModal(),
+  page: d => { const p = S[d.key]; p.offset = Math.max(0, p.offset + Number(d.dir) * p.limit); render(); },
+
+  pipeStart: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/start")).status}`),
+  pipeStop: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/stop")).status}`),
+
+  wwSave: async d => {
+    const body = { name: $(`[data-ww="${d.id}"]`).value, confidence_threshold: Number($(`[data-ww-th="${d.id}"]`).value), enabled: $(`[data-ww-en="${d.id}"]`).checked };
+    await apiWithEtag("PATCH", `/api/v1/wakewords/${d.id}`, { body }); toast("wakeword saved"); render();
+  },
+  wwGet: async d => modal(`<h3>Wakeword ${esc(d.id)}</h3>${op("get_wakeword")}${kv(await api("GET", `/api/v1/wakewords/${d.id}`))}<p>${btn("Close", "closeModal")}</p>`),
+  wwDelete: async d => { confirmOr(`Delete wakeword '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/wakewords/${d.id}`); toast("wakeword deleted"); render(); },
+
+  intentDelete: async d => { confirmOr(`Delete intent '${d.name}' and its phrases?`); await apiWithEtag("DELETE", `/api/v1/intents/${d.id}`); toast("intent deleted"); location.hash = "#/intents"; },
+  phraseDelete: async d => { await apiWithEtag("DELETE", `/api/v1/intents/${d.intent}/phrases/${d.id}`, { etagPath: `/api/v1/intents/${d.intent}/phrases` }); toast("phrase deleted"); render(); },
+
+  slotDelete: async d => { confirmOr(`Delete slot '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/slots/${d.id}`); toast("slot deleted"); location.hash = "#/slots"; },
+  valueDelete: async d => { confirmOr(`Delete value '${d.name}' and its aliases?`); await apiWithEtag("DELETE", `/api/v1/slots/${d.slot}/values/${d.id}`, { etagPath: `/api/v1/slots/${d.slot}/values` }); toast("value deleted"); render(); },
+  aliasDelete: async d => { await apiWithEtag("DELETE", `/api/v1/slots/${d.slot}/values/${d.value}/aliases/${d.id}`, { etagPath: `/api/v1/slots/${d.slot}/values/${d.value}/aliases` }); toast("alias deleted"); render(); },
+  aliasList: async d => modal(`<h3>Aliases</h3>${op("list_aliases")}${table(await api("GET", `/api/v1/slots/${d.slot}/values/${d.value}/aliases`),
+    [["id", "id"], ["alias", "alias"], ["created_at", "created"]], { empty: "No aliases." })}<p>${btn("Close", "closeModal")}</p>`),
+
+  profileActivate: async d => { const p = await api("POST", `/api/v1/profiles/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
+  profileDelete: async d => { confirmOr(`Delete profile '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/profiles/${d.id}`); toast("profile deleted"); location.hash = "#/profiles"; },
+
+  settingSave: async d => { const s = await apiWithEtag("PATCH", "/api/v1/settings/", { body: { [d.key]: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s[d.key]}`); render(); },
+
+  listenStart: async d => listenStart(d.debug === "1"),
+  listenStop: async () => listenStop(),
+
+  regressionRun: async d => {
+    const run = await api("POST", "/api/v1/regression/run", { query: { enabled_only: !($("#regAll")?.checked) } });
+    if (d.target === "regResult") await render();  // refresh last_result column
+    const el = $(`#${d.target}`);
+    if (el) el.innerHTML = regressionRunTable(run);
+  },
+  regressionEdit: async d => {
+    const [t, intents] = await Promise.all([api("GET", `/api/v1/regression/${d.id}`), api("GET", "/api/v1/intents/")]);
+    const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option ${n === t.expected_intent ? "selected" : ""}>${esc(n)}</option>`).join("");
+    modal(`<h3>Regression test ${t.id}</h3><div class="ops">${op("get_regression_test")} ${op("update_regression_test")}</div>
+      <form data-form="regressionUpdate" data-id="${t.id}">
+      <label class="block"><span>name</span><input name="name" value="${esc(t.name)}"></label>
+      <label class="block"><span>phrase</span><input name="phrase" value="${esc(t.phrase)}"></label>
+      <label class="block"><span>expected intent</span><select name="expected_intent">${options}</select></label>
+      <label class="block"><span>expected_slots (JSON)</span><textarea class="mono" name="expected_slots">${esc(JSON.stringify(t.expected_slots, null, 2))}</textarea></label>
+      <label><input type="checkbox" name="enabled" ${t.enabled ? "checked" : ""}> enabled</label>
+      <p class="row"><button type="submit">Save</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
+  },
+  regressionDelete: async d => { confirmOr(`Delete regression test ${d.id}?`); await api("DELETE", `/api/v1/regression/${d.id}`); toast("test deleted"); render(); },
+
+  failedEdit: async d => {
+    const f = await api("GET", `/api/v1/failed_utterances/${d.id}`);
+    modal(`<h3>Failed utterance ${f.id}</h3><div class="ops">${op("get_failed_utterance")} ${op("update_failed_utterance")}</div>
+      <p><code>${esc(f.transcript)}</code> <span class="muted">log ${cell(f.recognition_log_id)} · ${cell(f.created_at)}</span></p>
+      <form data-form="failedUpdate" data-id="${f.id}">
+      <label class="block"><span>expected intent</span><input name="expected_intent" value="${esc(f.expected_intent || "")}"></label>
+      <label class="block"><span>notes</span><input name="notes" value="${esc(f.notes || "")}"></label>
+      <p class="row"><label><input type="checkbox" name="reviewed" ${f.reviewed ? "checked" : ""}> reviewed</label>
+        <label><input type="checkbox" name="promoted_to_phrase" ${f.promoted_to_phrase ? "checked" : ""}> promoted to phrase</label></p>
+      <p class="row"><button type="submit">Save</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
+  },
+  failedPromote: async d => {
+    const [f, intents] = await Promise.all([api("GET", `/api/v1/failed_utterances/${d.id}`), api("GET", "/api/v1/intents/")]);
+    modal(`<h3>Promote to training phrase</h3>${op("promote_to_phrase")}<p><code>${esc(f.transcript)}</code></p>
+      <form data-form="failedPromote" data-id="${f.id}">
+      <label class="block"><span>intent</span><select name="intent_name">${intents.map(i => `<option ${i.name === f.expected_intent ? "selected" : ""}>${esc(i.name)}</option>`).join("")}</select></label>
+      <label><input type="checkbox" name="create_regression" checked> also create a regression test</label>
+      <p class="hint">Known slot values in the utterance are replaced by <code>{slot}</code> placeholders.</p>
+      <p class="row"><button type="submit">Promote</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
+  },
+  failedDelete: async d => { confirmOr(`Delete failed utterance ${d.id}?`); await api("DELETE", `/api/v1/failed_utterances/${d.id}`); toast("deleted"); render(); },
+  failedFromResult: async d => {
+    const f = await api("POST", "/api/v1/failed_utterances/", { body: { transcript: d.text, recognition_log_id: d.log ? Number(d.log) : null } });
+    toast(`recorded as failed utterance ${f.id}`);
+  },
+
+  logShow: async d => {
+    const log = await api("GET", `/api/v1/logs/${d.id}`);
+    const failBtn = log.transcript ? btn("Record as failed utterance", "failedFromResult", { text: log.transcript, log: log.id }, "ghost") : "";
+    modal(`<h3>Recognition log ${log.id}</h3>${op("get_log")}${kv(log)}<p class="row">${failBtn} ${btn("Close", "closeModal")}</p>`);
+  },
+
+  configValidate: async () => {
+    const r = await api("GET", "/api/v1/backup/validate");
+    $("#validateResult").innerHTML = validationHtml(r);
+  },
+  configExport: async () => { $("#bundleText").value = JSON.stringify(await api("GET", "/api/v1/backup/export"), null, 2); toast("configuration exported"); },
+  configDownload: async () => {
+    const bundle = await api("GET", "/api/v1/backup/export");
+    download(`opal_listener_config_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.json`, JSON.stringify(bundle, null, 2));
+  },
+  bundleValidate: async () => {
+    const r = await api("POST", "/api/v1/backup/validate", { body: parseJson($("#bundleText").value, "bundle") });
+    $("#bundleResult").innerHTML = validationHtml(r);
+  },
+  bundleImport: async () => {
+    const bundle = parseJson($("#bundleText").value, "bundle");
+    confirmOr("Replace wakewords, intents, slots, profiles and settings with this bundle? (a backup is taken first)");
+    const r = await api("POST", "/api/v1/backup/import", { body: bundle });
+    $("#bundleResult").innerHTML = importHtml(r);
+    refreshHeader();
+  },
+  configImportServer: async () => {
+    confirmOr("Replace the configuration with the server's ./config/ YAML files? (a backup is taken first)");
+    const r = await api("POST", "/api/v1/backup/import");
+    $("#bundleResult").innerHTML = importHtml(r);
+    refreshHeader();
+  },
+  backupCreate: async () => { toast(`backup created: ${(await api("POST", "/api/v1/backup/create")).filename}`); render(); },
+  backupRestore: async d => {
+    confirmOr(`Restore ${d.name}? The current database is backed up first and restored automatically if this fails.`);
+    const r = await api("POST", `/api/v1/backup/restore/${enc(d.name)}`);
+    toast(`restored ${r.filename} (previous state: ${r.rollback_backup})`); render(); refreshHeader();
+  },
+  backupDelete: async d => { confirmOr(`Delete backup ${d.name}?`); await api("DELETE", `/api/v1/backup/${enc(d.name)}`); toast("backup deleted"); render(); },
+};
+
+function validationHtml(r) {
+  return `<p>${r.valid ? '<span class="badge ok">valid</span>' : '<span class="badge err">invalid</span>'} ${esc(JSON.stringify(r.sources || {}))}</p>` +
+    r.errors.map(e => `<div class="err">error: ${esc(e)}</div>`).join("") + r.warnings.map(w => `<div class="warn">warning: ${esc(w)}</div>`).join("");
+}
+function importHtml(r) {
+  return `<p><span class="badge ok">${esc(r.status)}</span> backup <code>${esc(r.backup_filename)}</code></p>${kv(r.counts)}` +
+    r.warnings.map(w => `<div class="warn">warning: ${esc(w)}</div>`).join("");
+}
+
+const FORM = {
+  setBase: v => { S.base = v.base.replace(/\/+$/, ""); localStorage.setItem("opal_api", S.base); render(); refreshHeader(); },
+
+  wwAdd: async v => { const w = await api("POST", "/api/v1/wakewords/", { body: v }); toast(`wakeword '${w.name}' added`); render(); },
+
+  intentAdd: async v => {
+    const phrases = v.phrases.split("\n").map(s => s.trim()).filter(Boolean);
+    const i = await api("POST", "/api/v1/intents/", { body: { name: v.name.trim(), description: v.description || null, enabled: v.enabled, confidence_threshold: v.confidence_threshold ?? 0.7, phrases } });
+    toast(`intent '${i.name}' added`); location.hash = `#/intents/${i.id}`;
+  },
+  intentUpdate: async (v, f) => {
+    await apiWithEtag("PATCH", `/api/v1/intents/${f.dataset.id}`, { body: { name: v.name, description: v.description, enabled: v.enabled, confidence_threshold: v.confidence_threshold } });
+    toast("intent saved"); render();
+  },
+  phraseAdd: async (v, f) => { await api("POST", `/api/v1/intents/${f.dataset.id}/phrases`, { body: { phrase: v.phrase } }); toast("phrase added"); render(); },
+  quickTest: async v => {
+    const r = await api("POST", "/api/v1/recognition/test_text", { body: { text: v.text }, query: { save_log: false } });
+    $("#quickResult").innerHTML = `<p><span class="badge ${r.matched ? "ok" : "warn"}">${esc(r.intent_name)}</span> ${cell(r.intent_confidence)} ${cell(r.slot_values)} <span class="muted">${esc(r.no_match_reason || "")}</span></p>`;
+  },
+
+  slotAdd: async v => {
+    const slot = await api("POST", "/api/v1/slots/", { body: { name: v.name.trim(), slot_type: v.slot_type, description: v.description || null } });
+    for (const line of v.values.split("\n").map(s => s.trim()).filter(Boolean)) {
+      const [value, aliases = ""] = line.split(":");
+      const created = await api("POST", `/api/v1/slots/${slot.id}/values`, { body: { value: value.trim() } });
+      for (const alias of aliases.split(",").map(s => s.trim()).filter(Boolean)) {
+        await api("POST", `/api/v1/slots/${slot.id}/values/${created.id}/aliases`, { body: { alias } });
+      }
+    }
+    toast(`slot '${slot.name}' added`); location.hash = `#/slots/${slot.id}`;
+  },
+  slotUpdate: async (v, f) => { await apiWithEtag("PATCH", `/api/v1/slots/${f.dataset.id}`, { body: v }); toast("slot saved"); render(); },
+  valueAdd: async (v, f) => {
+    const id = f.dataset.id;
+    const created = await api("POST", `/api/v1/slots/${id}/values`, { body: { value: v.value.trim() } });
+    for (const alias of v.aliases.split(",").map(s => s.trim()).filter(Boolean)) {
+      await api("POST", `/api/v1/slots/${id}/values/${created.id}/aliases`, { body: { alias } });
+    }
+    toast("value added"); render();
+  },
+  aliasAdd: async (v, f) => { await api("POST", `/api/v1/slots/${f.dataset.slot}/values/${f.dataset.value}/aliases`, { body: { alias: v.alias } }); toast("alias added"); render(); },
+
+  profileSave: async (v, f) => {
+    const thresholds = {};
+    for (const k of ["wakeword", "intent", "stt"]) if (v[`th_${k}`] !== null) thresholds[k] = v[`th_${k}`];
+    const models = {};
+    if (v.mp_vosk_model.trim()) models.vosk_model = v.mp_vosk_model.trim();
+    if (v.mp_whisper_model.trim()) models.whisper_model = v.mp_whisper_model.trim();
+    const body = {
+      name: v.name.trim(), description: v.description || null, is_active: v.is_active,
+      wakeword_names: v.wakeword_names || [], enabled_intents: v.enabled_intents || [], enabled_slots: v.enabled_slots || [],
+      confidence_thresholds: thresholds, vad_settings: parseJson(v.vad, "vad_settings"), model_paths: models,
+    };
+    const p = f.dataset.id
+      ? await apiWithEtag("PATCH", `/api/v1/profiles/${f.dataset.id}`, { body })
+      : await api("POST", "/api/v1/profiles/", { body });
+    toast(`profile '${p.name}' saved`); refreshHeader();
+    if (f.dataset.id) render(); else location.hash = `#/profiles/${p.id}`;
+  },
+
+  testText: async v => {
+    const r = await api("POST", "/api/v1/recognition/test_text", { body: { text: v.text }, query: { save_log: v.save_log } });
+    $("#testResult").innerHTML = resultCard(r);
+  },
+  testAudio: async v => {
+    if (!v.file) throw new Error("choose a WAV file");
+    const form = new FormData();
+    form.append("file", v.file);
+    $("#testResult").innerHTML = '<p class="muted">Processing audio…</p>';
+    const r = await api("POST", "/api/v1/recognition/test_audio", { form, query: { save_log: v.save_log, require_wakeword: v.require_wakeword } });
+    $("#testResult").innerHTML = resultCard(r);
+  },
+
+  failedAdd: async v => {
+    await api("POST", "/api/v1/failed_utterances/", { body: { transcript: v.transcript, expected_intent: v.expected_intent || null, notes: v.notes || null } });
+    toast("failed utterance added"); render();
+  },
+  failedUpdate: async (v, f) => {
+    await api("PATCH", `/api/v1/failed_utterances/${f.dataset.id}`, { body: { expected_intent: v.expected_intent || null, notes: v.notes || null, reviewed: v.reviewed, promoted_to_phrase: v.promoted_to_phrase } });
+    closeModal(); toast("saved"); render();
+  },
+  failedPromote: async (v, f) => {
+    const r = await api("POST", `/api/v1/failed_utterances/${f.dataset.id}/promote`, { query: { intent_name: v.intent_name, create_regression: v.create_regression } });
+    closeModal(); toast(`added phrase '${r.phrase.phrase}'` + (r.regression_test ? ` and regression test ${r.regression_test.id}` : "")); render();
+  },
+
+  regressionAdd: async v => {
+    await api("POST", "/api/v1/regression/", { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
+    toast("regression test added"); render();
+  },
+  regressionUpdate: async (v, f) => {
+    await api("PATCH", `/api/v1/regression/${f.dataset.id}`, { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
+    closeModal(); toast("regression test saved"); render();
+  },
+
+  rawRequest: async v => {
+    const out = $("#rawResult");
+    try {
+      const r = await api(v.method, v.path.trim(), v.body.trim() ? { body: parseJson(v.body, "body") } : {});
+      out.className = ""; out.textContent = r === null ? "(no content)" : typeof r === "string" ? r : JSON.stringify(r, null, 2);
+    } catch (err) { out.className = "err"; out.textContent = err.message; }
+  },
+};
+
+// ---------------------------------------------------------------------------------------------------
+// live listening (SSE)
+// ---------------------------------------------------------------------------------------------------
+async function listenStart(debug) {
+  listenClose();
+  S.startedHere = false;
+  if ($("#autoStart")?.checked) S.startedHere = (await api("POST", "/api/v1/recognition/start")).status === "started";
+  const es = new EventSource(`${S.base}/api/v1/recognition/stream?debug=${debug}`);
+  S.es = es;
+  $("#liveState").textContent = debug ? "listening (debug)" : "listening";
+  $("#liveState").className = "badge ok";
+  const log = (event, data) => {
+    const pre = $("#events");
+    if (!pre) return;
+    pre.textContent = `${new Date().toLocaleTimeString()} ${event} ${JSON.stringify(data)}\n` + pre.textContent.slice(0, 20000);
+  };
+  for (const type of STREAM_EVENTS) {
+    es.addEventListener(type, ev => {
+      let data; try { data = JSON.parse(ev.data); } catch { data = ev.data; }
+      if (type === "audio_level") {
+        const bar = $("#meterBar");
+        if (bar) { bar.style.width = `${Math.max(0, Math.min(100, (data.dbfs + 90) / 90 * 100))}%`; $("#meterText").textContent = `${data.dbfs} dBFS · ${data.state}`; }
+        return;
+      }
+      if (type === "partial") { const p = $("#partial"); if (p) p.textContent = `… ${data.text}`; return; }
+      if (type === "result") {
+        const box = $("#liveResults");
+        if (box) box.insertAdjacentHTML("afterbegin", resultCard(data));
+        const p = $("#partial"); if (p) p.textContent = "";
+      }
+      if (type === "status") refreshHeader(data);
+      log(type, data);
+    });
+  }
+  es.onerror = () => { const s = $("#liveState"); if (s) { s.textContent = "reconnecting…"; s.className = "badge warn"; } };
+}
+
+function listenClose() {
+  if (S.es) { S.es.close(); S.es = null; }
+}
+
+async function listenStop() {
+  listenClose();
+  const s = $("#liveState");
+  if (s) { s.textContent = "idle"; s.className = "badge"; }
+  if ($("#meterBar")) { $("#meterBar").style.width = "0"; $("#meterText").textContent = "– dBFS"; }
+  if (S.startedHere) { S.startedHere = false; await api("POST", "/api/v1/recognition/stop"); toast("pipeline stopped"); }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// shell: navigation, header, routing
+// ---------------------------------------------------------------------------------------------------
+function renderNav(current) {
+  $("#nav").innerHTML = NAV.map(([group, items]) => `<div class="group">${group}</div>` +
+    items.map(([key, label]) => `<a href="#/${key}" class="${key === current ? "active" : ""}">${label}</a>`).join("")).join("");
+}
+
+async function refreshHeader(status) {
+  const state = $("#hdrState"), prof = $("#hdrProfile");
+  try {
+    const s = status || await api("GET", "/api/v1/recognition/status");
+    state.textContent = s.running ? `pipeline ${s.state}` : "pipeline stopped";
+    state.className = "badge " + (s.running ? (s.last_error ? "warn" : "ok") : "");
+    prof.textContent = `profile: ${s.profile_name ?? "none"} · provider: ${s.provider}`;
+  } catch {
+    state.textContent = "offline"; state.className = "badge err"; prof.textContent = S.base;
+  }
+}
+
+async function render() {
+  S.timers.forEach(clearInterval); S.timers = [];
+  const [view, ...args] = (location.hash.replace(/^#\/?/, "") || "system").split("/");
+  if (view !== "test" && S.es) await listenStop().catch(() => {});
+  renderNav(view);
+  const main = $("#main");
+  const fn = VIEWS[view];
+  if (!fn) { main.innerHTML = `<h2>Not found</h2><p><a href="#/system">Go to System</a></p>`; return; }
+  try { main.innerHTML = await fn(args); }
+  catch (err) { main.innerHTML = `<h2>Error</h2><p class="err">${esc(err.message)}</p><p>${btn("Retry", "refresh")}</p>`; }
+}
+
+document.addEventListener("click", ev => {
+  const el = ev.target.closest("[data-act]");
+  if (!el || !ACT[el.dataset.act]) return;
+  ev.preventDefault();
+  guard(() => ACT[el.dataset.act]({ ...el.dataset }, el), el.tagName === "BUTTON" ? el : null);
+});
+document.addEventListener("submit", ev => {
+  const form = ev.target.closest("form[data-form]");
+  if (!form) return;
+  ev.preventDefault();
+  guard(() => FORM[form.dataset.form](formValues(form), form), form.querySelector("[type=submit]"));
+});
+document.addEventListener("change", ev => {
+  const filter = ev.target.dataset?.filter;
+  if (filter) {
+    const [key, field] = filter.split(".");
+    S[key][field] = field === "limit" ? Number(ev.target.value) : ev.target.value;
+    S[key].offset = 0;
+    render();
+  }
+  if (ev.target.id === "bundleFile" && ev.target.files[0]) ev.target.files[0].text().then(t => { $("#bundleText").value = t; });
+});
+window.addEventListener("hashchange", render);
+window.addEventListener("beforeunload", () => { if (S.startedHere) navigator.sendBeacon?.(`${S.base}/api/v1/recognition/stop`); });
+
+$("#baseInput").value = S.base;
+render();
+refreshHeader();
+setInterval(() => refreshHeader(), 5000);
+</script>
+</body>
+</html>

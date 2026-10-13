@@ -1,0 +1,51 @@
+version: 1
+# Phrase syntax: {slot_name} placeholder, [optional words], (alternative | choices)
+intents:
+  - name: light_turn_on
+    description: Turn on the lights in a room
+    enabled: true
+    confidence_threshold: 0.75
+    phrases:
+      - turn on [the] {room_name} (light | lights)
+      - switch on [the] {room_name} (light | lights)
+      - turn [the] {room_name} (light | lights) on
+      - (lights | light) on in [the] {room_name}
+  - name: light_turn_off
+    description: Turn off the lights in a room
+    enabled: true
+    confidence_threshold: 0.75
+    phrases:
+      - turn off [the] {room_name} (light | lights)
+      - switch off [the] {room_name} (light | lights)
+      - turn [the] {room_name} (light | lights) off
+      - (lights | light) off in [the] {room_name}
+  - name: set_temperature
+    description: Set the thermostat
+    enabled: true
+    confidence_threshold: 0.75
+    phrases:
+      - set [the] temperature to {temperature} [degrees]
+      - make it {temperature} degrees
+  - name: timer_set
+    description: Start a kitchen timer
+    enabled: true
+    confidence_threshold: 0.75
+    phrases:
+      - set [a] timer for {duration_minutes} (minute | minutes)
+      - start [a] {duration_minutes} minute timer
+  - name: get_time
+    description: Ask for the current time
+    enabled: true
+    confidence_threshold: 0.8
+    phrases:
+      - what time is it
+      - what is the time
+      - tell me the time
+  - name: cancel
+    description: Cancel the current request
+    enabled: true
+    confidence_threshold: 0.85
+    phrases:
+      - cancel
+      - never mind
+      - stop

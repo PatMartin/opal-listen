@@ -1,0 +1,51 @@
+version: 1
+# Profile thresholds are floors: effective = max(item threshold, profile threshold).
+profiles:
+  - name: default
+    description: Quiet room defaults
+    is_active: true
+    wakeword_names: []
+    confidence_thresholds: {}
+    vad_settings: {}
+    enabled_intents: []
+    enabled_slots: []
+    model_paths: {}
+  - name: noisy_room
+    description: TV or music in the background
+    is_active: false
+    wakeword_names: []
+    confidence_thresholds:
+      wakeword: 0.9
+      intent: 0.8
+    vad_settings:
+      energy_threshold_dbfs: -38.0
+      noise_margin_db: 14.0
+      silence_end_ms: 600
+    enabled_intents: []
+    enabled_slots: []
+    model_paths: {}
+  - name: car
+    description: Road noise, slower endpointing
+    is_active: false
+    wakeword_names: []
+    confidence_thresholds:
+      wakeword: 0.85
+      stt: 0.6
+    vad_settings:
+      energy_threshold_dbfs: -35.0
+      noise_margin_db: 12.0
+      silence_end_ms: 900
+      max_utterance_ms: 10000
+    enabled_intents: [set_temperature, get_time, cancel]
+    enabled_slots: [temperature]
+    model_paths: {}
+  - name: kitchen
+    description: Kitchen commands only
+    is_active: false
+    wakeword_names: [computer]
+    confidence_thresholds: {}
+    vad_settings:
+      silence_end_ms: 800
+    enabled_intents: [light_turn_on, light_turn_off, timer_set, get_time, cancel]
+    enabled_slots: [room_name, duration_minutes]
+    model_paths: {}
