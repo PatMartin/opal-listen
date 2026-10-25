@@ -14,3 +14,4 @@ var/
 .env
 node_modules/
 resources/models/
+uv.lock
