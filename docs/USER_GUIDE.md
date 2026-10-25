@@ -145,7 +145,10 @@ prefix is `OPAL_LISTENER_`.
 | `OPAL_LISTENER_MAX_UPLOAD_BYTES` | `10485760` (10 MiB) | Maximum WAV upload size |
 | `OPAL_LISTENER_SEED_ON_EMPTY` | `true` | Seed an empty database from the config dir on startup |
 | `OPAL_LISTEN_API_URL` | `http://localhost:8000` | API URL used by the **CLI** (no `ER`) |
-| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5559` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to, and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
+| `OPAL_EVENT_API_URL` | `http://127.0.0.1:8080` | opal-event REST API URL for publishing matched intent events |
+| `OPAL_EVENT_API_TOKEN` | _None_ | Optional Bearer token for authenticating to opal-event REST API |
+| `OPAL_EVENT_TRANSPORT` | `http` | Event transport: `http` (default for opal-event REST), `zmq`, or `both` |
+| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5559` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq` or `both`), and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
 | `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5560` | ZeroMQ broker's other endpoint (CLI-only today, reserved for future use) |
 
 Example `.env` file:

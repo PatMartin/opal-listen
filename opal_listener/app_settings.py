@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -26,7 +26,24 @@ class AppSettings(BaseSettings):
     seed_on_empty: bool = True
     # Shared with the CLI's --xpub/--xsub (see cli/client.py); no OPAL_LISTENER_ prefix so the
     # server and CLI agree on the same event bus without separate configuration.
-    xpub_url: str = Field(default="tcp://127.0.0.1:5559", validation_alias="OPAL_EVENT_XPUB_URL")
+    xpub_url: str = Field(
+        default="tcp://127.0.0.1:5559",
+        validation_alias=AliasChoices("xpub_url", "OPAL_EVENT_XPUB_URL", "OPAL_LISTENER_XPUB_URL"),
+    )
+    # opal-event HTTP REST endpoint and credentials
+    opal_event_url: str = Field(
+        default="http://127.0.0.1:8080",
+        validation_alias=AliasChoices("opal_event_url", "OPAL_EVENT_API_URL", "OPAL_LISTENER_OPAL_EVENT_URL"),
+    )
+    opal_event_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("opal_event_token", "OPAL_EVENT_API_TOKEN", "OPAL_LISTENER_OPAL_EVENT_TOKEN"),
+    )
+    # Event transport: "http" (default for opal-event REST), "zmq", or "both"
+    event_transport: str = Field(
+        default="http",
+        validation_alias=AliasChoices("event_transport", "OPAL_EVENT_TRANSPORT", "OPAL_LISTENER_EVENT_TRANSPORT"),
+    )
 
     @property
     def database_path(self) -> Path:

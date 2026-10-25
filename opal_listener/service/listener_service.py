@@ -29,6 +29,7 @@ from opal_listener.service.audio.pcm import iter_frames, load_wav_bytes
 from opal_listener.service.config_store import export_bundle, load_config_dir, replace_config
 from opal_listener.service.errors import InvalidRequestError, ServiceUnavailableError
 from opal_listener.service.events import EventBus
+from opal_listener.service.http_events import CompositeEventPublisher, HttpEventPublisher
 from opal_listener.service.nlu.normalizer import normalize_text, split_wakeword
 from opal_listener.service.pipeline import CommandOutcome, PipelineEvent, RecognitionPipeline
 from opal_listener.service.providers.base import ListenerProvider, ProviderError, SttRefiner
@@ -51,6 +52,18 @@ def default_source_factory(settings: dict[str, Any]) -> AudioSource:
         frame_ms=int(settings["audio_block_ms"]),
         capture_rate=int(settings["audio_capture_rate"]),
     )
+
+
+def default_event_publisher(settings: AppSettings) -> EventPublisher:
+    """Builds the event publisher according to the configured transport (http, zmq, or both)."""
+    transport = (settings.event_transport or "http").lower()
+    http_pub = HttpEventPublisher(base_url=settings.opal_event_url, token=settings.opal_event_token)
+    zmq_pub = ZmqEventPublisher(settings.xpub_url)
+    if transport == "both":
+        return CompositeEventPublisher([http_pub, zmq_pub])
+    if transport == "zmq":
+        return zmq_pub
+    return http_pub
 
 
 @dataclass
@@ -82,7 +95,7 @@ class ListenerService:
         self.db = db
         self.app_settings = app_settings
         self.bus = EventBus()
-        self.event_publisher: EventPublisher = event_publisher or ZmqEventPublisher(app_settings.xpub_url)
+        self.event_publisher: EventPublisher = event_publisher or default_event_publisher(app_settings)
         self._provider_factory = provider_factory
         self._source_factory = source_factory
         self._config_lock = threading.RLock()
@@ -377,8 +390,10 @@ class ListenerService:
                     recognition_store.prune_logs(session, int(snapshot.settings["max_recognition_logs"]))
                 session.commit()
         payload = result.model_dump(mode="json")
+
         self.bus.publish("result", payload)
         if result.matched:
+            log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
             self.event_publisher.publish(INTENT_MATCH_TOPIC, payload)
         return result
 

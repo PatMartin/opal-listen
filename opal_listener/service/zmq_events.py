@@ -58,6 +58,7 @@ class ZmqEventPublisher:
             with self._lock:
                 socket = self._ensure_socket()
                 message = json.dumps(payload, default=str).encode("utf-8")
+                log.info("sending ZeroMQ event to topic '%s' via %s: %s", topic, self._xpub_url, payload)
                 socket.send_multipart([topic.encode("utf-8"), message])
         except Exception:  # noqa: BLE001 - event delivery must never break recognition
             log.warning("failed to publish event '%s' to %s", topic, self._xpub_url, exc_info=True)
