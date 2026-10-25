@@ -162,7 +162,7 @@ def test_web_ui_parity_table_matches_api_and_cli(generated: dict[str, Any]) -> N
 
     from opal_listener.cli.main import OPERATION_COMMANDS
 
-    html = (PACKAGE_DIR / "view" / "static" / "opal-listen.html").read_text()
+    html = (PACKAGE_DIR / "view" / "static" / "opal-listen.html").read_text(encoding="utf-8")
     rows = re.findall(r'\["([a-z_]+)", "(GET|POST|PUT|PATCH|DELETE)", "([^"]+)", "([^"]+)", "(\w+)"\]', html)
     ui = {name: (method, path, cli) for name, method, path, cli, _view in rows}
     api = {}

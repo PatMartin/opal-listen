@@ -120,6 +120,10 @@ ANY_EXIT=1 t "system doctor" "GET /api/v1/health/" '"checks"' system doctor
 MODEL_OK=0; grep -qF '"name": "vosk_model", "status": "ok"' <<<"$OUT" && MODEL_OK=1
 # audio input devices visible to the server
 t "system devices" "GET /api/v1/health/audio_devices" '' system devices
+# OPAL liveness probe: always ok while the process is up
+t "system live" "GET /api/v1/health/live" '"ready": true' system live
+# OPAL readiness probe: exits 1 with the probe body when the server is not ready (e.g. no Vosk model)
+ANY_EXIT=1 t "system ready" "GET /api/v1/health/ready" "ready" system ready
 
 # --- backups (taken first so the run can be undone) --------------------------------------------------
 
@@ -134,14 +138,13 @@ BACKUP="$(json_get 'd["filename"]')"
 
 # all settings as key/value pairs
 t "settings list" "GET /api/v1/settings/" '"cooldown_ms"' settings list
-# one setting
-t "settings get" "GET /api/v1/settings/{key}" '"key": "cooldown_ms"' settings get cooldown_ms
-# change a setting
-t "settings set" "PUT /api/v1/settings/{key}" '"value": "1234"' settings set cooldown_ms 1234
-# invalid values are rejected
-tf "settings set rejects bad value" "PUT /api/v1/settings/{key}" 'cooldown_ms' settings set cooldown_ms soon
-# reset to the default
-t "settings reset" "DELETE /api/v1/settings/{key}" '"status": "ok"' settings reset cooldown_ms
+# change a setting (the CLI fetches the If-Match ETag automatically)
+t "settings set" "PATCH /api/v1/settings/" '"cooldown_ms": "1234"' settings set cooldown_ms 1234
+# invalid values and unknown keys are rejected
+tf "settings set rejects bad value" "PATCH /api/v1/settings/" 'cooldown_ms' settings set cooldown_ms soon
+tf "settings set rejects unknown key" "PATCH /api/v1/settings/" 'not_a_setting' settings set not_a_setting 1
+# back to the default
+t "settings restore" "PATCH /api/v1/settings/" '"cooldown_ms": "1500"' settings set cooldown_ms 1500
 
 # --- wakewords ------------------------------------------------------------------------------------
 

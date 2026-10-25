@@ -30,9 +30,10 @@ COVERAGE
     step FAIL the coverage check; operations whose steps were all skipped are reported as skipped.
 
 WHAT IS VERIFIED (per group)
-    system      ping (/healthz), info (/), doctor (/health/), devices (/health/audio_devices)
+    system      ping (/healthz), info (/), doctor (/health/), devices (/health/audio_devices),
+                live (/health/live), ready (/health/ready)
     backups     list + create a safety backup before anything is changed
-    settings    list, get, set (valid + rejected invalid value), reset to default
+    settings    list, set via PATCH (valid value, rejected invalid value and unknown key, restored)
     wakewords   add, list, get, update (threshold/disabled)
     slots       add with value, add-value with alias, add-alias, list, get, values, aliases, update
     intents     add with phrase, list, get, add-phrase (+ invalid phrase rejected), phrases, update,
@@ -329,6 +330,28 @@ def _devices(t: CliRestTest) -> str:
     return f"{len(devices)} input device(s)"
 
 
+@step("system live", "get_listen_health_live")
+def _live(t: CliRestTest) -> str:
+    probe = t.ok("system", "live")
+    expect(probe.get("status") == "ok" and probe.get("ready") is True, f"unexpected probe {probe}")
+    return f"status {probe['status']}"
+
+
+@step("system ready", "get_listen_health_ready")
+def _ready(t: CliRestTest) -> str:
+    call = t.run("system", "ready")
+    if call.exit_code == 0:
+        probe = parse_json(call)
+        expect(
+            isinstance(probe, dict) and probe.get("ready") is True and probe.get("status") in ("ok", "degraded"),
+            f"unexpected probe {probe}",
+        )
+        return f"status {probe['status']}"
+    # a server that is not ready answers HTTP 503 with the probe as the error body
+    expect("503" in call.flat and "ready" in call.flat, f"expected exit 0 or an HTTP 503 probe: {_tail(call.flat)}")
+    return "not ready (HTTP 503, probe body returned)"
+
+
 @step("config backups (before)", "list_backups")
 def _backups_before(t: CliRestTest) -> str:
     backups = t.ok("config", "backups")
@@ -347,29 +370,18 @@ def _safety_backup(t: CliRestTest) -> str:
 def _settings_list(t: CliRestTest) -> str:
     settings = t.ok("settings", "list")
     expect("cooldown_ms" in settings, "cooldown_ms missing from settings")
-    return f"{len(settings)} settings"
+    return f"{len(settings)} settings (cooldown_ms={settings['cooldown_ms']})"
 
 
-@step("settings get", "get_setting")
-def _settings_get(t: CliRestTest) -> str:
-    setting = t.ok("settings", "get", "cooldown_ms")
-    expect(setting["key"] == "cooldown_ms", f"unexpected setting {setting}")
-    return f"cooldown_ms = {setting['value']}"
-
-
-@step("settings set", "upsert_setting")
+@step("settings set", "patch_listen_settings")
 def _settings_set(t: CliRestTest) -> str:
-    expect(t.ok("settings", "set", "cooldown_ms", "1234")["value"] == "1234", "value not stored")
+    updated = t.ok("settings", "set", "cooldown_ms", "1234")
+    expect(updated["cooldown_ms"] == "1234", f"cooldown_ms not stored: {updated}")
     t.rejected("settings", "set", "cooldown_ms", "soon", contains="cooldown_ms")
-    return "valid value stored, invalid value rejected"
-
-
-@step("settings reset", "delete_setting", requires=("settings set",))
-def _settings_reset(t: CliRestTest) -> str:
-    t.ok("settings", "reset", "cooldown_ms")
-    value = t.ok("settings", "get", "cooldown_ms")["value"]
-    expect(value != "1234", "value was not reset")
-    return f"cooldown_ms reset to {value}"
+    t.rejected("settings", "set", "not_a_setting", "1", contains="not_a_setting")
+    restored = t.ok("settings", "set", "cooldown_ms", "1500")
+    expect(restored["cooldown_ms"] == "1500", f"cooldown_ms not restored: {restored}")
+    return "patched 1234, invalid value + unknown key rejected, restored 1500"
 
 
 @step("wakewords add", "create_wakeword")
@@ -833,7 +845,7 @@ def _config_export(t: CliRestTest) -> str:
     return f"6 YAML files in {out_dir}"
 
 
-@step("config validate --from-dir", "validate_config_bundle", requires=("config export",))
+@step("config validate --from-dir", "validate_listen_backup_payload", requires=("config export",))
 def _config_validate_dir(t: CliRestTest) -> str:
     report = t.ok("config", "validate", "--from-dir", str(t.state["export_dir"]))
     expect(report["valid"] is True, f"exported configuration does not validate: {report['errors']}")
