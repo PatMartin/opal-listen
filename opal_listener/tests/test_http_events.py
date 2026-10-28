@@ -11,12 +11,8 @@ from typing import Any
 import httpx
 
 from opal_listener.app_settings import AppSettings
-from opal_listener.service.http_events import (
-    DEFAULT_SOURCE,
-    SCHEMA_VERSION,
-    CompositeEventPublisher,
-    HttpEventPublisher,
-)
+from opal_listener.service.event_envelope import DEFAULT_SOURCE, SCHEMA_VERSION
+from opal_listener.service.http_events import CompositeEventPublisher, HttpEventPublisher
 from opal_listener.service.listener_service import default_event_publisher
 from opal_listener.service.opal_context import (
     REQUEST_HEADER,

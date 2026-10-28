@@ -27,7 +27,7 @@ class AppSettings(BaseSettings):
     # Shared with the CLI's --xpub/--xsub (see cli/client.py); no OPAL_LISTENER_ prefix so the
     # server and CLI agree on the same event bus without separate configuration.
     xpub_url: str = Field(
-        default="tcp://127.0.0.1:5559",
+        default="tcp://127.0.0.1:5555",
         validation_alias=AliasChoices("xpub_url", "OPAL_EVENT_XPUB_URL", "OPAL_LISTENER_XPUB_URL"),
     )
     # opal-event HTTP REST endpoint and credentials

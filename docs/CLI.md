@@ -103,8 +103,8 @@ opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout SECOND
 | Option | Default | Meaning |
 |---|---|---|
 | `--api-url URL` | `$OPAL_LISTEN_API_URL`, otherwise `http://localhost:8000` | Base URL of the REST API |
-| `--xpub URL` | `$OPAL_EVENT_XPUB_URL`, otherwise `tcp://127.0.0.1:5559` | ZeroMQ event bus publisher target (used by `event publish`; see [18. `event`](#18-event--publish-zeromq-events)) |
-| `--xsub URL` | `$OPAL_EVENT_XSUB_URL`, otherwise `tcp://127.0.0.1:5560` | ZeroMQ event bus subscriber target (reserved for future `event subscribe`-style commands) |
+| `--xpub URL` | `$OPAL_EVENT_XPUB_URL`, otherwise `tcp://127.0.0.1:5555` | ZeroMQ event bus publisher target (used by `event publish`; see [18. `event`](#18-event--publish-zeromq-events)) |
+| `--xsub URL` | `$OPAL_EVENT_XSUB_URL`, otherwise `tcp://127.0.0.1:5556` | ZeroMQ event bus subscriber target (reserved for future `event subscribe`-style commands) |
 | `--json` | off | Print raw API JSON instead of tables and messages |
 | `--timeout SECONDS` | `60` | HTTP timeout for each request |
 
@@ -1279,13 +1279,13 @@ future subscriber-side tooling.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--xpub URL` | `$OPAL_EVENT_XPUB_URL`, otherwise `tcp://127.0.0.1:5559` | ZeroMQ event bus target that `publish` connects to |
-| `--xsub URL` | `$OPAL_EVENT_XSUB_URL`, otherwise `tcp://127.0.0.1:5560` | The event bus's other endpoint; not used by `publish`, accepted here for symmetry with future event-bus tooling |
+| `--xpub URL` | `$OPAL_EVENT_XPUB_URL`, otherwise `tcp://127.0.0.1:5555` | ZeroMQ event bus target that `publish` connects to |
+| `--xsub URL` | `$OPAL_EVENT_XSUB_URL`, otherwise `tcp://127.0.0.1:5556` | The event bus's other endpoint; not used by `publish`, accepted here for symmetry with future event-bus tooling |
 
 Like `--api-url`, both are **global options** that belong right after `listen`:
 
 ```bash
-opal listen --xpub tcp://pi5.local:5559 event publish wakeword "computer"
+opal listen --xpub tcp://pi5.local:5555 event publish wakeword "computer"
 ```
 
 ```bash
@@ -1293,7 +1293,7 @@ opal listen event publish wakeword "computer detected"
 opal listen event publish recognition.result '{"intent_name": "light_turn_on", "matched": true}'
 
 # Point at a remote broker for the rest of the shell session
-export OPAL_EVENT_XPUB_URL=tcp://pi5.local:5559
+export OPAL_EVENT_XPUB_URL=tcp://pi5.local:5555
 opal listen event publish wakeword "computer"
 ```
 

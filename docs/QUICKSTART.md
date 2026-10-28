@@ -32,8 +32,8 @@ Settings come from environment variables (or a `.env` file in the working direct
 | `OPAL_LISTENER_PORT` | `8000` | API port |
 | `OPAL_LISTENER_CORS_ORIGINS` | `["*"]` | Browser origins allowed to call the API (JSON list) |
 | `OPAL_LISTEN_API_URL` | `http://localhost:8000` | API URL used by the CLI |
-| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5559` | ZeroMQ event bus target: the server publishes `opal.listen.intent.match` here on every matched recognition, and `opal listen event publish` connects here too |
-| `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5560` | ZeroMQ event bus subscriber endpoint (CLI-only, reserved for future use) |
+| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5555` | ZeroMQ event bus target: the server publishes `opal.listen.intent.match` here on every matched recognition, and `opal listen event publish` connects here too |
+| `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5556` | ZeroMQ event bus subscriber endpoint (CLI-only, reserved for future use) |
 
 ```bash
 export OPAL_LISTENER_VOSK_MODEL_PATH=/path/to/vosk-model-small-en-us-0.15

@@ -96,7 +96,7 @@ the CLI talk to an external ZeroMQ XPUB/XSUB broker (`opal_listener` does not bi
 itself — point `--xpub`/`OPAL_EVENT_XPUB_URL` at one).
 
 - **Server → bus.** `ListenerService` holds a `ZmqEventPublisher` (`service/zmq_events.py`), connected to
-  `app_settings.xpub_url` (default `tcp://127.0.0.1:5559`, env `OPAL_EVENT_XPUB_URL`, no `OPAL_LISTENER_`
+  `app_settings.xpub_url` (default `tcp://127.0.0.1:5555`, env `OPAL_EVENT_XPUB_URL`, no `OPAL_LISTENER_`
   prefix so it matches the CLI/broker's own naming). `ListenerService.startup()` connects it eagerly —
   not lazily on first publish — so the handshake has the whole startup window to settle before the first
   real event, sidestepping the ZeroMQ "slow joiner" problem without an artificial sleep. Every time
@@ -108,7 +108,7 @@ itself — point `--xpub`/`OPAL_EVENT_XPUB_URL` at one).
   to `--xpub`, and sends a `[TOPIC, MESSAGE]` frame pair; unlike the server it sleeps briefly after
   connecting (0.2 s) since there's no equivalent "connect early" opportunity for a one-shot command.
 
-`--xsub`/`OPAL_EVENT_XSUB_URL` (default `tcp://127.0.0.1:5560`) names the broker's other endpoint; neither
+`--xsub`/`OPAL_EVENT_XSUB_URL` (default `tcp://127.0.0.1:5556`) names the broker's other endpoint; neither
 the server nor `event publish` uses it today — it's accepted for symmetry with future subscriber-side
 tooling.
 
@@ -241,7 +241,7 @@ GUI ⇔ REST ⇔ CLI stay 1:1; a Playwright test walks the same flows as `test_c
 
 `opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout S] <group> <command>`;
 `OPAL_LISTEN_API_URL` sets the default API URL, `OPAL_EVENT_XPUB_URL`/`OPAL_EVENT_XSUB_URL` set the
-default ZeroMQ event bus endpoints (`tcp://127.0.0.1:5559`/`5560`). Names or ids are accepted wherever a
+default ZeroMQ event bus endpoints (`tcp://127.0.0.1:5555`/`5556`). Names or ids are accepted wherever a
 resource is referenced. Human output uses rich tables; `--json` prints raw API responses. Non-zero exit
 codes on API errors, failed regression runs, invalid config, doctor errors and `--expect-intent`
 mismatches (CI friendly).

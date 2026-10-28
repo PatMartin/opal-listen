@@ -148,8 +148,8 @@ prefix is `OPAL_LISTENER_`.
 | `OPAL_EVENT_API_URL` | `http://127.0.0.1:8080` | opal-event REST API URL for publishing matched intent events |
 | `OPAL_EVENT_API_TOKEN` | _None_ | Optional Bearer token for authenticating to opal-event REST API |
 | `OPAL_EVENT_TRANSPORT` | `http` | Event transport: `http` (default for opal-event REST), `zmq`, or `both` |
-| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5559` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq` or `both`), and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
-| `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5560` | ZeroMQ broker's other endpoint (CLI-only today, reserved for future use) |
+| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5555` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq` or `both`), and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
+| `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5556` | ZeroMQ broker's other endpoint (CLI-only today, reserved for future use) |
 
 Example `.env` file:
 
@@ -1880,7 +1880,7 @@ also published there, independently of SSE:
 - **Topic:** `opal.listen.intent.match`
 - **Message:** the full `RecognitionResult` as JSON (same shape as the SSE `result` event / `test_text`
   response), published only when `matched` is `true` (no event for `no_match`)
-- **Endpoint:** `--xpub`/`OPAL_EVENT_XPUB_URL` (default `tcp://127.0.0.1:5559`); the server connects a
+- **Endpoint:** `--xpub`/`OPAL_EVENT_XPUB_URL` (default `tcp://127.0.0.1:5555`); the server connects a
   ZeroMQ `PUB` socket there at startup and your subscriber should connect a `SUB` to the same external
   XPUB/XSUB broker's XPUB side
 
@@ -1890,7 +1890,7 @@ import zmq
 
 ctx = zmq.Context()
 sub = ctx.socket(zmq.SUB)
-sub.connect("tcp://127.0.0.1:5559")  # the broker's XPUB endpoint
+sub.connect("tcp://127.0.0.1:5556")  # the broker's XPUB endpoint
 sub.setsockopt_string(zmq.SUBSCRIBE, "opal.listen.intent.match")
 
 topic, message = sub.recv_multipart()
@@ -1915,8 +1915,8 @@ opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout SECOND
 | Option | Default | Meaning |
 |---|---|---|
 | `--api-url` | `$OPAL_LISTEN_API_URL` or `http://localhost:8000` | Server to talk to |
-| `--xpub` | `$OPAL_EVENT_XPUB_URL` or `tcp://127.0.0.1:5559` | ZeroMQ event bus target for `event publish` |
-| `--xsub` | `$OPAL_EVENT_XSUB_URL` or `tcp://127.0.0.1:5560` | ZeroMQ event bus subscriber endpoint (reserved) |
+| `--xpub` | `$OPAL_EVENT_XPUB_URL` or `tcp://127.0.0.1:5555` | ZeroMQ event bus target for `event publish` |
+| `--xsub` | `$OPAL_EVENT_XSUB_URL` or `tcp://127.0.0.1:5556` | ZeroMQ event bus subscriber endpoint (reserved) |
 | `--json` | off | Print raw API JSON instead of tables. Must come **before** the group. |
 | `--timeout` | `60` | HTTP timeout in seconds |
 
@@ -2281,11 +2281,11 @@ opal listen event publish wakeword "computer detected"
 opal listen event publish recognition.result '{"intent_name": "light_turn_on", "matched": true}'
 
 # Point at a remote broker
-opal listen --xpub tcp://pi5.local:5559 event publish wakeword "computer"
-export OPAL_EVENT_XPUB_URL=tcp://pi5.local:5559   # or set it once for the session
+opal listen --xpub tcp://pi5.local:5555 event publish wakeword "computer"
+export OPAL_EVENT_XPUB_URL=tcp://pi5.local:5555   # or set it once for the session
 ```
 
-`--xpub`/`--xsub` default to `tcp://127.0.0.1:5559`/`tcp://127.0.0.1:5560` and can also be set via
+`--xpub`/`--xsub` default to `tcp://127.0.0.1:5555`/`tcp://127.0.0.1:5556` and can also be set via
 `OPAL_EVENT_XPUB_URL`/`OPAL_EVENT_XSUB_URL`. `PUB` sockets are fire-and-forget: there is no delivery
 confirmation, so `publish` reports success once the message is handed to the socket.
 

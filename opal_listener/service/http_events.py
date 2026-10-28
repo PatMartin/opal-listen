@@ -10,17 +10,15 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
+from opal_listener.service.event_envelope import build_event_envelope
 from opal_listener.service.opal_context import (
     REQUEST_HEADER,
     SESSION_HEADER,
     TRANSACTION_HEADER,
-    new_opaque_id,
 )
 from opal_listener.service.zmq_events import EventPublisher
 
@@ -28,12 +26,6 @@ log = logging.getLogger(__name__)
 
 DEFAULT_QUEUE_CAPACITY = 1000
 DEFAULT_HTTP_TIMEOUT = 5.0
-DEFAULT_SOURCE = "opal-listen"
-SCHEMA_VERSION = "2.0"
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 class HttpEventPublisher:
@@ -150,41 +142,15 @@ class HttpEventPublisher:
         log.warning(message)
 
     def _send_event(self, client: httpx.Client, topic: str, payload: dict[str, Any]) -> None:
-
-        session_id = payload.get("session_id")
-        transaction_id = new_opaque_id()
-        request_id = new_opaque_id()
-
-        # Build OPAL v1.3 EventContext metadata
-        metadata: dict[str, Any] = {
-            "schema_version": SCHEMA_VERSION,
-            "session_id": session_id,
-            "transaction_id": transaction_id,
-            "request_id": request_id,
-            "causation_id": None,
-            "depth": 0,
-        }
-
-        # Combine EventContext metadata and recognition result payload into data object
-        data_payload = {
-            "metadata": metadata,
-            **payload,
-        }
-
-        event_input = {
-            "id": str(uuid.uuid4()),
-            "topic": topic,
-            "source": DEFAULT_SOURCE,
-            "timestamp": _now_iso(),
-            "data": data_payload,
-        }
-
+        event_input = build_event_envelope(topic, payload)
+        # The HTTP transport also mirrors the envelope's OPAL correlation ids as request headers.
+        metadata = event_input["data"]["metadata"]
         headers: dict[str, str] = {
-            TRANSACTION_HEADER: transaction_id,
-            REQUEST_HEADER: request_id,
+            TRANSACTION_HEADER: metadata["transaction_id"],
+            REQUEST_HEADER: metadata["request_id"],
         }
-        if session_id:
-            headers[SESSION_HEADER] = str(session_id)
+        if metadata["session_id"]:
+            headers[SESSION_HEADER] = str(metadata["session_id"])
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
 

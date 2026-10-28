@@ -277,12 +277,48 @@ def test_event_publish_command(cli: CliHarness) -> None:
         assert sub.poll(3000), "no message received through the XPUB/XSUB broker"
         topic, message = sub.recv_multipart()
         assert topic == b"wakeword"
-        assert message == b"hello world"
+        envelope = json.loads(message)
+        assert envelope["topic"] == "wakeword" and envelope["source"] == "opal-listen"
+        assert envelope["data"]["message"] == "hello world"
     finally:
         sub.close()
         xpub.close()
         xsub.close()
         ctx.term()
+
+
+def test_event_publish_wraps_plain_text(cli: CliHarness) -> None:
+    from opal_listener.cli.event_cmds import event_envelope_for
+
+    envelope = event_envelope_for("opal.listen.note", "hello world")
+    assert envelope["topic"] == "opal.listen.note"
+    assert envelope["id"] and envelope["source"] == "opal-listen" and envelope["timestamp"].endswith("Z")
+    assert envelope["data"]["message"] == "hello world"
+
+
+def test_event_publish_handles_json_payloads(cli: CliHarness) -> None:
+    from opal_listener.cli.event_cmds import event_envelope_for
+
+    # a JSON object becomes the event data
+    envelope = event_envelope_for("opal.listen.note", '{"room": "kitchen"}')
+    assert envelope["data"]["room"] == "kitchen"
+    assert envelope["data"]["metadata"]["schema_version"] == "2.0"
+    # a complete envelope passes through with defaults filled for missing optional fields
+    envelope = event_envelope_for("opal.listen.note", '{"topic": "opal.listen.note", "data": {"x": 1}}')
+    assert envelope["data"] == {"x": 1}
+    assert envelope["id"] and envelope["source"] == "opal-listen" and envelope["timestamp"].endswith("Z")
+
+
+def test_event_publish_rejects_envelope_topic_mismatch(cli: CliHarness) -> None:
+    result = cli("event", "publish", "a.b", '{"topic": "x.y", "data": {}}')
+    assert result.exit_code == 1
+    assert "does not match" in result.output
+
+
+def test_event_publish_rejects_invalid_topic(cli: CliHarness) -> None:
+    result = cli("event", "publish", "Not A Topic", "hello")
+    assert result.exit_code == 1
+    assert "invalid topic" in result.output
 
 
 def test_unreachable_api_gives_friendly_error(monkeypatch: pytest.MonkeyPatch) -> None:
