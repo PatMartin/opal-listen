@@ -1,0 +1,4244 @@
+openapi: 3.1.0
+info:
+  title: Voice Intent API
+  description: "Wakeword, STT, intent recognition, and slot extraction engine\n\n\
+    OPAL SUITE STANDARD v1.3 (normative)\nX-Opal-Session-Id is an optional logical\
+    \ context identifier; it does not create a server-managed session or grant authorization.\
+    \ Entry-point services generate one when absent where a workflow requires it,\
+    \ and propagate it unchanged. A preexisting service-local session resource has\
+    \ a separate lifecycle. X-Opal-Transaction-Id is a single logical end-to-end operation\
+    \ and is not an atomic distributed transaction. X-Opal-Request-Id identifies one\
+    \ inbound HTTP exchange and is regenerated for each downstream HTTP hop (the incoming\
+    \ one can be used for diagnostics); X-Opal-Causation-Id names the immediate parent\
+    \ event/request, where applicable. For inbound requests, if a transaction ID is\
+    \ absent the service assigns one; all response types (including errors, streamed\
+    \ headers, and binary bodies) return session ID if known and transaction/request\
+    \ IDs. Never trust these values for access control. Propagate them into derived\
+    \ ZeroMQ envelope metadata. All identifiers are opaque 1..128-character printable\
+    \ ASCII tokens with no control/whitespace characters; client-supplied invalid\
+    \ values yield 422.\nStandard health routes: /api/v1/health/, /api/v1/health/live,\
+    \ /api/v1/health/ready. Settings: GET and PATCH /api/v1/settings/ exclusively;\
+    \ PATCH is atomic. Mutable configuration uses strong ETags and mandatory If-Match\
+    \ with 428 missing, 412 stale. For bounded configuration catalogs return full\
+    \ arrays (subject to explicit deployment caps); for growing histories use cursor\
+    \ pagination with stable deterministic ordering, opaque next_cursor and has_more.\
+    \ Cursors are scoped to the exact filter set and invalidate on mismatch (422);\
+    \ cursor values expire explicitly. Standard HTTP creation 201 Location, async\
+    \ admission 202, empty deletion 204. Streaming keeps media-specific transports\
+    \ but exposes correlation headers, defined failure behavior, and no unsupported\
+    \ replay guarantee. Configuration export/import/validation excludes secrets and\
+    \ history.\n\n\n    OPAL LISTEN 1.3.0 (normative additions)\n\n    Versioning:\
+    \ this document's info.version (1.3.0) is the REST contract version, independent\
+    \ of the\n    Python package version and of the event-envelope metadata schema_version\
+    \ (currently '2.0' \u2014 the\n    envelope emitted on opal.listen.intent.match).\n\
+    \n    Event publication: external intent-match events are published only when\
+    \ setting\n    event_publication_enabled is true (default false, live-toggleable\
+    \ via PATCH /api/v1/settings/).\n    Recognition results from the diagnostic sources\
+    \ (\"text\" via POST /api/v1/recognition/test_text and\n    \"audio\" via POST\
+    \ /api/v1/recognition/test_audio) are always evaluated, logged and streamed locally\n\
+    \    but never published externally; only live microphone (\"mic\") matches are\
+    \ actionable. Duplicate live\n    matches inside dedup_window_ms are flagged deduplicated\
+    \ and not republished. event_transport selects\n    'http' or 'zmq'; 'both' is\
+    \ rejected (no cross-transport deduplication in OPAL Event).\n\n    Refinement:\
+    \ optional second-pass STT refinement (stt_refiner) runs asynchronously on a bounded\n\
+    \    worker queue and never blocks capture. On refiner error, refiner_timeout_ms\
+    \ timeout or a full\n    queue the draft transcript is used and the result carries\
+    \ refinement_error.\n\n    Metrics: GET /api/v1/recognition/status returns a metrics\
+    \ object (reset per run) with\n    mic_overflows, dropped_audio_blocks, audio_queue_depth,\
+    \ audio_queue_utilization, refine_queue_depth,\n    refinement_completed, refinement_failed,\
+    \ recoveries and the last finalized result's\n    stt/refine/intent/publish latencies\
+    \ (ms).\n\n    Intentional breaking changes since 1.2.0: event_transport='both'\
+    \ is now a configuration error;\n    external intent-match publication is disabled\
+    \ by default (event_publication_enabled); a pending\n    wakeword candidate no\
+    \ longer produces a command outcome without confirmation.\n    "
+  version: 1.3.0
+paths:
+  /api/v1/wakewords/:
+    get:
+      tags:
+      - wakewords
+      summary: List Wakewords
+      operationId: list_wakewords_api_v1_wakewords__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/WakewordRead'
+                type: array
+                title: Response List Wakewords Api V1 Wakewords  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    post:
+      tags:
+      - wakewords
+      summary: Create Wakeword
+      operationId: create_wakeword_api_v1_wakewords__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WakewordCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WakewordRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/wakewords/{wakeword_id}:
+    get:
+      tags:
+      - wakewords
+      summary: Get Wakeword
+      operationId: get_wakeword_api_v1_wakewords__wakeword_id__get
+      parameters:
+      - name: wakeword_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Wakeword Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WakewordRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - wakewords
+      summary: Update Wakeword
+      operationId: update_wakeword_api_v1_wakewords__wakeword_id__patch
+      parameters:
+      - name: wakeword_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Wakeword Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WakewordUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WakewordRead'
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - wakewords
+      summary: Delete Wakeword
+      operationId: delete_wakeword_api_v1_wakewords__wakeword_id__delete
+      parameters:
+      - name: wakeword_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Wakeword Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/intents/:
+    get:
+      tags:
+      - intents
+      summary: List Intents
+      operationId: list_intents_api_v1_intents__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/IntentReadWithPhrases'
+                type: array
+                title: Response List Intents Api V1 Intents  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    post:
+      tags:
+      - intents
+      summary: Create Intent
+      operationId: create_intent_api_v1_intents__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentReadWithPhrases'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/intents/{intent_id}:
+    get:
+      tags:
+      - intents
+      summary: Get Intent
+      operationId: get_intent_api_v1_intents__intent_id__get
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Intent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentReadWithPhrases'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - intents
+      summary: Update Intent
+      operationId: update_intent_api_v1_intents__intent_id__patch
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Intent Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentRead'
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - intents
+      summary: Delete Intent
+      operationId: delete_intent_api_v1_intents__intent_id__delete
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Intent Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/intents/{intent_id}/phrases:
+    get:
+      tags:
+      - intents
+      summary: List Phrases
+      operationId: list_phrases_api_v1_intents__intent_id__phrases_get
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Intent Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IntentPhraseRead'
+                title: Response List Phrases Api V1 Intents  Intent Id  Phrases Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - intents
+      summary: Add Phrase
+      operationId: add_phrase_api_v1_intents__intent_id__phrases_post
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Intent Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentPhraseCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentPhraseRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/intents/{intent_id}/phrases/{phrase_id}:
+    delete:
+      tags:
+      - intents
+      summary: Delete Phrase
+      operationId: delete_phrase_api_v1_intents__intent_id__phrases__phrase_id__delete
+      parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Intent Id
+      - name: phrase_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Phrase Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/slots/:
+    get:
+      tags:
+      - slots
+      summary: List Slots
+      operationId: list_slots_api_v1_slots__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/SlotReadWithValues'
+                type: array
+                title: Response List Slots Api V1 Slots  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    post:
+      tags:
+      - slots
+      summary: Create Slot
+      operationId: create_slot_api_v1_slots__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlotCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/slots/{slot_id}:
+    get:
+      tags:
+      - slots
+      summary: Get Slot
+      operationId: get_slot_api_v1_slots__slot_id__get
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotReadWithValues'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - slots
+      summary: Update Slot
+      operationId: update_slot_api_v1_slots__slot_id__patch
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlotUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotRead'
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - slots
+      summary: Delete Slot
+      operationId: delete_slot_api_v1_slots__slot_id__delete
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/slots/{slot_id}/values:
+    get:
+      tags:
+      - slots
+      summary: List Slot Values
+      operationId: list_slot_values_api_v1_slots__slot_id__values_get
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SlotValueReadWithAliases'
+                title: Response List Slot Values Api V1 Slots  Slot Id  Values Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - slots
+      summary: Add Slot Value
+      operationId: add_slot_value_api_v1_slots__slot_id__values_post
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlotValueCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotValueRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/slots/{slot_id}/values/{value_id}:
+    delete:
+      tags:
+      - slots
+      summary: Delete Slot Value
+      operationId: delete_slot_value_api_v1_slots__slot_id__values__value_id__delete
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      - name: value_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Value Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/slots/{slot_id}/values/{value_id}/aliases:
+    get:
+      tags:
+      - slots
+      summary: List Aliases
+      operationId: list_aliases_api_v1_slots__slot_id__values__value_id__aliases_get
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      - name: value_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Value Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SlotAliasRead'
+                title: Response List Aliases Api V1 Slots  Slot Id  Values  Value
+                  Id  Aliases Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - slots
+      summary: Add Alias
+      operationId: add_alias_api_v1_slots__slot_id__values__value_id__aliases_post
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      - name: value_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Value Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SlotAliasCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotAliasRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}:
+    delete:
+      tags:
+      - slots
+      summary: Delete Alias
+      operationId: delete_alias_api_v1_slots__slot_id__values__value_id__aliases__alias_id__delete
+      parameters:
+      - name: slot_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Slot Id
+      - name: value_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Value Id
+      - name: alias_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Alias Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/profiles/:
+    get:
+      tags:
+      - profiles
+      summary: List Profiles
+      operationId: list_profiles_api_v1_profiles__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ProfileRead'
+                type: array
+                title: Response List Profiles Api V1 Profiles  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    post:
+      tags:
+      - profiles
+      summary: Create Profile
+      operationId: create_profile_api_v1_profiles__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/profiles/{profile_id}:
+    get:
+      tags:
+      - profiles
+      summary: Get Profile
+      operationId: get_profile_api_v1_profiles__profile_id__get
+      parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Profile Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - profiles
+      summary: Update Profile
+      operationId: update_profile_api_v1_profiles__profile_id__patch
+      parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Profile Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileRead'
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - profiles
+      summary: Delete Profile
+      operationId: delete_profile_api_v1_profiles__profile_id__delete
+      parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Profile Id
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/profiles/{profile_id}/activate:
+    post:
+      tags:
+      - profiles
+      summary: Activate Profile
+      description: Set this profile as active, deactivating all others.
+      operationId: activate_profile_api_v1_profiles__profile_id__activate_post
+      parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Profile Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/settings/:
+    get:
+      tags:
+      - settings
+      summary: Get All Settings
+      operationId: get_all_settings_api_v1_settings__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Get All Settings Api V1 Settings  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    patch:
+      tags:
+      - settings
+      summary: Patch Listen Settings
+      description: Atomically patch one or more settings. Requires a strong If-Match
+        (missing 428, stale 412).
+      operationId: patch_listen_settings
+      parameters:
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: If-Match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Changes
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Patch Listen Settings
+        '412':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '428':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/recognition/test_text:
+    post:
+      tags:
+      - recognition
+      summary: Test Text
+      operationId: test_text_api_v1_recognition_test_text_post
+      parameters:
+      - name: save_log
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Store the result in recognition logs
+          default: true
+          title: Save Log
+        description: Store the result in recognition logs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TextTestRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecognitionResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/recognition/test_audio:
+    post:
+      tags:
+      - recognition
+      summary: Test Audio
+      description: Test a .wav file through the full STT + intent pipeline.
+      operationId: test_audio_api_v1_recognition_test_audio_post
+      parameters:
+      - name: save_log
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Store the result in recognition logs
+          default: true
+          title: Save Log
+        description: Store the result in recognition logs
+      - name: require_wakeword
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Return no_match if no wakeword is detected
+          default: false
+          title: Require Wakeword
+        description: Return no_match if no wakeword is detected
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_test_audio_api_v1_recognition_test_audio_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecognitionResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/recognition/start:
+    post:
+      tags:
+      - recognition
+      summary: Start Pipeline
+      operationId: start_pipeline_api_v1_recognition_start_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Start Pipeline Api V1 Recognition Start Post
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/recognition/stop:
+    post:
+      tags:
+      - recognition
+      summary: Stop Pipeline
+      operationId: stop_pipeline_api_v1_recognition_stop_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Stop Pipeline Api V1 Recognition Stop Post
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/recognition/status:
+    get:
+      tags:
+      - recognition
+      summary: Get Status
+      operationId: get_status_api_v1_recognition_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineStatus'
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/recognition/stream:
+    get:
+      tags:
+      - recognition
+      summary: Stream Results
+      description: Server-Sent Events stream for live recognition results.
+      operationId: stream_results_api_v1_recognition_stream_get
+      parameters:
+      - name: debug
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Include audio levels and partial transcripts
+          default: false
+          title: Debug
+        description: Include audio levels and partial transcripts
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/logs/:
+    get:
+      tags:
+      - logs
+      summary: List Logs
+      description: Use cursor pagination, stable descending time-plus-ID ordering;
+        filters are bound into the cursor.
+      operationId: list_logs_api_v1_logs__get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: Maximum items per page.
+          default: 100
+          title: Limit
+        description: Maximum items per page.
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          description: Opaque continuation token returned from the preceding page.
+          title: Cursor
+        description: Opaque continuation token returned from the preceding page.
+      - name: intent_name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Intent Name
+      - name: matched
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Matched
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Logs Api V1 Logs  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/logs/count:
+    get:
+      tags:
+      - logs
+      summary: Count Logs
+      operationId: count_logs_api_v1_logs_count_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: Maximum items per page.
+          default: 100
+          title: Limit
+        description: Maximum items per page.
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          description: Opaque continuation token returned from the preceding page.
+          title: Cursor
+        description: Opaque continuation token returned from the preceding page.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+                title: Response Count Logs Api V1 Logs Count Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/logs/{log_id}:
+    get:
+      tags:
+      - logs
+      summary: Get Log
+      operationId: get_log_api_v1_logs__log_id__get
+      parameters:
+      - name: log_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Log Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecognitionLogRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/failed_utterances/:
+    get:
+      tags:
+      - failed_utterances
+      summary: List Failed Utterances
+      operationId: list_failed_utterances_api_v1_failed_utterances__get
+      parameters:
+      - name: reviewed
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Reviewed
+      - name: promoted
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Promoted
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FailedUtteranceRead'
+                title: Response List Failed Utterances Api V1 Failed Utterances  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - failed_utterances
+      summary: Create Failed Utterance
+      operationId: create_failed_utterance_api_v1_failed_utterances__post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedUtteranceCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedUtteranceRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/failed_utterances/{fu_id}:
+    get:
+      tags:
+      - failed_utterances
+      summary: Get Failed Utterance
+      operationId: get_failed_utterance_api_v1_failed_utterances__fu_id__get
+      parameters:
+      - name: fu_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Fu Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedUtteranceRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - failed_utterances
+      summary: Update Failed Utterance
+      operationId: update_failed_utterance_api_v1_failed_utterances__fu_id__patch
+      parameters:
+      - name: fu_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Fu Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FailedUtteranceUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailedUtteranceRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - failed_utterances
+      summary: Delete Failed Utterance
+      operationId: delete_failed_utterance_api_v1_failed_utterances__fu_id__delete
+      parameters:
+      - name: fu_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Fu Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/failed_utterances/{fu_id}/promote:
+    post:
+      tags:
+      - failed_utterances
+      summary: Promote To Phrase
+      description: Promote a failed utterance as a training phrase for the given intent.
+      operationId: promote_to_phrase_api_v1_failed_utterances__fu_id__promote_post
+      parameters:
+      - name: fu_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Fu Id
+      - name: intent_name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Intent Name
+      - name: create_regression
+        in: query
+        required: false
+        schema:
+          type: boolean
+          description: Also add a regression test for this utterance
+          default: true
+          title: Create Regression
+        description: Also add a regression test for this utterance
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromoteResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/regression/:
+    get:
+      tags:
+      - regression
+      summary: List Regression Tests
+      operationId: list_regression_tests_api_v1_regression__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RegressionTestRead'
+                type: array
+                title: Response List Regression Tests Api V1 Regression  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    post:
+      tags:
+      - regression
+      summary: Create Regression Test
+      operationId: create_regression_test_api_v1_regression__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegressionTestCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegressionTestRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/regression/run:
+    post:
+      tags:
+      - regression
+      summary: Run Regression Tests
+      description: Run all (enabled) regression tests against the current intent model.
+      operationId: run_regression_tests_api_v1_regression_run_post
+      parameters:
+      - name: enabled_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Enabled Only
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegressionRunResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/regression/{test_id}:
+    get:
+      tags:
+      - regression
+      summary: Get Regression Test
+      operationId: get_regression_test_api_v1_regression__test_id__get
+      parameters:
+      - name: test_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Test Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegressionTestRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - regression
+      summary: Update Regression Test
+      operationId: update_regression_test_api_v1_regression__test_id__patch
+      parameters:
+      - name: test_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Test Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegressionTestUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegressionTestRead'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - regression
+      summary: Delete Regression Test
+      operationId: delete_regression_test_api_v1_regression__test_id__delete
+      parameters:
+      - name: test_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Test Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/performance/last:
+    get:
+      tags:
+      - performance
+      summary: Get Last Performance
+      description: Return the most recent performance result.
+      operationId: get_last_performance_api_v1_performance_last_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                anyOf:
+                - $ref: '#/components/schemas/PerformanceResultRead'
+                - type: 'null'
+                title: Response Get Last Performance Api V1 Performance Last Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/performance/summary:
+    get:
+      tags:
+      - performance
+      summary: Get Performance Summary
+      description: Aggregate stats over the last N results.
+      operationId: get_performance_summary_api_v1_performance_summary_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/performance/history:
+    get:
+      tags:
+      - performance
+      summary: Get Performance History
+      description: Use cursor pagination, stable descending time-plus-ID ordering;
+        filters are bound into the cursor.
+      operationId: get_performance_history_api_v1_performance_history_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          description: Maximum items per page.
+          default: 100
+          title: Limit
+        description: Maximum items per page.
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          description: Opaque continuation token returned from the preceding page.
+          title: Cursor
+        description: Opaque continuation token returned from the preceding page.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Performance History Api V1 Performance History
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/health/:
+    get:
+      tags:
+      - health
+      summary: Health Check
+      operationId: health_check_api_v1_health__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthReport'
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/health/audio_devices:
+    get:
+      tags:
+      - health
+      summary: Get Audio Devices
+      operationId: get_audio_devices_api_v1_health_audio_devices_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/AudioDevice'
+                type: array
+                title: Response Get Audio Devices Api V1 Health Audio Devices Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/health/live:
+    get:
+      tags:
+      - health
+      summary: Liveness probe
+      description: 'Cheap liveness check: the process is up and the database is reachable.'
+      operationId: get_listen_health_live
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalHealthProbe'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalHealthProbe'
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/health/ready:
+    get:
+      tags:
+      - health
+      summary: Readiness probe
+      description: 'Full readiness check: configuration compiles, the listener provider
+        loads, etc.'
+      operationId: get_listen_health_ready
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalHealthProbe'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalHealthProbe'
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/backup/list:
+    get:
+      tags:
+      - backup
+      summary: List Backups
+      operationId: list_backups_api_v1_backup_list_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/BackupInfo'
+                type: array
+                title: Response List Backups Api V1 Backup List Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/backup/create:
+    post:
+      tags:
+      - backup
+      summary: Create Backup
+      operationId: create_backup_api_v1_backup_create_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Create Backup Api V1 Backup Create Post
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/backup/download/{filename}:
+    get:
+      tags:
+      - backup
+      summary: Download Backup
+      operationId: download_backup_api_v1_backup_download__filename__get
+      parameters:
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Filename
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backup/restore/{filename}:
+    post:
+      tags:
+      - backup
+      summary: Restore Backup
+      operationId: restore_backup_api_v1_backup_restore__filename__post
+      parameters:
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Filename
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Restore Backup Api V1 Backup Restore  Filename  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backup/{filename}:
+    delete:
+      tags:
+      - backup
+      summary: Delete Backup
+      operationId: delete_backup_api_v1_backup__filename__delete
+      parameters:
+      - name: filename
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Filename
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backup/export:
+    get:
+      tags:
+      - backup
+      summary: Export Config
+      description: Export full configuration as JSON.
+      operationId: export_config_api_v1_backup_export_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigBundle'
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /api/v1/backup/import:
+    post:
+      tags:
+      - backup
+      summary: Import Config
+      description: Import configuration from YAML files in ./config/.
+      operationId: import_config_api_v1_backup_import_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/ConfigBundle'
+              - type: 'null'
+              title: Bundle
+              description: Bundle to import; omit to use ./config/
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigImportResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backup/validate:
+    get:
+      tags:
+      - backup
+      summary: Validate Config
+      operationId: validate_config_api_v1_backup_validate_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigValidationReport'
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+    post:
+      tags:
+      - backup
+      summary: Validate Listen Backup Payload
+      description: Validate a supplied backup/configuration bundle without any side
+        effects.
+      operationId: validate_listen_backup_payload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigBundle'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigValidationReport'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /:
+    get:
+      summary: Root
+      operationId: root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Root  Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+  /healthz:
+    get:
+      summary: Healthz
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Healthz Healthz Get
+        '422':
+          description: OPAL standard error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpalError'
+components:
+  schemas:
+    AudioDevice:
+      properties:
+        index:
+          type: integer
+          title: Index
+        name:
+          type: string
+          title: Name
+        max_input_channels:
+          type: integer
+          title: Max Input Channels
+        default_sample_rate:
+          type: number
+          title: Default Sample Rate
+        is_default:
+          type: boolean
+          title: Is Default
+      type: object
+      required:
+      - index
+      - name
+      - max_input_channels
+      - default_sample_rate
+      - is_default
+      title: AudioDevice
+    BackupInfo:
+      properties:
+        filename:
+          type: string
+          title: Filename
+        size_bytes:
+          type: integer
+          title: Size Bytes
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - filename
+      - size_bytes
+      - created_at
+      title: BackupInfo
+    Body_test_audio_api_v1_recognition_test_audio_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_test_audio_api_v1_recognition_test_audio_post
+    ConfigBundle:
+      properties:
+        version:
+          type: integer
+          title: Version
+          default: 1
+        wakewords:
+          items:
+            $ref: '#/components/schemas/WakewordSpec'
+          type: array
+          title: Wakewords
+          default: []
+        stt:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: integer
+            - type: number
+            - type: boolean
+          type: object
+          title: Stt
+          default: {}
+        intents:
+          items:
+            $ref: '#/components/schemas/IntentSpec'
+          type: array
+          title: Intents
+          default: []
+        slots:
+          items:
+            $ref: '#/components/schemas/SlotSpec'
+          type: array
+          title: Slots
+          default: []
+        profiles:
+          items:
+            $ref: '#/components/schemas/ProfileSpec'
+          type: array
+          title: Profiles
+          default: []
+        settings:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: integer
+            - type: number
+            - type: boolean
+          type: object
+          title: Settings
+          default: {}
+      additionalProperties: false
+      type: object
+      title: ConfigBundle
+      description: Complete declarative configuration (union of all YAML files).
+    ConfigImportResult:
+      properties:
+        status:
+          type: string
+          const: imported
+          title: Status
+        backup_filename:
+          type: string
+          title: Backup Filename
+        counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Counts
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+      type: object
+      required:
+      - status
+      - backup_filename
+      - counts
+      - warnings
+      title: ConfigImportResult
+    ConfigValidationReport:
+      properties:
+        valid:
+          type: boolean
+          title: Valid
+        errors:
+          items:
+            type: string
+          type: array
+          title: Errors
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+        sources:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Sources
+          default: {}
+      type: object
+      required:
+      - valid
+      - errors
+      - warnings
+      title: ConfigValidationReport
+    FailedUtteranceCreate:
+      properties:
+        transcript:
+          type: string
+          maxLength: 1000
+          title: Transcript
+        expected_intent:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Expected Intent
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+        recognition_log_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recognition Log Id
+      type: object
+      required:
+      - transcript
+      title: FailedUtteranceCreate
+    FailedUtteranceRead:
+      properties:
+        transcript:
+          type: string
+          maxLength: 1000
+          title: Transcript
+        expected_intent:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Expected Intent
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+        id:
+          type: integer
+          title: Id
+        recognition_log_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recognition Log Id
+        reviewed:
+          type: boolean
+          title: Reviewed
+        promoted_to_phrase:
+          type: boolean
+          title: Promoted To Phrase
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - transcript
+      - id
+      - recognition_log_id
+      - reviewed
+      - promoted_to_phrase
+      - created_at
+      title: FailedUtteranceRead
+    FailedUtteranceUpdate:
+      properties:
+        expected_intent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expected Intent
+        notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notes
+        reviewed:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Reviewed
+        promoted_to_phrase:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Promoted To Phrase
+      type: object
+      title: FailedUtteranceUpdate
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthCheckResult:
+      properties:
+        name:
+          type: string
+          title: Name
+        status:
+          type: string
+          enum:
+          - ok
+          - warning
+          - error
+          title: Status
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - name
+      - status
+      - detail
+      title: HealthCheckResult
+    HealthReport:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - warning
+          - error
+          title: Status
+        checks:
+          items:
+            $ref: '#/components/schemas/HealthCheckResult'
+          type: array
+          title: Checks
+        checked_at:
+          type: string
+          format: date-time
+          title: Checked At
+      type: object
+      required:
+      - status
+      - checks
+      - checked_at
+      title: HealthReport
+    IntentAlternative:
+      properties:
+        intent_name:
+          type: string
+          title: Intent Name
+        confidence:
+          type: number
+          title: Confidence
+        phrase:
+          type: string
+          title: Phrase
+      type: object
+      required:
+      - intent_name
+      - confidence
+      - phrase
+      title: IntentAlternative
+    IntentCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.7
+        phrases:
+          items:
+            type: string
+          type: array
+          title: Phrases
+          description: Optional initial training phrases
+      type: object
+      required:
+      - name
+      title: IntentCreate
+    IntentPhraseCreate:
+      properties:
+        phrase:
+          type: string
+          maxLength: 500
+          title: Phrase
+      type: object
+      required:
+      - phrase
+      title: IntentPhraseCreate
+    IntentPhraseRead:
+      properties:
+        phrase:
+          type: string
+          maxLength: 500
+          title: Phrase
+        id:
+          type: integer
+          title: Id
+        intent_id:
+          type: integer
+          title: Intent Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - phrase
+      - id
+      - intent_id
+      - created_at
+      title: IntentPhraseRead
+    IntentRead:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.7
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: IntentRead
+    IntentReadWithPhrases:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.7
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        phrases:
+          items:
+            $ref: '#/components/schemas/IntentPhraseRead'
+          type: array
+          title: Phrases
+          default: []
+      type: object
+      required:
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: IntentReadWithPhrases
+    IntentSpec:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.7
+        phrases:
+          items:
+            type: string
+          type: array
+          title: Phrases
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: IntentSpec
+    IntentUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+        confidence_threshold:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Confidence Threshold
+      type: object
+      title: IntentUpdate
+    LatencyStats:
+      properties:
+        avg:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Avg
+        p50:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: P50
+        p95:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: P95
+        max:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Max
+      type: object
+      required:
+      - avg
+      - p50
+      - p95
+      - max
+      title: LatencyStats
+    OpalError:
+      properties:
+        error:
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details: {}
+            request_id:
+              type: string
+            transaction_id:
+              type: string
+            session_id:
+              type:
+              - string
+              - 'null'
+            causation_id:
+              type:
+              - string
+              - 'null'
+          additionalProperties: false
+          type: object
+          required:
+          - code
+          - message
+          - request_id
+          - transaction_id
+      additionalProperties: false
+      type: object
+      required:
+      - error
+    OpalErrorBody:
+      properties:
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+        details:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Details
+        request_id:
+          type: string
+          title: Request Id
+        transaction_id:
+          type: string
+          title: Transaction Id
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+        causation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Causation Id
+      type: object
+      required:
+      - code
+      - message
+      - request_id
+      - transaction_id
+      title: OpalErrorBody
+    OpalHealthProbe:
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+          - unavailable
+          title: Status
+        ready:
+          type: boolean
+          title: Ready
+        details:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Details
+      type: object
+      required:
+      - status
+      - ready
+      title: OpalHealthProbe
+    PerformanceResultRead:
+      properties:
+        id:
+          type: integer
+          title: Id
+        recognition_log_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recognition Log Id
+        wakeword_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Wakeword Latency Ms
+        stt_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Stt Latency Ms
+        intent_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Intent Latency Ms
+        total_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Latency Ms
+        wakeword_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Wakeword Confidence
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Intent Confidence
+        matched:
+          type: boolean
+          title: Matched
+        audio_level:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Audio Level
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - recognition_log_id
+      - wakeword_latency_ms
+      - stt_latency_ms
+      - intent_latency_ms
+      - total_latency_ms
+      - wakeword_confidence
+      - intent_confidence
+      - matched
+      - created_at
+      title: PerformanceResultRead
+    PerformanceSummary:
+      properties:
+        count:
+          type: integer
+          title: Count
+        matched_count:
+          type: integer
+          title: Matched Count
+        no_match_count:
+          type: integer
+          title: No Match Count
+        match_rate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Match Rate
+        avg_wakeword_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Avg Wakeword Confidence
+        avg_intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Avg Intent Confidence
+        wakeword_latency_ms:
+          $ref: '#/components/schemas/LatencyStats'
+        stt_latency_ms:
+          $ref: '#/components/schemas/LatencyStats'
+        intent_latency_ms:
+          $ref: '#/components/schemas/LatencyStats'
+        total_latency_ms:
+          $ref: '#/components/schemas/LatencyStats'
+      type: object
+      required:
+      - count
+      - matched_count
+      - no_match_count
+      - match_rate
+      - avg_wakeword_confidence
+      - avg_intent_confidence
+      - wakeword_latency_ms
+      - stt_latency_ms
+      - intent_latency_ms
+      - total_latency_ms
+      title: PerformanceSummary
+    PipelineStatus:
+      properties:
+        running:
+          type: boolean
+          title: Running
+        state:
+          type: string
+          title: State
+        provider:
+          type: string
+          title: Provider
+        profile_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Profile Name
+        audio_device:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audio Device
+        capture_sample_rate:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Capture Sample Rate
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
+        uptime_s:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Uptime S
+        frames_processed:
+          type: integer
+          title: Frames Processed
+        wakeword_detections:
+          type: integer
+          title: Wakeword Detections
+        sessions:
+          type: integer
+          title: Sessions
+        results:
+          type: integer
+          title: Results
+        audio_restarts:
+          type: integer
+          title: Audio Restarts
+        last_audio_level:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Last Audio Level
+        last_result_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Result At
+        last_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Error
+        metrics:
+          additionalProperties:
+            type: number
+          type: object
+          title: Metrics
+          default: {}
+      type: object
+      required:
+      - running
+      - state
+      - provider
+      - profile_name
+      - audio_device
+      - capture_sample_rate
+      - started_at
+      - uptime_s
+      - frames_processed
+      - wakeword_detections
+      - sessions
+      - results
+      - audio_restarts
+      - last_audio_level
+      - last_result_at
+      - last_error
+      title: PipelineStatus
+    ProfileCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        is_active:
+          type: boolean
+          title: Is Active
+          default: false
+        wakeword_names:
+          items:
+            type: string
+          type: array
+          title: Wakeword Names
+          default: []
+        confidence_thresholds:
+          additionalProperties: true
+          type: object
+          title: Confidence Thresholds
+          default: {}
+        vad_settings:
+          additionalProperties: true
+          type: object
+          title: Vad Settings
+          default: {}
+        enabled_intents:
+          items:
+            type: string
+          type: array
+          title: Enabled Intents
+          default: []
+        enabled_slots:
+          items:
+            type: string
+          type: array
+          title: Enabled Slots
+          default: []
+        model_paths:
+          additionalProperties:
+            type: string
+          type: object
+          title: Model Paths
+          default: {}
+      type: object
+      required:
+      - name
+      title: ProfileCreate
+    ProfileRead:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        is_active:
+          type: boolean
+          title: Is Active
+        wakeword_names:
+          items:
+            type: string
+          type: array
+          title: Wakeword Names
+        confidence_thresholds:
+          additionalProperties: true
+          type: object
+          title: Confidence Thresholds
+        vad_settings:
+          additionalProperties: true
+          type: object
+          title: Vad Settings
+        enabled_intents:
+          items:
+            type: string
+          type: array
+          title: Enabled Intents
+        enabled_slots:
+          items:
+            type: string
+          type: array
+          title: Enabled Slots
+        model_paths:
+          additionalProperties:
+            type: string
+          type: object
+          title: Model Paths
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - is_active
+      - wakeword_names
+      - confidence_thresholds
+      - vad_settings
+      - enabled_intents
+      - enabled_slots
+      - model_paths
+      - created_at
+      - updated_at
+      title: ProfileRead
+    ProfileSpec:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        is_active:
+          type: boolean
+          title: Is Active
+          default: false
+        wakeword_names:
+          items:
+            type: string
+          type: array
+          title: Wakeword Names
+          default: []
+        confidence_thresholds:
+          additionalProperties: true
+          type: object
+          title: Confidence Thresholds
+          default: {}
+        vad_settings:
+          additionalProperties: true
+          type: object
+          title: Vad Settings
+          default: {}
+        enabled_intents:
+          items:
+            type: string
+          type: array
+          title: Enabled Intents
+          default: []
+        enabled_slots:
+          items:
+            type: string
+          type: array
+          title: Enabled Slots
+          default: []
+        model_paths:
+          additionalProperties:
+            type: string
+          type: object
+          title: Model Paths
+          default: {}
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: ProfileSpec
+    ProfileUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+        wakeword_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Wakeword Names
+        confidence_thresholds:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Confidence Thresholds
+        vad_settings:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Vad Settings
+        enabled_intents:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Enabled Intents
+        enabled_slots:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Enabled Slots
+        model_paths:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Model Paths
+      type: object
+      title: ProfileUpdate
+    PromoteResult:
+      properties:
+        failed_utterance:
+          $ref: '#/components/schemas/FailedUtteranceRead'
+        phrase:
+          $ref: '#/components/schemas/IntentPhraseRead'
+        regression_test:
+          anyOf:
+          - $ref: '#/components/schemas/RegressionTestRead'
+          - type: 'null'
+      type: object
+      required:
+      - failed_utterance
+      - phrase
+      title: PromoteResult
+    RecognitionLogRead:
+      properties:
+        id:
+          type: integer
+          title: Id
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+        source:
+          type: string
+          title: Source
+          default: mic
+        profile_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Profile Name
+        wakeword:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Wakeword
+        transcript:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transcript
+        normalized_transcript:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Normalized Transcript
+        intent_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Intent Name
+        slot_values:
+          additionalProperties: true
+          type: object
+          title: Slot Values
+        wakeword_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Wakeword Confidence
+        stt_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Stt Confidence
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Intent Confidence
+        matched:
+          type: boolean
+          title: Matched
+        no_match_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: No Match Reason
+        total_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Latency Ms
+        wakeword_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Wakeword Latency Ms
+        stt_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Stt Latency Ms
+        intent_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Intent Latency Ms
+        audio_level:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Audio Level
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - session_id
+      - wakeword
+      - transcript
+      - normalized_transcript
+      - intent_name
+      - slot_values
+      - wakeword_confidence
+      - intent_confidence
+      - matched
+      - total_latency_ms
+      - wakeword_latency_ms
+      - stt_latency_ms
+      - intent_latency_ms
+      - audio_level
+      - created_at
+      title: RecognitionLogRead
+    RecognitionResult:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        source:
+          type: string
+          enum:
+          - mic
+          - audio
+          - text
+          title: Source
+        profile_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Profile Name
+        wakeword:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Wakeword
+        transcript:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transcript
+        normalized_transcript:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Normalized Transcript
+        intent_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Intent Name
+        slot_values:
+          additionalProperties: true
+          type: object
+          title: Slot Values
+          default: {}
+        wakeword_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Wakeword Confidence
+        stt_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Stt Confidence
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Intent Confidence
+        matched:
+          type: boolean
+          title: Matched
+          default: false
+        no_match_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: No Match Reason
+        matched_phrase:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Matched Phrase
+        alternatives:
+          items:
+            $ref: '#/components/schemas/IntentAlternative'
+          type: array
+          title: Alternatives
+          default: []
+        wakeword_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Wakeword Latency Ms
+        stt_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Stt Latency Ms
+        intent_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Intent Latency Ms
+        total_latency_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Total Latency Ms
+        audio_level:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Audio Level
+        deduplicated:
+          type: boolean
+          title: Deduplicated
+          default: false
+        refinement_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Refinement Error
+        recognition_log_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recognition Log Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - session_id
+      - source
+      - created_at
+      title: RecognitionResult
+      description: Outcome of one pass through the pipeline (live, audio file or text).
+    RegressionCaseResult:
+      properties:
+        test_id:
+          type: integer
+          title: Test Id
+        name:
+          type: string
+          title: Name
+        phrase:
+          type: string
+          title: Phrase
+        expected_intent:
+          type: string
+          title: Expected Intent
+        actual_intent:
+          type: string
+          title: Actual Intent
+        expected_slots:
+          additionalProperties: true
+          type: object
+          title: Expected Slots
+        actual_slots:
+          additionalProperties: true
+          type: object
+          title: Actual Slots
+        intent_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Intent Confidence
+        passed:
+          type: boolean
+          title: Passed
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+      type: object
+      required:
+      - test_id
+      - name
+      - phrase
+      - expected_intent
+      - actual_intent
+      - expected_slots
+      - actual_slots
+      - intent_confidence
+      - passed
+      title: RegressionCaseResult
+    RegressionRunResult:
+      properties:
+        total:
+          type: integer
+          title: Total
+        passed:
+          type: integer
+          title: Passed
+        failed:
+          type: integer
+          title: Failed
+        pass_rate:
+          type: number
+          title: Pass Rate
+        results:
+          items:
+            $ref: '#/components/schemas/RegressionCaseResult'
+          type: array
+          title: Results
+      type: object
+      required:
+      - total
+      - passed
+      - failed
+      - pass_rate
+      - results
+      title: RegressionRunResult
+    RegressionTestCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          title: Name
+        phrase:
+          type: string
+          maxLength: 500
+          title: Phrase
+        expected_intent:
+          type: string
+          maxLength: 100
+          title: Expected Intent
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        expected_slots:
+          additionalProperties: true
+          type: object
+          title: Expected Slots
+          default: {}
+      type: object
+      required:
+      - name
+      - phrase
+      - expected_intent
+      title: RegressionTestCreate
+    RegressionTestRead:
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          title: Name
+        phrase:
+          type: string
+          maxLength: 500
+          title: Phrase
+        expected_intent:
+          type: string
+          maxLength: 100
+          title: Expected Intent
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        id:
+          type: integer
+          title: Id
+        expected_slots:
+          additionalProperties: true
+          type: object
+          title: Expected Slots
+        last_result:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Last Result
+        last_run_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Run At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - name
+      - phrase
+      - expected_intent
+      - id
+      - expected_slots
+      - last_result
+      - last_run_at
+      - created_at
+      title: RegressionTestRead
+    RegressionTestUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        phrase:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phrase
+        expected_intent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expected Intent
+        expected_slots:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Expected Slots
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+      type: object
+      title: RegressionTestUpdate
+    SlotAliasCreate:
+      properties:
+        alias:
+          type: string
+          maxLength: 200
+          title: Alias
+      type: object
+      required:
+      - alias
+      title: SlotAliasCreate
+    SlotAliasRead:
+      properties:
+        alias:
+          type: string
+          maxLength: 200
+          title: Alias
+        id:
+          type: integer
+          title: Id
+        slot_value_id:
+          type: integer
+          title: Slot Value Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - alias
+      - id
+      - slot_value_id
+      - created_at
+      title: SlotAliasRead
+    SlotCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        slot_type:
+          type: string
+          maxLength: 50
+          title: Slot Type
+          default: list
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - name
+      title: SlotCreate
+    SlotRead:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        slot_type:
+          type: string
+          maxLength: 50
+          title: Slot Type
+          default: list
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: SlotRead
+    SlotReadWithValues:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        slot_type:
+          type: string
+          maxLength: 50
+          title: Slot Type
+          default: list
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        values:
+          items:
+            $ref: '#/components/schemas/SlotValueReadWithAliases'
+          type: array
+          title: Values
+          default: []
+      type: object
+      required:
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: SlotReadWithValues
+    SlotSpec:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        slot_type:
+          type: string
+          title: Slot Type
+          default: list
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        values:
+          items:
+            $ref: '#/components/schemas/SlotValueSpec'
+          type: array
+          title: Values
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: SlotSpec
+    SlotUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        slot_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Slot Type
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+      type: object
+      title: SlotUpdate
+    SlotValueCreate:
+      properties:
+        value:
+          type: string
+          maxLength: 200
+          title: Value
+      type: object
+      required:
+      - value
+      title: SlotValueCreate
+    SlotValueRead:
+      properties:
+        value:
+          type: string
+          maxLength: 200
+          title: Value
+        id:
+          type: integer
+          title: Id
+        slot_id:
+          type: integer
+          title: Slot Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - value
+      - id
+      - slot_id
+      - created_at
+      title: SlotValueRead
+    SlotValueReadWithAliases:
+      properties:
+        value:
+          type: string
+          maxLength: 200
+          title: Value
+        id:
+          type: integer
+          title: Id
+        slot_id:
+          type: integer
+          title: Slot Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        aliases:
+          items:
+            $ref: '#/components/schemas/SlotAliasRead'
+          type: array
+          title: Aliases
+          default: []
+      type: object
+      required:
+      - value
+      - id
+      - slot_id
+      - created_at
+      title: SlotValueReadWithAliases
+    SlotValueSpec:
+      properties:
+        value:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Value
+        aliases:
+          items:
+            type: string
+          type: array
+          title: Aliases
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - value
+      title: SlotValueSpec
+    TextTestRequest:
+      properties:
+        text:
+          type: string
+          maxLength: 1000
+          title: Text
+      type: object
+      required:
+      - text
+      title: TextTestRequest
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    WakewordCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.8
+      type: object
+      required:
+      - name
+      title: WakewordCreate
+    WakewordRead:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          title: Name
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.8
+        id:
+          type: integer
+          title: Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - name
+      - id
+      - created_at
+      - updated_at
+      title: WakewordRead
+    WakewordSpec:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        confidence_threshold:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence Threshold
+          default: 0.8
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: WakewordSpec
+    WakewordUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+        confidence_threshold:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Confidence Threshold
+      type: object
+      title: WakewordUpdate
+    SettingRead:
+      properties:
+        id:
+          title: Id
+          type: integer
+        key:
+          title: Key
+          type: string
+        value:
+          title: Value
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - id
+      - key
+      - value
+      - updated_at
+      title: SettingRead
+      type: object
+    SettingUpdate:
+      properties:
+        value:
+          title: Value
+          type: string
+      required:
+      - value
+      title: SettingUpdate
+      type: object
+    OpalCursorPageMetadata:
+      properties:
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        has_more:
+          type: boolean
+      required:
+      - next_cursor
+      - has_more
+      type: object
+servers:
+- url: http://localhost:8000
+x-opal-context-standard:
+  version: '1.3'
+  headers:
+  - X-Opal-Session-Id
+  - X-Opal-Transaction-Id
+  - X-Opal-Request-Id
+  - X-Opal-Causation-Id
+  session_mode: context-only
+  id_format: opaque-printable-ascii-1-to-128
+  transaction_atomicity: false
+  events:
+    propagate:
+    - session_id
+    - transaction_id
+    - request_id
+    - causation_id
+    metadata_schema_version: '2.0'
+    zero_mq_frames: 2
+  pagination:
+    history: cursor
+    configuration: none
+    default_limit: 100
+    max_limit: 500
+  concurrency:
+    settings_and_config_mutations: strong-etag-if-match-required
+    missing_status: 428
+    stale_status: 412
+  streaming: Include HTTP context headers before bytes; after headers are sent, failures
+    are represented by transport-specific terminal events or stream termination; no
+    invented resumability.
