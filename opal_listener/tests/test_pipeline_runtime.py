@@ -161,6 +161,7 @@ def test_live_mic_match_is_published_to_the_event_bus(client: TestClient, fake_p
 
     service = client.app.state.listener  # type: ignore[attr-defined]
     publisher = service.event_publisher
+    assert patch_settings(client, event_publication_enabled="true").status_code == 200
     fake_provider.script.append("turn on the kitchen light")
     service._source_factory = lambda settings: ScriptedSource(COMMAND)
     client.post("/api/v1/recognition/start")
@@ -173,6 +174,42 @@ def test_live_mic_match_is_published_to_the_event_bus(client: TestClient, fake_p
     assert topic == INTENT_MATCH_TOPIC
     assert payload["matched"] is True and payload["source"] == "mic"
     assert payload["intent_name"] == "light_turn_on" and payload["slot_values"] == {"room_name": "kitchen"}
+
+
+def test_event_publication_enable_disable(client: TestClient, fake_provider: type) -> None:
+    """event_publication_enabled gates external publication live: disabled matches are logged and
+    streamed locally but never reach the event publisher; enabling PATCHes take effect without a
+    service restart (the publisher connects on the next match), and disabling suppresses again."""
+    from opal_listener.service.listener_service import INTENT_MATCH_TOPIC
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    assert client.get("/api/v1/settings/").json()["event_publication_enabled"] == "false"
+
+    def run_once(expected_log_total: int) -> None:
+        fake_provider.script.append("turn on the kitchen light")
+        service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+        client.post("/api/v1/recognition/start")
+        try:
+            wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= expected_log_total)
+        finally:
+            client.post("/api/v1/recognition/stop")
+
+    run_once(1)
+    assert publisher.events == []  # disabled: the match was logged but not published externally
+    assert client.get("/api/v1/logs/count").json()["total"] == 1
+
+    updated = patch_settings(client, event_publication_enabled="true")
+    assert updated.status_code == 200 and updated.json()["event_publication_enabled"] == "true"
+    run_once(2)
+    assert len(publisher.events) == 1
+    topic, payload = publisher.events[0]
+    assert topic == INTENT_MATCH_TOPIC and payload["intent_name"] == "light_turn_on"
+
+    updated = patch_settings(client, event_publication_enabled="false")
+    assert updated.status_code == 200 and updated.json()["event_publication_enabled"] == "false"
+    run_once(3)
+    assert len(publisher.events) == 1  # no further events after disabling
 
 
 def test_live_runtime_duplicate_results_are_flagged(client: TestClient, fake_provider: type) -> None:

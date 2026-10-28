@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from opal_listener.service.audio.pcm import write_wav_bytes
-from opal_listener.tests.conftest import silence_frame, tone_frame
+from opal_listener.tests.conftest import patch_settings, silence_frame, tone_frame
 
 
 def _by_name(client: TestClient, path: str, name: str) -> dict:
@@ -46,7 +46,10 @@ def test_seeded_configuration(client: TestClient) -> None:
     assert [w["name"] for w in client.get("/api/v1/wakewords/").json()] == ["computer"]
     assert {i["name"] for i in client.get("/api/v1/intents/").json()} >= {"light_turn_on", "get_time"}
     assert _by_name(client, "/api/v1/profiles/", "default")["is_active"] is True
-    assert client.get("/api/v1/settings/").json()["cooldown_ms"] == "1500"
+    settings = client.get("/api/v1/settings/").json()
+    assert settings["cooldown_ms"] == "1500"
+    # a fresh database starts with external event publication disabled
+    assert settings["event_publication_enabled"] == "false"
 
 
 def test_wakeword_crud(client: TestClient) -> None:
@@ -204,6 +207,16 @@ def test_settings_patch_validation_and_atomicity(client: TestClient) -> None:
     assert stale.status_code == 412
     assert client.patch("/api/v1/settings/", json={}, headers={"If-Match": etag}).status_code == 422
     etag = _etag(client, "/api/v1/settings/")
+    # a patch containing an invalid value is rejected atomically: nothing else is applied either
+    bad = client.patch(
+        "/api/v1/settings/",
+        json={"event_publication_enabled": "maybe", "cooldown_ms": "1"},
+        headers={"If-Match": etag},
+    )
+    assert bad.status_code == 422
+    settings = client.get("/api/v1/settings/").json()
+    assert settings["event_publication_enabled"] == "false" and settings["cooldown_ms"] == "2500"
+    etag = _etag(client, "/api/v1/settings/")
     restored = client.patch("/api/v1/settings/", json={"cooldown_ms": "1500"}, headers={"If-Match": etag}).json()
     assert restored["cooldown_ms"] == "1500"
 
@@ -242,6 +255,8 @@ def test_test_text_example_output(client: TestClient) -> None:
 
 def test_diagnostic_text_results_are_not_published_to_the_event_bus(client: TestClient) -> None:
     publisher = client.app.state.listener.event_publisher  # type: ignore[attr-defined]
+    # even with publication enabled, diagnostic text results are never actionable
+    assert patch_settings(client, event_publication_enabled="true").status_code == 200
 
     for save_log in (True, False):
         before = client.get("/api/v1/logs/count").json()["total"]
@@ -263,6 +278,8 @@ def test_diagnostic_audio_results_are_not_published_to_the_event_bus(
     client: TestClient, fake_provider: type
 ) -> None:
     publisher = client.app.state.listener.event_publisher  # type: ignore[attr-defined]
+    # even with publication enabled, diagnostic audio results are never actionable
+    assert patch_settings(client, event_publication_enabled="true").status_code == 200
     fake_provider.script.append("turn on the kitchen light")
     wav = write_wav_bytes(b"".join([silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 15))
 

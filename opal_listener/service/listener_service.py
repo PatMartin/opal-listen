@@ -121,9 +121,6 @@ class ListenerService:
         self.db.migrate()
         self._seed_if_empty()
         self._ensure_default_settings()
-        # Connect now (not on first publish) so the TCP/subscription handshake has the whole
-        # startup window to settle before the first real intent match might fire.
-        self.event_publisher.connect()
         try:
             self.reload()
         except ConfigInvalidError as exc:
@@ -183,6 +180,10 @@ class ListenerService:
     def _apply(self, snapshot: RuntimeSnapshot) -> None:
         self._version = snapshot.version
         self._snapshot = snapshot
+        if snapshot.settings.get("event_publication_enabled"):
+            # Connect eagerly so the handshake settles before the first real intent match; every
+            # publisher connect() is idempotent, and publish() would connect lazily anyway.
+            self.event_publisher.connect()
 
     def _check_provider_change(self, new: RuntimeSnapshot) -> None:
         """Validate provider/model changes before committing (cheap checks, no model load)."""
@@ -396,7 +397,11 @@ class ListenerService:
         payload = result.model_dump(mode="json")
 
         self.bus.publish("result", payload)
-        if result.matched and result.source not in DIAGNOSTIC_SOURCES:
+        if (
+            result.matched
+            and result.source not in DIAGNOSTIC_SOURCES
+            and snapshot.settings["event_publication_enabled"]
+        ):
             log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
             self.event_publisher.publish(INTENT_MATCH_TOPIC, payload)
         return result

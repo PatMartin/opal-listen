@@ -58,6 +58,8 @@ SETTINGS: dict[str, SettingDef] = {
         SettingDef("dedup_window_ms", int, 2000, "settings", "Flag identical results within this window",
                    minimum=0, maximum=60000),
         SettingDef("auto_capture_failures", bool, True, "settings", "Store no_match utterances as failures"),
+        SettingDef("event_publication_enabled", bool, False, "settings",
+                   "Publish matched intents to the external event bus (transport: event_transport)"),
         SettingDef("filler_words", str, "uh,um,er,please", "settings", "Comma-separated words dropped"),
         SettingDef("slot_fuzzy_min_score", float, 0.85, "settings", "Minimum fuzzy score for slot values",
                    minimum=0.0, maximum=1.0),

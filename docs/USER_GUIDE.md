@@ -612,6 +612,7 @@ settings:
   cooldown_ms: 1500
   dedup_window_ms: 2000
   auto_capture_failures: true
+  event_publication_enabled: false
   filler_words: uh,um,er,please
 ```
 
@@ -644,6 +645,7 @@ Invalid values are rejected with `422`.
 | `cooldown_ms` | int | `1500` | 0–60000 | Ignore wakewords for this long after a session |
 | `dedup_window_ms` | int | `2000` | 0–60000 | Flag identical results within this window |
 | `auto_capture_failures` | bool | `true` | | Store `no_match` utterances (mic/audio) as failed utterances |
+| `event_publication_enabled` | bool | `false` | | Publish matched intents to the external event bus (see `event_transport`) |
 | `filler_words` | str | `uh,um,er,please` | CSV | Words dropped during normalization |
 | `slot_fuzzy_min_score` | float | `0.85` | 0–1 | Minimum fuzzy score for slot values |
 | `token_fuzzy_min_score` | float | `0.8` | 0–1 | Minimum fuzzy score for phrase tokens |
