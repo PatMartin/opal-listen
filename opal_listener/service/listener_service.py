@@ -297,15 +297,32 @@ class ListenerService:
         path = backup_ops.safe_backup_path(self.app_settings.backup_dir, filename)
         backup_ops.verify_backup(path)
         with self._config_lock:
-            safety = self.create_backup("pre_restore")
+            # quiesce the runtime first: no recognition/logging may write while the file swaps
+            was_running = self.running
+            if was_running and self.stop()["status"] != "stopped":
+                raise ServiceUnavailableError("listener is still stopping; retry restore")
             try:
-                self._restore_file(filename)
-            except Exception as exc:
-                log.exception("restore of %s failed; rolling back to %s", filename, safety)
-                self._restore_file(safety)
-                if isinstance(exc, ConfigInvalidError):
-                    raise InvalidRequestError(f"backup contains invalid configuration: {exc}") from exc
-                raise
+                with self.db.maintenance():
+                    safety = self.create_backup("pre_restore")
+                    try:
+                        self._restore_file(filename)
+                    except Exception as exc:
+                        log.exception("restore of %s failed; rolling back to %s", filename, safety)
+                        try:
+                            self._restore_file(safety)
+                        except Exception:
+                            log.exception("rollback to %s failed", safety)
+                            # database state is unknown: never claim healthy readiness
+                            self._snapshot = None
+                        if isinstance(exc, ConfigInvalidError):
+                            raise InvalidRequestError(f"backup contains invalid configuration: {exc}") from exc
+                        raise
+            finally:
+                if was_running:
+                    try:
+                        self.start()
+                    except Exception:
+                        log.exception("listener failed to restart after restore")
         return {"status": "restored", "filename": filename, "rollback_backup": safety}
 
     # --- providers ----------------------------------------------------------------------------

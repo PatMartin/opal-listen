@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from opal_listener.app_settings import PACKAGE_DIR
 from opal_listener.service.config_store import load_config_dir
+from opal_listener.tests.conftest import patch_settings
 
 
 def test_backup_create_list_download_delete(client: TestClient) -> None:
@@ -53,6 +56,95 @@ def test_restore_with_invalid_config_rolls_back(client: TestClient, app_settings
     assert response.status_code == 422
     assert "invalid configuration" in response.json()["detail"][0]["msg"]
     assert {w["name"] for w in client.get("/api/v1/wakewords/").json()} == {"computer", "jarvis"}
+    # runtime rolled back to the last-known-good snapshot and stays consistent with the database
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert service.snapshot is not None and "jarvis" in service.snapshot.wakewords
+
+
+def test_restore_while_listener_running(client: TestClient, fake_provider: type) -> None:
+    from opal_listener.tests.test_pipeline_runtime import COMMAND, ScriptedSource, wait_for
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    filename = client.post("/api/v1/backup/create").json()["filename"]
+    assert patch_settings(client, cooldown_ms="999").status_code == 200
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    fake_provider.script.append("turn on the kitchen light")
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        result = client.post(f"/api/v1/backup/restore/{filename}").json()
+        assert result["status"] == "restored"
+        # the listener is restarted on the restored database and configuration
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
+        assert client.get("/api/v1/settings/").json()["cooldown_ms"] == "1500"
+        assert service.snapshot.settings["cooldown_ms"] == 1500
+        fake_provider.script.append("what time is it")
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_restore_during_active_recognition(client: TestClient, fake_provider: type) -> None:
+    from opal_listener.tests.test_pipeline_runtime import COMMAND, ScriptedSource, wait_for
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    fake_provider.script.extend(["turn on the kitchen light"] * 3)
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 3)
+    filename = client.post("/api/v1/backup/create").json()["filename"]
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        result = client.post(f"/api/v1/backup/restore/{filename}").json()
+        assert result["status"] == "restored"
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_db_maintenance_blocks_other_sessions(tmp_path: Path) -> None:
+    from opal_listener.data.db import Database
+    from opal_listener.service.errors import ServiceUnavailableError
+
+    db = Database(f"sqlite:///{tmp_path}/x.db")
+    db.migrate()
+    entered = threading.Event()
+    release = threading.Event()
+
+    def hold_maintenance() -> None:
+        with db.maintenance():
+            entered.set()
+            release.wait(5)
+
+    worker = threading.Thread(target=hold_maintenance, daemon=True)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        with pytest.raises(ServiceUnavailableError), db.session():
+            pass
+    finally:
+        release.set()
+        worker.join(5)
+    with db.session():  # sessions work again once the window closes
+        pass
+
+
+def test_db_maintenance_waits_for_active_sessions(tmp_path: Path) -> None:
+    from opal_listener.data.db import Database
+
+    db = Database(f"sqlite:///{tmp_path}/x.db")
+    db.migrate()
+    entered = threading.Event()
+
+    def hold_maintenance() -> None:
+        with db.maintenance():
+            entered.set()
+
+    with db.session():  # an open session must drain before maintenance starts
+        worker = threading.Thread(target=hold_maintenance, daemon=True)
+        worker.start()
+        assert not entered.wait(0.5)
+    assert entered.wait(5)
 
 
 def test_backup_filename_traversal_is_rejected(client: TestClient) -> None:
