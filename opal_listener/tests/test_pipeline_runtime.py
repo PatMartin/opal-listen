@@ -13,7 +13,8 @@ from fastapi.testclient import TestClient
 from opal_listener.service.audio.capture import AudioCaptureError, AudioFrame, AudioSource
 from opal_listener.service.audio.vad import VadSettings
 from opal_listener.service.pipeline import RecognitionPipeline
-from opal_listener.service.providers.fake_provider import FakeListenerProvider
+from opal_listener.service.providers.base import WakewordEvent, WakewordEventKind
+from opal_listener.service.providers.fake_provider import FakeListenerProvider, FakeWakewordDetector
 from opal_listener.tests.conftest import patch_settings, silence_frame, tone_frame
 
 COMMAND = [silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 10
@@ -93,6 +94,83 @@ def test_pipeline_max_length() -> None:
     pipeline.vad_settings = VadSettings(max_utterance_ms=1000, speech_start_ms=0)
     events = run_frames(pipeline, [tone_frame()] * 40)
     assert [e.data["reason"] for e in events if e.kind == "speech_end"][0] == "max_length"
+
+
+class _SilentDetector(FakeWakewordDetector):
+    """Candidate fires normally but never resolves — neither accept() nor flush() produces a
+    confirmation, violating the ideal detector contract the pipeline must survive."""
+
+    def accept(self, frame: bytes) -> list[WakewordEvent]:
+        return [e for e in super().accept(frame) if e.kind is WakewordEventKind.CANDIDATE]
+
+    def flush(self) -> list[WakewordEvent]:
+        super().flush()  # drain internal state like a real detector
+        return []
+
+
+class _RejectingDetector(FakeWakewordDetector):
+    """Resolves every candidate as REJECTED instead of CONFIRMED."""
+
+    def _as_rejected(self, events: list[WakewordEvent]) -> list[WakewordEvent]:
+        if any(e.kind is WakewordEventKind.CONFIRMED for e in events):
+            return [WakewordEvent(WakewordEventKind.REJECTED, self._wakeword)]
+        return events
+
+    def accept(self, frame: bytes) -> list[WakewordEvent]:
+        return self._as_rejected(super().accept(frame))
+
+    def flush(self) -> list[WakewordEvent]:
+        return self._as_rejected(super().flush())
+
+
+def test_pipeline_unresolved_candidate_produces_no_outcome() -> None:
+    """A candidate that never resolves is rejected as unresolved; no actionable outcome escapes."""
+    pipeline = make_pipeline()
+    pipeline.detector = _SilentDetector(["computer"], 0.9)
+    events = run_frames(pipeline, COMMAND)
+    kinds = [e.kind for e in events]
+    assert "wakeword_candidate" in kinds
+    rejected = [e for e in events if e.kind == "wakeword_rejected"]
+    assert rejected and rejected[0].data["reason"] == "unresolved"
+    assert "wakeword_confirmed" not in kinds
+    assert not any(e.kind == "session_end" for e in events)
+    assert pipeline.idle
+
+
+def test_pipeline_candidate_rejected_by_detector() -> None:
+    pipeline = make_pipeline()
+    pipeline.detector = _RejectingDetector(["computer"], 0.9)
+    events = run_frames(pipeline, COMMAND)
+    assert "wakeword_candidate" in [e.kind for e in events]
+    rejected = [e for e in events if e.kind == "wakeword_rejected"]
+    assert rejected and rejected[0].data["reason"] == "not_confirmed"
+    assert not any(e.kind == "session_end" for e in events)
+    assert pipeline.idle
+
+
+def test_pipeline_end_of_audio_with_pending_confirmation() -> None:
+    """flush() while a candidate is still pending resolves the session without an outcome."""
+    pipeline = make_pipeline()
+    pipeline.detector = _SilentDetector(["computer"], 0.9)
+    events: list[Any] = []
+    for frame in [tone_frame()] * 8:  # enough for the candidate; session still open at flush
+        events.extend(pipeline.feed(frame))
+    events.extend(pipeline.flush())
+    rejected = [e for e in events if e.kind == "wakeword_rejected"]
+    assert rejected and rejected[0].data["reason"] == "unresolved"
+    assert not any(e.kind == "session_end" for e in events)
+    assert pipeline.idle
+
+
+def test_pipeline_repeated_rejected_candidates() -> None:
+    """Repeated unresolved candidates reject cleanly each time and the pipeline stays usable."""
+    pipeline = make_pipeline(cooldown_ms=0)
+    pipeline.detector = _RejectingDetector(["computer"], 0.9)
+    events = run_frames(pipeline, COMMAND + COMMAND)
+    rejected = [e for e in events if e.kind == "wakeword_rejected"]
+    assert len(rejected) >= 2
+    assert not any(e.kind == "session_end" for e in events)
+    assert pipeline.idle
 
 
 # --- live runtime ------------------------------------------------------------------------------

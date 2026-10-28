@@ -242,11 +242,24 @@ class RecognitionPipeline:
         session = self._session
         assert session is not None
         ended_at = time.monotonic()
-        if session.wake_pending and self.detector is not None:
-            if not self._handle_wake_events(self.detector.flush(), events):
+        if session.wake_pending:
+            if self.detector is not None and not self._handle_wake_events(self.detector.flush(), events):
                 return
             if self._session is not None and self._session.wake_pending:
-                self._session.wake_pending = False
+                # the detector gave no final verdict: an unresolved candidate must not become an
+                # actionable outcome, so the session is cancelled like a rejected one
+                events.append(
+                    PipelineEvent(
+                        "wakeword_rejected",
+                        {
+                            "session_id": session.session_id,
+                            "wakeword": session.wakeword,
+                            "reason": "unresolved",
+                        },
+                    )
+                )
+                self._end_session()
+                return
         stt_started = time.monotonic()
         transcript = session.transcriber.finalize()
         pcm = b"".join(session.frames)
