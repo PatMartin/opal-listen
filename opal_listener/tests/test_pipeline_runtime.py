@@ -156,6 +156,25 @@ def test_live_runtime_produces_logged_result(client: TestClient, fake_provider: 
     assert status["wakeword_detections"] == 1 and status["sessions"] == 1
 
 
+def test_live_mic_match_is_published_to_the_event_bus(client: TestClient, fake_provider: type) -> None:
+    from opal_listener.service.listener_service import INTENT_MATCH_TOPIC
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    fake_provider.script.append("turn on the kitchen light")
+    service._source_factory = lambda settings: ScriptedSource(COMMAND)
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["results"] >= 1)
+    finally:
+        client.post("/api/v1/recognition/stop")
+    assert len(publisher.events) == 1
+    topic, payload = publisher.events[0]
+    assert topic == INTENT_MATCH_TOPIC
+    assert payload["matched"] is True and payload["source"] == "mic"
+    assert payload["intent_name"] == "light_turn_on" and payload["slot_values"] == {"room_name": "kitchen"}
+
+
 def test_live_runtime_duplicate_results_are_flagged(client: TestClient, fake_provider: type) -> None:
     service = client.app.state.listener  # type: ignore[attr-defined]
     updated = patch_settings(client, cooldown_ms="0", dedup_window_ms="60000")

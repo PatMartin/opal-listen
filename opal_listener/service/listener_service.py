@@ -40,8 +40,12 @@ from opal_listener.service.zmq_events import EventPublisher, ZmqEventPublisher
 
 log = logging.getLogger(__name__)
 
-# Published to --xpub whenever a recognition result matches an intent (see ListenerService._record).
+# Published whenever a live-microphone recognition matches an intent (see ListenerService._record).
 INTENT_MATCH_TOPIC = "opal.listen.intent.match"
+
+# Diagnostic sources (the test_text / test_audio endpoints): results are logged and streamed to
+# local subscribers but are never published as external intent-match events.
+DIAGNOSTIC_SOURCES = ("text", "audio")
 
 SourceFactory = Callable[[dict[str, Any]], AudioSource]
 
@@ -392,7 +396,7 @@ class ListenerService:
         payload = result.model_dump(mode="json")
 
         self.bus.publish("result", payload)
-        if result.matched:
+        if result.matched and result.source not in DIAGNOSTIC_SOURCES:
             log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
             self.event_publisher.publish(INTENT_MATCH_TOPIC, payload)
         return result

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from opal_listener.service.audio.pcm import write_wav_bytes
+from opal_listener.tests.conftest import silence_frame, tone_frame
+
 
 def _by_name(client: TestClient, path: str, name: str) -> dict:
     return next(item for item in client.get(path).json() if item["name"] == name)
@@ -237,23 +240,46 @@ def test_test_text_example_output(client: TestClient) -> None:
     assert isinstance(result["total_latency_ms"], int)
 
 
-def test_intent_match_is_published_to_the_event_bus(client: TestClient) -> None:
-    from opal_listener.service.listener_service import INTENT_MATCH_TOPIC
-
+def test_diagnostic_text_results_are_not_published_to_the_event_bus(client: TestClient) -> None:
     publisher = client.app.state.listener.event_publisher  # type: ignore[attr-defined]
 
-    no_match = client.post("/api/v1/recognition/test_text", json={"text": "order a pizza"}).json()
-    assert no_match["matched"] is False
+    for save_log in (True, False):
+        before = client.get("/api/v1/logs/count").json()["total"]
+        matched = client.post(
+            "/api/v1/recognition/test_text",
+            json={"text": "turn on the kitchen light"},
+            params={"save_log": save_log},
+        ).json()
+        assert matched["matched"] is True
+        assert client.get("/api/v1/logs/count").json()["total"] == before + int(save_log)
+        no_match = client.post(
+            "/api/v1/recognition/test_text", json={"text": "order a pizza"}, params={"save_log": save_log}
+        ).json()
+        assert no_match["matched"] is False
     assert publisher.events == []
 
-    result = client.post("/api/v1/recognition/test_text", json={"text": "turn on the kitchen light"}).json()
-    assert result["matched"] is True
-    assert len(publisher.events) == 1
-    topic, payload = publisher.events[0]
-    assert topic == INTENT_MATCH_TOPIC
-    assert payload["intent_name"] == "light_turn_on"
-    assert payload["slot_values"] == {"room_name": "kitchen"}
-    assert payload["matched"] is True
+
+def test_diagnostic_audio_results_are_not_published_to_the_event_bus(
+    client: TestClient, fake_provider: type
+) -> None:
+    publisher = client.app.state.listener.event_publisher  # type: ignore[attr-defined]
+    fake_provider.script.append("turn on the kitchen light")
+    wav = write_wav_bytes(b"".join([silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 15))
+
+    before = client.get("/api/v1/logs/count").json()["total"]
+    matched = client.post(
+        "/api/v1/recognition/test_audio", files={"file": ("command.wav", wav, "audio/wav")}
+    ).json()
+    assert matched["matched"] is True and matched["source"] == "audio"
+    assert client.get("/api/v1/logs/count").json()["total"] == before + 1
+    no_match = client.post(
+        "/api/v1/recognition/test_audio",
+        files={"file": ("command.wav", wav, "audio/wav")},
+        params={"save_log": False},
+    ).json()
+    assert no_match["matched"] is False
+    assert client.get("/api/v1/logs/count").json()["total"] == before + 1
+    assert publisher.events == []
 
 
 def test_logs_and_performance(client: TestClient) -> None:
