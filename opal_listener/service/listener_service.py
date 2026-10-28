@@ -117,6 +117,8 @@ class ListenerService:
         self._stats = _RuntimeStats()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._lifecycle_lock = threading.Lock()
+        self._shutdown = False
         self._dedup_seen: dict[tuple[object, ...], float] = {}
         self._results_since_prune = 0
 
@@ -135,6 +137,10 @@ class ListenerService:
             self.start()
 
     def shutdown(self) -> None:
+        with self._lifecycle_lock:
+            if self._shutdown:
+                return
+            self._shutdown = True
         self.stop()
         self.event_publisher.close()
 
@@ -463,25 +469,41 @@ class ListenerService:
         return self._thread is not None and self._thread.is_alive()
 
     def start(self) -> dict[str, str]:
-        if self.running:
-            return {"status": "already_running"}
-        self.snapshot  # noqa: B018 - raises if configuration is not loaded
-        self._stop.clear()
-        self._stats = _RuntimeStats(state="starting", started_at=utc_now(), started_monotonic=time.monotonic())
-        self._thread = threading.Thread(target=self._run, name="listener-runtime", daemon=True)
-        self._thread.start()
-        return {"status": "started"}
+        with self._lifecycle_lock:
+            if self._thread is not None:
+                if self._thread.is_alive():
+                    if not self._stop.is_set():
+                        return {"status": "already_running"}
+                    # a previous worker is still unwinding; wait for it before restarting so two
+                    # workers are never alive at once
+                    self._thread.join(timeout=5)
+                    if self._thread.is_alive():
+                        return {"status": "stopping"}
+                # worker confirmed terminated — only now is the reference cleared
+                self._thread = None
+            self.snapshot  # noqa: B018 - raises if configuration is not loaded
+            self._stop.clear()
+            self._stats = _RuntimeStats(state="starting", started_at=utc_now(), started_monotonic=time.monotonic())
+            self._thread = threading.Thread(target=self._run, name="listener-runtime", daemon=True)
+            self._thread.start()
+            return {"status": "started"}
 
     def stop(self) -> dict[str, str]:
-        if not self.running:
-            return {"status": "not_running"}
-        self._stop.set()
-        assert self._thread is not None
-        self._thread.join(timeout=5)
-        self._thread = None
-        self._stats.state = "stopped"
-        self._publish_status()
-        return {"status": "stopped"}
+        with self._lifecycle_lock:
+            if self._thread is None:
+                return {"status": "not_running"}
+            thread = self._thread
+            self._stop.set()
+            if thread.is_alive():
+                self._set_state("stopping")
+            thread.join(timeout=5)
+            if thread.is_alive():
+                # still unwinding: keep the reference and do not report "stopped"
+                return {"status": "stopping"}
+            self._thread = None
+            self._stats.state = "stopped"
+            self._publish_status()
+            return {"status": "stopped"}
 
     def status(self) -> s.PipelineStatus:
         st = self._stats

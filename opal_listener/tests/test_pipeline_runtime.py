@@ -366,3 +366,107 @@ def test_event_bus_fan_out_is_thread_safe() -> None:
 
     items = asyncio.run(main())
     assert items[-1]["event"] == "audio_level"
+
+
+class _BlockingSource(AudioSource):
+    """read() blocks until released — simulates a worker stuck in a blocking call at shutdown."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+
+    @property
+    def description(self) -> str:
+        return "blocking"
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+    def read(self, timeout: float) -> AudioFrame | None:
+        self.release.wait(30)
+        return None
+
+
+def test_concurrent_start_launches_one_worker(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([silence_frame()])
+    results: list[dict[str, str]] = []
+    threads = [threading.Thread(target=lambda: results.append(service.start())) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+    try:
+        assert len(results) == 8
+        assert [r["status"] for r in results].count("started") == 1
+        assert [r["status"] for r in results].count("already_running") == 7
+        workers = [t for t in threading.enumerate() if t.name == "listener-runtime" and t.is_alive()]
+        assert len(workers) == 1  # at most one active worker
+        assert service.running
+    finally:
+        service.stop()
+
+
+def test_concurrent_stop_requests(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([silence_frame()])
+    assert service.start()["status"] == "started"
+    wait_for(lambda: service.running)
+    results: list[dict[str, str]] = []
+    threads = [threading.Thread(target=lambda: results.append(service.stop())) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+    assert len(results) == 8
+    assert all(r["status"] in ("stopped", "not_running") for r in results)
+    assert not service.running
+    assert service._thread is None  # type: ignore[attr-defined]
+
+
+def test_rapid_start_stop_start(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([silence_frame()])
+    try:
+        for _ in range(5):
+            assert service.start()["status"] in ("started", "stopping")
+            assert service.stop()["status"] == "stopped"
+        assert not service.running
+        assert service.start()["status"] == "started"
+        workers = [t for t in threading.enumerate() if t.name == "listener-runtime" and t.is_alive()]
+        assert len(workers) == 1
+    finally:
+        service.stop()
+
+
+def test_stop_reports_stopping_while_worker_blocked(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    source = _BlockingSource()
+    service._source_factory = lambda settings: source
+    assert service.start()["status"] == "started"
+    wait_for(lambda: service.running)
+    try:
+        assert service.stop()["status"] == "stopping"  # join timed out on the blocked worker
+        assert service.running  # not reported stopped while the worker is alive
+        assert service._thread is not None  # type: ignore[attr-defined]
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["running"] is True and status["state"] == "stopping"
+        source.release.set()  # unblock the worker so it can observe _stop and exit
+        wait_for(lambda: not service.running, timeout=10)
+        assert service.stop()["status"] == "stopped"
+        assert service._thread is None  # type: ignore[attr-defined]
+    finally:
+        service.stop()
+
+
+def test_repeated_shutdown_is_idempotent(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([silence_frame()])
+    assert service.start()["status"] == "started"
+    wait_for(lambda: service.running)
+    service.shutdown()
+    service.shutdown()  # second call must not raise or re-close
+    assert not service.running
+    assert service.event_publisher.closed  # type: ignore[attr-defined]
