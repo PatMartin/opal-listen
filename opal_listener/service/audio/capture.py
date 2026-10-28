@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 from scipy.signal import firwin, lfilter
 
-from opal_listener.service.audio.pcm import TARGET_RATE, resample_int16
+from opal_listener.service.audio.pcm import TARGET_RATE
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +73,14 @@ def resolve_device(spec: str) -> int | None:
 
 
 class StreamResampler:
-    """Stateful resampler to 16 kHz. Integer ratios use a streaming FIR decimator (no block seams)."""
+    """Stateful resampler to 16 kHz.
+
+    Integer ratios use a streaming FIR decimator (filter state carried across blocks). Non-integer
+    ratios (e.g. 44.1 kHz) stream through a buffered linear interpolator with a fractional output
+    phase accumulator, so consecutive blocks stitch seamlessly and long captures cannot drift.
+    Latency: identity and fractional paths emit ~one input block of delay; the FIR path adds a
+    fixed group delay of (len(taps)-1)/(2*src_rate) s (~2 ms at 32 kHz).
+    """
 
     def __init__(self, src_rate: int, dst_rate: int = TARGET_RATE) -> None:
         self.src_rate = src_rate
@@ -83,6 +90,10 @@ class StreamResampler:
             self._taps = firwin(63, 0.9 * (dst_rate / 2), fs=src_rate)
             self._zi = np.zeros(len(self._taps) - 1)
             self._phase = 0
+        else:
+            self._step = src_rate / dst_rate
+            self._buf = np.empty(0, dtype=np.float64)
+            self._pos = 0.0  # absolute position (in input samples) of the next output sample
 
     def process(self, samples: np.ndarray) -> np.ndarray:
         if self.src_rate == self.dst_rate:
@@ -92,7 +103,34 @@ class StreamResampler:
             out = filtered[self._phase :: self._factor]
             self._phase = (self._phase - len(samples)) % self._factor
             return np.clip(np.round(out), -32768, 32767).astype(np.int16)
-        return resample_int16(samples, self.src_rate, self.dst_rate)
+        self._buf = np.concatenate([self._buf, samples.astype(np.float64)])
+        return self._drain(final=False)
+
+    def _drain(self, final: bool) -> np.ndarray:
+        # emit output samples at positions _pos, _pos+_step, ... while the buffer covers them
+        last_idx = len(self._buf) - 1 if final else len(self._buf) - 2
+        n_out = 0 if last_idx < self._pos else int((last_idx - self._pos) // self._step) + 1
+        if n_out <= 0:
+            if final:
+                self._buf = np.empty(0, dtype=np.float64)
+            return np.empty(0, dtype=np.int16)
+        idx = self._pos + np.arange(n_out) * self._step
+        i0 = idx.astype(np.int64)
+        frac = idx - i0
+        i1 = np.minimum(i0 + 1, len(self._buf) - 1)
+        out = self._buf[i0] * (1.0 - frac) + self._buf[i1] * frac
+        consume = int(i0[-1])  # input before the last emitted sample is fully consumed
+        self._buf = self._buf[consume:]
+        self._pos = idx[-1] + self._step - consume
+        if final:
+            self._buf = np.empty(0, dtype=np.float64)
+        return np.clip(np.round(out), -32768, 32767).astype(np.int16)
+
+    def flush(self) -> np.ndarray:
+        """End of stream: emit all remaining buffered samples (non-integer ratios only)."""
+        if self.src_rate == self.dst_rate or self._factor > 1:
+            return np.empty(0, dtype=np.int16)
+        return self._drain(final=True)
 
 
 class AudioSource(ABC):
