@@ -451,6 +451,7 @@ class _BlockingSource(AudioSource):
 
     def __init__(self) -> None:
         self.release = threading.Event()
+        self.in_read = threading.Event()
 
     @property
     def description(self) -> str:
@@ -463,6 +464,7 @@ class _BlockingSource(AudioSource):
         pass
 
     def read(self, timeout: float) -> AudioFrame | None:
+        self.in_read.set()
         self.release.wait(30)
         return None
 
@@ -524,7 +526,7 @@ def test_stop_reports_stopping_while_worker_blocked(client: TestClient, fake_pro
     source = _BlockingSource()
     service._source_factory = lambda settings: source
     assert service.start()["status"] == "started"
-    wait_for(lambda: service.running)
+    assert source.in_read.wait(5)  # worker is inside the blocking read before stop() is called
     try:
         assert service.stop()["status"] == "stopping"  # join timed out on the blocked worker
         assert service.running  # not reported stopped while the worker is alive
@@ -638,6 +640,92 @@ def test_capture_restart_waits_for_session_end(client: TestClient, fake_provider
         # silence frames remain unread (a mid-session swap would leave ~20 of the 25 frames)
         assert len(sources[0].frames) <= 10
         assert sources[1].frame_ms == 200
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_provider_for_reuses_instance_for_unchanged_config(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    snap = service.snapshot
+    p1 = service.provider_for(snap)
+    p2 = service.provider_for(snap)
+    assert p1 is p2  # unchanged config fingerprint: same loaded instance, no reload
+    assert len(service._providers) == 1  # type: ignore[attr-defined]
+
+
+def test_provider_for_isolates_config_changes(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    snap = service.snapshot
+    old_provider = service.provider_for(snap)
+    old_pipeline = service._make_pipeline(snap, debug=False, cooldown=False)
+
+    # a provider-config change (options feed the fingerprint) activates a fresh instance;
+    # the in-flight pipeline keeps the instance it started with, still loaded
+    assert patch_settings(client, wakeword_distractors="commune").status_code == 200
+    new_provider = service.provider_for(service.snapshot)
+    assert new_provider is not old_provider
+    assert service._providers["fake"][1] is new_provider  # type: ignore[attr-defined]
+    assert old_pipeline.provider is old_provider and old_provider.is_loaded()
+
+    # a further change still leaves exactly one cached entry: no unbounded accumulation
+    assert patch_settings(client, wakeword_distractors="commute").status_code == 200
+    latest = service.provider_for(service.snapshot)
+    assert len(service._providers) == 1 and service._providers["fake"][1] is latest  # type: ignore[attr-defined]
+    assert latest is not new_provider and old_provider.is_loaded()  # retired instances stay usable
+
+
+def test_provider_for_failed_load_keeps_previous_instance(client: TestClient, fake_provider: type) -> None:
+    from opal_listener.service.providers.base import ProviderError
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    previous = service.provider_for(service.snapshot)
+    FakeListenerProvider.fail_load = True
+    try:
+        assert patch_settings(client, wakeword_distractors="broken").status_code == 200
+        with pytest.raises(ProviderError):
+            service.provider_for(service.snapshot)
+        # the failed activation never replaced the working cache entry
+        assert service._providers["fake"][1] is previous  # type: ignore[attr-defined]
+    finally:
+        FakeListenerProvider.fail_load = False
+
+
+def test_provider_inspection_during_recognition(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    fake_provider.script.append("turn on the kitchen light")
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        active = service._providers["fake"][1]  # type: ignore[attr-defined]
+        provider, snap = service.provider_status()
+        assert provider is active and snap is service.snapshot  # inspection returns the live instance
+        # repeated inspection creates nothing new and loads nothing
+        assert service.provider_status()[0] is active
+        assert len(service._providers) == 1  # type: ignore[attr-defined]
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_test_audio_does_not_disturb_live_listener(client: TestClient, fake_provider: type) -> None:
+    from opal_listener.service.audio.pcm import write_wav_bytes
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    fake_provider.script.extend(["turn on the kitchen light"] * 4)
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
+    wav = write_wav_bytes(b"".join(COMMAND))
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        results: list[Any] = []
+        worker = threading.Thread(target=lambda: results.append(service.test_audio(wav)))
+        worker.start()
+        worker.join(timeout=15)
+        # the diagnostic audio test completed while the live pipeline kept producing results
+        assert results and results[0].transcript is not None
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 2)
+        assert service._providers["fake"][1].is_loaded()  # type: ignore[attr-defined]
     finally:
         client.post("/api/v1/recognition/stop")
 

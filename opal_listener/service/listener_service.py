@@ -32,7 +32,12 @@ from opal_listener.service.events import EventBus
 from opal_listener.service.http_events import HttpEventPublisher
 from opal_listener.service.nlu.normalizer import normalize_text, split_wakeword
 from opal_listener.service.pipeline import CommandOutcome, PipelineEvent, RecognitionPipeline
-from opal_listener.service.providers.base import ListenerProvider, ProviderError, SttRefiner
+from opal_listener.service.providers.base import (
+    ListenerProvider,
+    ProviderConfig,
+    ProviderError,
+    SttRefiner,
+)
 from opal_listener.service.providers.registry import create_provider, create_refiner
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
 from opal_listener.service.settings_registry import SETTINGS, to_storage
@@ -54,6 +59,19 @@ _CAPTURE_SETTING_KEYS = ("audio_device", "audio_capture_rate", "audio_block_ms")
 
 def _capture_signature(settings: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(settings[k] for k in _CAPTURE_SETTING_KEYS)
+
+
+def _provider_fingerprint(config: ProviderConfig) -> tuple[Any, ...]:
+    """Hashable identity of a provider's model configuration.
+
+    Providers are cached per (name, fingerprint): an unchanged fingerprint reuses the live
+    instance (no reload), a changed one creates a fresh instance so in-flight sessions keep
+    running on the configuration they started with."""
+    return (
+        config.sample_rate,
+        tuple(sorted(config.model_paths.items())),
+        tuple(sorted((k, repr(v)) for k, v in config.options.items())),
+    )
 
 SourceFactory = Callable[[dict[str, Any]], AudioSource]
 
@@ -120,8 +138,10 @@ class ListenerService:
         self._provider_lock = threading.Lock()
         self._snapshot: RuntimeSnapshot | None = None
         self._version = 0
-        self._providers: dict[str, ListenerProvider] = {}
-        self._refiners: dict[str, SttRefiner] = {}
+        # name -> (config fingerprint, instance); at most one loaded instance per name — a replaced
+        # entry is GC'd once the last in-flight pipeline drops its reference
+        self._providers: dict[str, tuple[tuple[Any, ...], ListenerProvider]] = {}
+        self._refiners: dict[str, tuple[tuple[Any, ...], SttRefiner]] = {}
         self._stats = _RuntimeStats()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -214,7 +234,7 @@ class ListenerService:
         ):
             return
         try:
-            provider = self._get_provider(new.provider_name)
+            provider = self._provider_factory(new.provider_name)
         except ProviderError as exc:
             raise InvalidRequestError(str(exc)) from exc
         failures = [c for c in provider.check(new.provider_config) if not c.ok and c.severity == "error"]
@@ -290,25 +310,33 @@ class ListenerService:
 
     # --- providers ----------------------------------------------------------------------------
 
-    def _get_provider(self, name: str) -> ListenerProvider:
+    def provider_for(self, snapshot: RuntimeSnapshot) -> ListenerProvider:
+        """Returns the loaded provider for snapshot's configuration.
+
+        An unchanged config fingerprint reuses the live instance without reloading. A changed one
+        creates and loads a fresh instance under the lock — the previous instance is dropped from
+        the cache (never mutated or unloaded while in-flight sessions still reference it)."""
+        fingerprint = _provider_fingerprint(snapshot.provider_config)
         with self._provider_lock:
-            provider = self._providers.get(name)
-            if provider is None:
-                provider = self._provider_factory(name)
-                self._providers[name] = provider
+            cached = self._providers.get(snapshot.provider_name)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
+            provider = self._provider_factory(snapshot.provider_name)
+            provider.load(snapshot.provider_config)
+            self._providers[snapshot.provider_name] = (fingerprint, provider)
             return provider
 
-    def provider_for(self, snapshot: RuntimeSnapshot) -> ListenerProvider:
-        provider = self._get_provider(snapshot.provider_name)
-        provider.load(snapshot.provider_config)
-        return provider
-
     def provider_status(self) -> tuple[ListenerProvider | None, RuntimeSnapshot | None]:
+        """Inspection-only: returns the active provider (or a transient instance for check())
+        without loading models or mutating recognition state."""
         snap = self._snapshot
         if snap is None:
             return None, None
         try:
-            return self._get_provider(snap.provider_name), snap
+            with self._provider_lock:
+                cached = self._providers.get(snap.provider_name)
+            provider = cached[1] if cached else self._provider_factory(snap.provider_name)
+            return provider, snap
         except ProviderError:
             return None, snap
 
@@ -316,14 +344,17 @@ class ListenerService:
         name = snapshot.refiner_name
         if name in ("", "none"):
             return None
-        refiner = self._refiners.get(name)
-        if refiner is None:
+        fingerprint = _provider_fingerprint(snapshot.provider_config)
+        with self._provider_lock:
+            cached = self._refiners.get(name)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
             refiner = create_refiner(name)
             if refiner is None:
                 return None
-            self._refiners[name] = refiner
-        refiner.load(snapshot.provider_config)
-        return refiner
+            refiner.load(snapshot.provider_config)
+            self._refiners[name] = (fingerprint, refiner)
+            return refiner
 
     def _make_pipeline(self, snapshot: RuntimeSnapshot, debug: bool, cooldown: bool) -> RecognitionPipeline:
         return RecognitionPipeline(
