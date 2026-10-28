@@ -29,7 +29,7 @@ from opal_listener.service.audio.pcm import iter_frames, load_wav_bytes
 from opal_listener.service.config_store import export_bundle, load_config_dir, replace_config
 from opal_listener.service.errors import InvalidRequestError, ServiceUnavailableError
 from opal_listener.service.events import EventBus
-from opal_listener.service.http_events import CompositeEventPublisher, HttpEventPublisher
+from opal_listener.service.http_events import HttpEventPublisher
 from opal_listener.service.nlu.normalizer import normalize_text, split_wakeword
 from opal_listener.service.pipeline import CommandOutcome, PipelineEvent, RecognitionPipeline
 from opal_listener.service.providers.base import ListenerProvider, ProviderError, SttRefiner
@@ -59,15 +59,21 @@ def default_source_factory(settings: dict[str, Any]) -> AudioSource:
 
 
 def default_event_publisher(settings: AppSettings) -> EventPublisher:
-    """Builds the event publisher according to the configured transport (http, zmq, or both)."""
+    """Builds the event publisher for the configured transport (http or zmq).
+
+    'both' is rejected: it would deliver the same actionable event twice — once via REST and once
+    via ZeroMQ — and opal-event does not deduplicate across transports, so every matched intent
+    could execute an action twice."""
     transport = (settings.event_transport or "http").lower()
-    http_pub = HttpEventPublisher(base_url=settings.opal_event_url, token=settings.opal_event_token)
-    zmq_pub = ZmqEventPublisher(settings.xpub_url)
     if transport == "both":
-        return CompositeEventPublisher([http_pub, zmq_pub])
+        raise ValueError(
+            "event_transport='both' is not supported: opal-event does not deduplicate events across "
+            "transports, so each match would be delivered (and its action executed) twice. "
+            "Use 'http' or 'zmq'."
+        )
     if transport == "zmq":
-        return zmq_pub
-    return http_pub
+        return ZmqEventPublisher(settings.xpub_url)
+    return HttpEventPublisher(base_url=settings.opal_event_url, token=settings.opal_event_token)
 
 
 @dataclass
@@ -111,7 +117,7 @@ class ListenerService:
         self._stats = _RuntimeStats()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
-        self._last_matched: tuple[str, float] | None = None
+        self._dedup_seen: dict[tuple[object, ...], float] = {}
         self._results_since_prune = 0
 
     # --- lifecycle ----------------------------------------------------------------------------
@@ -379,12 +385,20 @@ class ListenerService:
     def _record(self, result: s.RecognitionResult, save_log: bool) -> s.RecognitionResult:
         snapshot = self.snapshot
         if result.source == "mic" and result.matched:
-            key = f"{result.intent_name}|{sorted(result.slot_values.items())}"
+            key = (
+                result.source,
+                result.profile_name,
+                result.intent_name,
+                tuple(sorted(result.slot_values.items())),
+            )
             now = time.monotonic()
             window = int(snapshot.settings["dedup_window_ms"]) / 1000
-            if self._last_matched and self._last_matched[0] == key and now - self._last_matched[1] < window:
+            # evict expired entries so a long-running listener cannot grow this map without bound
+            self._dedup_seen = {k: ts for k, ts in self._dedup_seen.items() if now - ts < window}
+            if key in self._dedup_seen:
                 result.deduplicated = True
-            self._last_matched = (key, now)
+            else:
+                self._dedup_seen[key] = now
         if save_log:
             capture = bool(snapshot.settings["auto_capture_failures"]) and result.source != "text"
             with self.db.session() as session:
@@ -399,6 +413,7 @@ class ListenerService:
         self.bus.publish("result", payload)
         if (
             result.matched
+            and not result.deduplicated
             and result.source not in DIAGNOSTIC_SOURCES
             and snapshot.settings["event_publication_enabled"]
         ):

@@ -9,10 +9,11 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
+import pytest
 
 from opal_listener.app_settings import AppSettings
 from opal_listener.service.event_envelope import DEFAULT_SOURCE, SCHEMA_VERSION
-from opal_listener.service.http_events import CompositeEventPublisher, HttpEventPublisher
+from opal_listener.service.http_events import HttpEventPublisher
 from opal_listener.service.listener_service import default_event_publisher
 from opal_listener.service.opal_context import (
     REQUEST_HEADER,
@@ -292,6 +293,8 @@ def test_default_event_publisher_selection() -> None:
     pub_zmq = default_event_publisher(settings_zmq)
     assert isinstance(pub_zmq, ZmqEventPublisher)
 
+    # 'both' is rejected: the same event would be delivered twice and opal-event does not
+    # deduplicate across transports, so every match could execute an action twice.
     settings_both = AppSettings(event_transport="both")
-    pub_both = default_event_publisher(settings_both)
-    assert isinstance(pub_both, CompositeEventPublisher)
+    with pytest.raises(ValueError, match="does not deduplicate"):
+        default_event_publisher(settings_both)

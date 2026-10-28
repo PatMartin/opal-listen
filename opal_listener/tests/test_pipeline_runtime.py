@@ -199,7 +199,8 @@ def test_event_publication_enable_disable(client: TestClient, fake_provider: typ
     assert publisher.events == []  # disabled: the match was logged but not published externally
     assert client.get("/api/v1/logs/count").json()["total"] == 1
 
-    updated = patch_settings(client, event_publication_enabled="true")
+    # dedup_window_ms=0 keeps this test focused on the publication toggle (dedup is tested separately)
+    updated = patch_settings(client, event_publication_enabled="true", dedup_window_ms="0")
     assert updated.status_code == 200 and updated.json()["event_publication_enabled"] == "true"
     run_once(2)
     assert len(publisher.events) == 1
@@ -214,7 +215,9 @@ def test_event_publication_enable_disable(client: TestClient, fake_provider: typ
 
 def test_live_runtime_duplicate_results_are_flagged(client: TestClient, fake_provider: type) -> None:
     service = client.app.state.listener  # type: ignore[attr-defined]
-    updated = patch_settings(client, cooldown_ms="0", dedup_window_ms="60000")
+    updated = patch_settings(
+        client, cooldown_ms="0", dedup_window_ms="60000", event_publication_enabled="true"
+    )
     assert updated.status_code == 200
     assert (updated.json()["cooldown_ms"], updated.json()["dedup_window_ms"]) == ("0", "60000")
     fake_provider.script.extend(["what time is it", "what time is it"])
@@ -234,6 +237,54 @@ def test_live_runtime_duplicate_results_are_flagged(client: TestClient, fake_pro
     finally:
         client.post("/api/v1/recognition/stop")
     assert [r["deduplicated"] for r in published[:2]] == [False, True]
+    # both results are logged and streamed locally, but only the first is published externally
+    publisher = service.event_publisher
+    assert len(publisher.events) == 1
+    assert publisher.events[0][1]["intent_name"] == "get_time"
+    assert publisher.events[0][1]["deduplicated"] is False
+
+
+def test_live_runtime_repeat_after_dedup_window_publishes_again(
+    client: TestClient, fake_provider: type
+) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    updated = patch_settings(client, dedup_window_ms="500", event_publication_enabled="true")
+    assert updated.status_code == 200
+
+    def run_once(expected_logs: int) -> None:
+        fake_provider.script.append("what time is it")
+        service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+        client.post("/api/v1/recognition/start")
+        try:
+            wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= expected_logs)
+        finally:
+            client.post("/api/v1/recognition/stop")
+
+    run_once(1)
+    time.sleep(0.7)  # longer than the 500 ms dedup window
+    run_once(2)
+    assert [e[1]["intent_name"] for e in publisher.events] == ["get_time", "get_time"]
+
+
+def test_live_runtime_different_slots_publish_distinct_events(
+    client: TestClient, fake_provider: type
+) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    updated = patch_settings(
+        client, cooldown_ms="0", dedup_window_ms="60000", event_publication_enabled="true"
+    )
+    assert updated.status_code == 200
+    fake_provider.script.extend(["turn on the kitchen light", "turn on the bedroom light"])
+    service._source_factory = lambda settings: ScriptedSource(COMMAND + COMMAND)
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 2)
+    finally:
+        client.post("/api/v1/recognition/stop")
+    rooms = [e[1]["slot_values"]["room_name"] for e in publisher.events]
+    assert rooms == ["kitchen", "bedroom"]
 
 
 def test_watchdog_restarts_silent_audio_source(client: TestClient, fake_provider: type) -> None:

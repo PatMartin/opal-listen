@@ -39,7 +39,8 @@ class AppSettings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("opal_event_token", "OPAL_EVENT_API_TOKEN", "OPAL_LISTENER_OPAL_EVENT_TOKEN"),
     )
-    # Event transport: "http" (default for opal-event REST), "zmq", or "both"
+    # Event transport: "http" (default for opal-event REST) or "zmq". "both" is rejected at startup:
+    # the same event would be delivered twice (opal-event does not deduplicate across transports).
     event_transport: str = Field(
         default="http",
         validation_alias=AliasChoices("event_transport", "OPAL_EVENT_TRANSPORT", "OPAL_LISTENER_EVENT_TRANSPORT"),
