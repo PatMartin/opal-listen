@@ -47,6 +47,14 @@ INTENT_MATCH_TOPIC = "opal.listen.intent.match"
 # local subscribers but are never published as external intent-match events.
 DIAGNOSTIC_SOURCES = ("text", "audio")
 
+# Settings that describe the physical capture stream: changing any of them requires reopening the
+# audio source, not just rebuilding the pipeline (frame duration must stay coherent end to end).
+_CAPTURE_SETTING_KEYS = ("audio_device", "audio_capture_rate", "audio_block_ms")
+
+
+def _capture_signature(settings: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(settings[k] for k in _CAPTURE_SETTING_KEYS)
+
 SourceFactory = Callable[[dict[str, Any]], AudioSource]
 
 
@@ -570,29 +578,69 @@ class ListenerService:
         self._stats.audio_restarts += 1
         self._set_state("recovering")
 
+    def _reopen_source(self, source: AudioSource, snapshot: RuntimeSnapshot) -> AudioSource:
+        """Replaces a live capture stream after a capture-setting change.
+
+        The old stream is closed before the new one opens so captures never overlap. If the new
+        source cannot start, the last-known-good stream is restarted when possible and an
+        AudioCaptureError is raised so the caller can keep the previous configuration."""
+        source.stop()
+        try:
+            new_source = self._source_factory(snapshot.settings)
+            new_source.start()
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                source.start()  # best-effort: keep the previously working stream alive
+            raise AudioCaptureError(f"audio capture restart failed: {exc}") from exc
+        self._stats.audio_device = new_source.description
+        self._stats.capture_sample_rate = new_source.capture_rate
+        return new_source
+
     def _listen(self, source: AudioSource, pipeline: RecognitionPipeline, snapshot: RuntimeSnapshot) -> None:
         watchdog_s = int(snapshot.settings["audio_watchdog_timeout_ms"]) / 1000
         last_frame = time.monotonic()
-        while not self._stop.is_set():
-            current = self._snapshot
-            if current is not None and current.version != snapshot.version and pipeline.idle:
-                snapshot = current
-                pipeline = self._make_pipeline(snapshot, debug=pipeline.debug, cooldown=True)
-                watchdog_s = int(snapshot.settings["audio_watchdog_timeout_ms"]) / 1000
-            want_debug = self.bus.subscriber_count > 0
-            if pipeline.debug != want_debug and pipeline.idle:
-                pipeline.debug = want_debug
-            frame = source.read(timeout=0.25)
-            if frame is None:
-                if time.monotonic() - last_frame > watchdog_s:
-                    raise AudioCaptureError(f"no audio received for {watchdog_s:.1f}s (watchdog)")
-                continue
-            last_frame = time.monotonic()
-            self._stats.frames_processed += 1
-            events = pipeline.feed(frame.pcm, frame.captured_at)
-            self._stats.last_audio_level = pipeline.last_level
-            for event in events:
-                self._handle_event(event, snapshot)
+        failed_capture_version: int | None = None
+        try:
+            while not self._stop.is_set():
+                current = self._snapshot
+                if current is not None and current.version != snapshot.version and pipeline.idle:
+                    # Config changes apply only at the idle session boundary. Capture-setting
+                    # changes additionally require reopening the audio source; a failed reopen
+                    # keeps the last-known-good stream *and* snapshot (frame duration stays
+                    # coherent) and is recorded through the normal recovery accounting.
+                    if _capture_signature(snapshot.settings) == _capture_signature(current.settings):
+                        snapshot = current
+                    elif current.version == failed_capture_version:
+                        continue  # reopen already failed for this version: stay on last-known-good
+                    else:
+                        try:
+                            source = self._reopen_source(source, current)
+                        except AudioCaptureError as exc:
+                            failed_capture_version = current.version
+                            self._recover(str(exc))
+                            continue
+                        snapshot = current
+                        last_frame = time.monotonic()  # fresh stream: reset the watchdog baseline
+                    pipeline = self._make_pipeline(snapshot, debug=pipeline.debug, cooldown=True)
+                    watchdog_s = int(snapshot.settings["audio_watchdog_timeout_ms"]) / 1000
+                want_debug = self.bus.subscriber_count > 0
+                if pipeline.debug != want_debug and pipeline.idle:
+                    pipeline.debug = want_debug
+                frame = source.read(timeout=0.25)
+                if frame is None:
+                    if time.monotonic() - last_frame > watchdog_s:
+                        raise AudioCaptureError(f"no audio received for {watchdog_s:.1f}s (watchdog)")
+                    continue
+                last_frame = time.monotonic()
+                self._stats.frames_processed += 1
+                events = pipeline.feed(frame.pcm, frame.captured_at)
+                self._stats.last_audio_level = pipeline.last_level
+                for event in events:
+                    self._handle_event(event, snapshot)
+        finally:
+            # always stop the *current* source (it may have been swapped by _reopen_source);
+            # _run's finally then closes the original a second time, which every source tolerates
+            source.stop()
 
     def _handle_event(self, event: PipelineEvent, snapshot: RuntimeSnapshot) -> None:
         if event.kind == "wakeword_candidate":

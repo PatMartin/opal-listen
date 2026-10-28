@@ -470,3 +470,125 @@ def test_repeated_shutdown_is_idempotent(client: TestClient, fake_provider: type
     service.shutdown()  # second call must not raise or re-close
     assert not service.running
     assert service.event_publisher.closed  # type: ignore[attr-defined]
+
+
+class _SlowSource(ScriptedSource):
+    """Scripted source with slower frame delivery so a command session stays in progress."""
+
+    def read(self, timeout: float) -> AudioFrame | None:
+        time.sleep(0.02)
+        if self.frames:
+            return AudioFrame(self.frames.pop(0), time.monotonic())
+        return AudioFrame(silence_frame(), time.monotonic())
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("audio_device", "usb-mic"), ("audio_capture_rate", "48000"), ("audio_block_ms", "200")],
+)
+def test_capture_setting_change_restarts_source(
+    client: TestClient, fake_provider: type, key: str, value: str
+) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    sources: list[ScriptedSource] = []
+    seen: list[dict[str, Any]] = []
+
+    def factory(settings: dict[str, Any]) -> ScriptedSource:
+        seen.append(dict(settings))
+        source = ScriptedSource([silence_frame()])
+        source.frame_ms = int(settings["audio_block_ms"])
+        sources.append(source)
+        return source
+
+    service._source_factory = factory
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        assert len(sources) == 1
+        patch_settings(client, **{key: value})
+        wait_for(lambda: len(sources) >= 2)
+        expected = value if key == "audio_device" else int(value)
+        assert seen[-1][key] == expected  # new stream opened with the updated capture settings
+        assert sources[0].started is False  # old stream closed — no overlapping captures
+        assert sources[1].started  # new stream is the live one
+        if key == "audio_block_ms":
+            assert sources[1].frame_ms == 200  # frame duration follows the new setting
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_pipeline_only_change_does_not_restart_source(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    sources: list[ScriptedSource] = []
+
+    def factory(settings: dict[str, Any]) -> ScriptedSource:
+        source = ScriptedSource([silence_frame()])
+        sources.append(source)
+        return source
+
+    service._source_factory = factory
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        patch_settings(client, cooldown_ms="1000")
+        time.sleep(0.3)  # give the runtime several iterations to (not) react
+        assert len(sources) == 1  # pipeline rebuilt in place — capture stream untouched
+        assert sources[0].started
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_capture_restart_waits_for_session_end(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    sources: list[ScriptedSource] = []
+
+    def factory(settings: dict[str, Any]) -> ScriptedSource:
+        source = _SlowSource(list(COMMAND))
+        source.frame_ms = int(settings["audio_block_ms"])
+        sources.append(source)
+        return source
+
+    service._source_factory = factory
+    fake_provider.script.append("turn on the kitchen light")
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "capturing")
+        patch_settings(client, audio_block_ms="200")  # lands mid-session
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        wait_for(lambda: len(sources) >= 2)
+        # the session played out on the old source before the restart: only post-session trailing
+        # silence frames remain unread (a mid-session swap would leave ~20 of the 25 frames)
+        assert len(sources[0].frames) <= 10
+        assert sources[1].frame_ms == 200
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_failed_capture_restart_uses_last_known_good(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    sources: list[ScriptedSource] = []
+
+    def factory(settings: dict[str, Any]) -> ScriptedSource:
+        source = ScriptedSource(list(COMMAND), fail_start=settings["audio_device"] == "bad-device")
+        sources.append(source)
+        return source
+
+    service._source_factory = factory
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        patch_settings(client, audio_device="bad-device")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["audio_restarts"] >= 1)
+        status = client.get("/api/v1/recognition/status").json()
+        assert "restart failed" in status["last_error"]
+        # last-known-good stream was restored and is still the live capture
+        assert sources[0].started is True
+        assert sources[1].started is False  # the failed replacement never came up
+        # a later change retries the reopen and recovers
+        patch_settings(client, audio_device="usb-ok")
+        wait_for(lambda: len(sources) >= 3)
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        assert sources[0].started is False  # LKG finally retired once the new stream works
+        assert sources[2].started is True
+    finally:
+        client.post("/api/v1/recognition/stop")
