@@ -175,6 +175,14 @@ class MicrophoneSource(AudioSource):
     def capture_rate(self) -> int | None:
         return self._rate
 
+    @property
+    def queue_depth(self) -> int:
+        return self._queue.qsize()
+
+    @property
+    def queue_capacity(self) -> int:
+        return self._queue.maxsize
+
     def _pick_rate(self, sd: Any, device: int | None) -> int:
         candidates = [self.requested_rate] if self.requested_rate else list(PREFERRED_RATES)
         info = sd.query_devices(device, kind="input")

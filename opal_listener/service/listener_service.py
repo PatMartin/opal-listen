@@ -39,8 +39,8 @@ from opal_listener.service.providers.base import (
     SttRefiner,
     Transcript,
 )
-from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.providers.registry import create_provider, create_refiner
+from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
 from opal_listener.service.settings_registry import SETTINGS, to_storage
 from opal_listener.service.zmq_events import EventPublisher, ZmqEventPublisher
@@ -117,8 +117,16 @@ class _RuntimeStats:
     last_audio_level: float | None = None
     last_result_at: datetime | None = None
     last_error: str | None = None
+    last_recovery_reason: str | None = None
     audio_device: str | None = None
     capture_sample_rate: int | None = None
+    # per-stage delays of the last finalized result (ms) and capture/reliability counters
+    stt_latency_ms: float | None = None
+    refine_latency_ms: float | None = None
+    intent_latency_ms: float | None = None
+    publish_latency_ms: float | None = None
+    mic_overflows: int = 0  # overflow reports accumulated from retired sources
+    dropped_audio_blocks: int = 0  # full-queue drops accumulated from retired sources
 
 
 class ListenerService:
@@ -151,6 +159,7 @@ class ListenerService:
         self._shutdown = False
         self._dedup_seen: dict[tuple[object, ...], float] = {}
         self._dedup_lock = threading.Lock()
+        self._active_source: AudioSource | None = None
         self._refine_worker = RefinementWorker(
             capacity=DEFAULT_QUEUE_CAPACITY, refiner_for=self._refiner_for, finalize=self._finalize_result
         )
@@ -491,7 +500,9 @@ class ListenerService:
             and snapshot.settings["event_publication_enabled"]
         ):
             log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
+            publish_start = time.monotonic()
             self.event_publisher.publish(INTENT_MATCH_TOPIC, payload)
+            self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
         return result
 
     def test_text(self, text: str, save_log: bool = True) -> s.RecognitionResult:
@@ -594,7 +605,30 @@ class ListenerService:
             last_audio_level=st.last_audio_level,
             last_result_at=st.last_result_at,
             last_error=st.last_error,
+            metrics=self._metrics(),
         )
+
+    def _metrics(self) -> dict[str, float]:
+        """Lightweight reliability counters. All values reset per run (stats reset on start);
+        retired-source counters accumulate into _stats so source swaps never lose them."""
+        st = self._stats
+        source = self._active_source
+        capacity = float(getattr(source, "queue_capacity", 0) or 0)
+        depth = float(getattr(source, "queue_depth", 0) or 0)
+        return {
+            "mic_overflows": st.mic_overflows + getattr(source, "overflows", 0),
+            "dropped_audio_blocks": st.dropped_audio_blocks + getattr(source, "dropped_blocks", 0),
+            "audio_queue_depth": depth,
+            "audio_queue_utilization": round(depth / capacity, 3) if capacity else 0.0,
+            "refine_queue_depth": float(self._refine_worker.queue_depth),
+            "refinement_completed": float(self._refine_worker.refined),
+            "refinement_failed": float(self._refine_worker.failed),
+            "recoveries": float(st.audio_restarts),
+            "stt_latency_ms": st.stt_latency_ms or 0.0,
+            "refine_latency_ms": st.refine_latency_ms or 0.0,
+            "intent_latency_ms": st.intent_latency_ms or 0.0,
+            "publish_latency_ms": st.publish_latency_ms or 0.0,
+        }
 
     def _publish_status(self) -> None:
         self.bus.publish("status", self.status().model_dump(mode="json"))
@@ -613,6 +647,7 @@ class ListenerService:
                 pipeline = self._make_pipeline(snapshot, debug=self.bus.subscriber_count > 0, cooldown=True, live=True)
                 source = self._source_factory(snapshot.settings)
                 source.start()
+                self._active_source = source
                 self._stats.audio_device = source.description
                 self._stats.capture_sample_rate = source.capture_rate
                 self._stats.last_error = None
@@ -627,6 +662,10 @@ class ListenerService:
             finally:
                 if source is not None:
                     source.stop()
+                    self._stats.mic_overflows += getattr(source, "overflows", 0)
+                    self._stats.dropped_audio_blocks += getattr(source, "dropped_blocks", 0)
+                    if self._active_source is source:
+                        self._active_source = None
             if not self._stop.is_set() and self._stats.state == "recovering":
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)
@@ -634,6 +673,7 @@ class ListenerService:
     def _recover(self, message: str) -> None:
         log.warning("listener runtime error: %s", message)
         self._stats.last_error = message
+        self._stats.last_recovery_reason = message
         self._stats.audio_restarts += 1
         self._set_state("recovering")
 
@@ -644,6 +684,8 @@ class ListenerService:
         source cannot start, the last-known-good stream is restarted when possible and an
         AudioCaptureError is raised so the caller can keep the previous configuration."""
         source.stop()
+        self._stats.mic_overflows += getattr(source, "overflows", 0)
+        self._stats.dropped_audio_blocks += getattr(source, "dropped_blocks", 0)
         try:
             new_source = self._source_factory(snapshot.settings)
             new_source.start()
@@ -651,6 +693,7 @@ class ListenerService:
             with contextlib.suppress(Exception):
                 source.start()  # best-effort: keep the previously working stream alive
             raise AudioCaptureError(f"audio capture restart failed: {exc}") from exc
+        self._active_source = new_source
         self._stats.audio_device = new_source.description
         self._stats.capture_sample_rate = new_source.capture_rate
         return new_source
@@ -729,6 +772,7 @@ class ListenerService:
         snapshot: RuntimeSnapshot,
         refined: Transcript | None,
         refinement_error: str | None,
+        refine_ms: float = 0.0,
     ) -> None:
         """Finalizes a captured command on the capture thread or the refinement worker: applies the
         refined (or draft) transcript, interprets, records, and updates runtime stats."""
@@ -740,3 +784,6 @@ class ListenerService:
         self._record(result, save_log=True)
         self._stats.results += 1
         self._stats.last_result_at = result.created_at
+        self._stats.stt_latency_ms = result.stt_latency_ms
+        self._stats.intent_latency_ms = result.intent_latency_ms
+        self._stats.refine_latency_ms = round(refine_ms, 2) if refine_ms else None

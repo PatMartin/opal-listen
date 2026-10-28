@@ -796,7 +796,7 @@ def test_refiner_error_falls_back_to_draft(client: TestClient, fake_provider: ty
         wait_for(lambda: len(finalized) >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
-    _, _, refined, error = finalized[0]
+    _, _, refined, error, _ms = finalized[0]
     assert refined is None and error == "refiner_error: boom"
 
 
@@ -813,7 +813,7 @@ def test_refiner_timeout_falls_back_to_draft(client: TestClient, fake_provider: 
         wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
-    _, _, refined, error = finalized[0]
+    _, _, refined, error, _ms = finalized[0]
     assert refined is None and error == "timeout"
 
 
@@ -846,6 +846,55 @@ def test_shutdown_drains_pending_refinement(client: TestClient, fake_provider: t
     service.shutdown()  # must drain the pending refinement, not discard it
     assert client.get("/api/v1/logs/count").json()["total"] == 1
     assert finalized and finalized[0][3] is None  # refined result was finalized during shutdown
+
+
+def test_status_reports_capture_and_pipeline_metrics(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    fake_provider.script.append("turn on the kitchen light")
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        metrics = client.get("/api/v1/recognition/status").json()["metrics"]
+    finally:
+        client.post("/api/v1/recognition/stop")
+    for key in (
+        "mic_overflows", "dropped_audio_blocks", "audio_queue_depth", "audio_queue_utilization",
+        "refine_queue_depth", "refinement_completed", "refinement_failed", "recoveries",
+        "stt_latency_ms", "refine_latency_ms", "intent_latency_ms", "publish_latency_ms",
+    ):
+        assert key in metrics, key
+    assert metrics["stt_latency_ms"] >= 0 and metrics["mic_overflows"] == 0
+
+
+def test_status_metrics_with_refiner_and_recovery(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    refiner = _FakeRefiner(delay=0.3)
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert patch_settings(client, stt_refiner="faster_whisper").status_code == 200
+    fake_provider.script.extend(["turn on the kitchen light"] * 2)
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 2)
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 2, timeout=15)
+        metrics = client.get("/api/v1/recognition/status").json()["metrics"]
+        assert metrics["refinement_completed"] == 2 and metrics["refinement_failed"] == 0
+        assert metrics["refine_latency_ms"] >= 300  # slow refine recorded, off the capture loop
+        # simulate a recovery and confirm the counter/reason surface
+        service._recover("simulated failure")
+        m2 = client.get("/api/v1/recognition/status").json()["metrics"]
+        assert m2["recoveries"] >= 1
+        assert client.get("/api/v1/recognition/status").json()["last_error"] == "simulated failure"
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_pipeline_status_serialization_is_backward_compatible(client: TestClient) -> None:
+    status = client.get("/api/v1/recognition/status")
+    assert status.status_code == 200
+    body = status.json()
+    assert isinstance(body["metrics"], dict)  # additive field present even when stopped
+    assert all(isinstance(v, (int, float)) for v in body["metrics"].values())
 
 
 def test_failed_capture_restart_uses_last_known_good(client: TestClient, fake_provider: type) -> None:

@@ -17,6 +17,7 @@ import contextlib
 import logging
 import queue
 import threading
+import time
 from collections.abc import Callable
 from concurrent import futures
 from dataclasses import dataclass
@@ -34,7 +35,7 @@ DEFAULT_QUEUE_CAPACITY = 8
 DEFAULT_REFINE_TIMEOUT_MS = 5000
 _SHUTDOWN_DRAIN_SECONDS = 5.0
 
-FinalizeFn = Callable[["CommandOutcome", "RuntimeSnapshot", Transcript | None, str | None], None]
+FinalizeFn = Callable[["CommandOutcome", "RuntimeSnapshot", Transcript | None, str | None, float], None]
 RefinerForFn = Callable[["RuntimeSnapshot"], SttRefiner | None]
 
 
@@ -44,6 +45,7 @@ class RefineTask:
 
     outcome: CommandOutcome
     snapshot: RuntimeSnapshot
+    enqueued_at: float = 0.0  # monotonic; refine latency = finalize time - enqueued_at
 
 
 class RefinementWorker:
@@ -55,6 +57,12 @@ class RefinementWorker:
         self._executor: futures.ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
         self._closed = False
+        self.refined = 0
+        self.failed = 0
+
+    @property
+    def queue_depth(self) -> int:
+        return self._queue.qsize()
 
     def submit(self, task: RefineTask) -> bool:
         """Enqueue a captured command for refinement. Returns False when the queue is full."""
@@ -65,6 +73,7 @@ class RefinementWorker:
                 self._thread = threading.Thread(target=self._run, name="stt-refinement", daemon=True)
                 self._thread.start()
         try:
+            task.enqueued_at = time.monotonic()
             self._queue.put_nowait(task)
             return True
         except queue.Full:
@@ -100,8 +109,13 @@ class RefinementWorker:
                     self._reset_executor()
                 except Exception as exc:
                     error = f"refiner_error: {exc}"
+            elapsed_ms = (time.monotonic() - task.enqueued_at) * 1000
+            if error:
+                self.failed += 1
+            else:
+                self.refined += 1
             try:
-                self._finalize(task.outcome, task.snapshot, refined, error)
+                self._finalize(task.outcome, task.snapshot, refined, error, elapsed_ms)
             except Exception:
                 log.exception("failed to finalize refined result")
 

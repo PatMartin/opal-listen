@@ -254,6 +254,10 @@ class PipelineStatus(BaseModel):
     last_audio_level: float | None
     last_result_at: datetime | None
     last_error: str | None
+    # lightweight reliability counters, reset per run: mic_overflows, dropped_audio_blocks,
+    # audio_queue_depth/utilization, refine_queue_depth, refinement_completed/failed,
+    # recoveries, and last-result stt/refine/intent/publish latencies (ms)
+    metrics: dict[str, float] = {}
 
 
 # --- logs / failures / regression ------------------------------------------------------------
