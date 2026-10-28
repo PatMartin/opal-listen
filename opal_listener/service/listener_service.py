@@ -37,7 +37,9 @@ from opal_listener.service.providers.base import (
     ProviderConfig,
     ProviderError,
     SttRefiner,
+    Transcript,
 )
+from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.providers.registry import create_provider, create_refiner
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
 from opal_listener.service.settings_registry import SETTINGS, to_storage
@@ -148,6 +150,10 @@ class ListenerService:
         self._lifecycle_lock = threading.Lock()
         self._shutdown = False
         self._dedup_seen: dict[tuple[object, ...], float] = {}
+        self._dedup_lock = threading.Lock()
+        self._refine_worker = RefinementWorker(
+            capacity=DEFAULT_QUEUE_CAPACITY, refiner_for=self._refiner_for, finalize=self._finalize_result
+        )
         self._results_since_prune = 0
 
     # --- lifecycle ----------------------------------------------------------------------------
@@ -170,6 +176,7 @@ class ListenerService:
                 return
             self._shutdown = True
         self.stop()
+        self._refine_worker.close()  # drain pending refinements before the publisher closes
         self.event_publisher.close()
 
     def _seed_if_empty(self) -> None:
@@ -373,7 +380,9 @@ class ListenerService:
             self._refiners[name] = (fingerprint, refiner)
             return refiner
 
-    def _make_pipeline(self, snapshot: RuntimeSnapshot, debug: bool, cooldown: bool) -> RecognitionPipeline:
+    def _make_pipeline(
+        self, snapshot: RuntimeSnapshot, debug: bool, cooldown: bool, *, live: bool = False
+    ) -> RecognitionPipeline:
         return RecognitionPipeline(
             provider=self.provider_for(snapshot),
             wakewords=snapshot.wakewords,
@@ -382,7 +391,8 @@ class ListenerService:
             vad_settings=snapshot.vad,
             frame_ms=int(snapshot.settings["audio_block_ms"]),
             cooldown_ms=int(snapshot.settings["cooldown_ms"]) if cooldown else 0,
-            refiner=self._refiner_for(snapshot),
+            # live pipelines never refine in-loop: refinement runs on the dedicated worker
+            refiner=None if live else self._refiner_for(snapshot),
             debug=debug,
         )
 
@@ -455,12 +465,13 @@ class ListenerService:
             )
             now = time.monotonic()
             window = int(snapshot.settings["dedup_window_ms"]) / 1000
-            # evict expired entries so a long-running listener cannot grow this map without bound
-            self._dedup_seen = {k: ts for k, ts in self._dedup_seen.items() if now - ts < window}
-            if key in self._dedup_seen:
-                result.deduplicated = True
-            else:
-                self._dedup_seen[key] = now
+            with self._dedup_lock:  # _record may run on the refinement worker thread
+                # evict expired entries so a long-running listener cannot grow this map without bound
+                self._dedup_seen = {k: ts for k, ts in self._dedup_seen.items() if now - ts < window}
+                if key in self._dedup_seen:
+                    result.deduplicated = True
+                else:
+                    self._dedup_seen[key] = now
         if save_log:
             capture = bool(snapshot.settings["auto_capture_failures"]) and result.source != "text"
             with self.db.session() as session:
@@ -599,7 +610,7 @@ class ListenerService:
             source: AudioSource | None = None
             try:
                 snapshot = self.snapshot
-                pipeline = self._make_pipeline(snapshot, debug=self.bus.subscriber_count > 0, cooldown=True)
+                pipeline = self._make_pipeline(snapshot, debug=self.bus.subscriber_count > 0, cooldown=True, live=True)
                 source = self._source_factory(snapshot.settings)
                 source.start()
                 self._stats.audio_device = source.description
@@ -669,7 +680,7 @@ class ListenerService:
                             continue
                         snapshot = current
                         last_frame = time.monotonic()  # fresh stream: reset the watchdog baseline
-                    pipeline = self._make_pipeline(snapshot, debug=pipeline.debug, cooldown=True)
+                    pipeline = self._make_pipeline(snapshot, debug=pipeline.debug, cooldown=True, live=True)
                     watchdog_s = int(snapshot.settings["audio_watchdog_timeout_ms"]) / 1000
                 want_debug = self.bus.subscriber_count > 0
                 if pipeline.debug != want_debug and pipeline.idle:
@@ -700,11 +711,32 @@ class ListenerService:
             self._set_state("listening")
         if event.kind == "session_end" and event.outcome is not None:
             outcome = event.outcome
-            result = self.interpret(outcome.transcript.text, snapshot, source="mic", outcome=outcome)
-            self._record(result, save_log=True)
-            self._stats.results += 1
-            self._stats.last_result_at = result.created_at
-            self._set_state("listening")
+            self._set_state("listening")  # capture resumes immediately; finalization may be deferred
+            if snapshot.refiner_name not in ("", "none") and outcome.transcript.text:
+                if self._refine_worker.submit(RefineTask(outcome=outcome, snapshot=snapshot)):
+                    return
+                log.warning("refinement queue full; finalizing on the draft transcript")
+                self._finalize_result(outcome, snapshot, None, "queue_full")
+            else:
+                self._finalize_result(outcome, snapshot, None, None)
             return
         debug_only = event.kind in ("audio_level", "partial")
         self.bus.publish(event.kind, event.data, debug_only=debug_only)
+
+    def _finalize_result(
+        self,
+        outcome: CommandOutcome,
+        snapshot: RuntimeSnapshot,
+        refined: Transcript | None,
+        refinement_error: str | None,
+    ) -> None:
+        """Finalizes a captured command on the capture thread or the refinement worker: applies the
+        refined (or draft) transcript, interprets, records, and updates runtime stats."""
+        if refined is not None:
+            outcome.transcript = refined
+        result = self.interpret(outcome.transcript.text, snapshot, source="mic", outcome=outcome)
+        if refinement_error:
+            result.refinement_error = refinement_error
+        self._record(result, save_log=True)
+        self._stats.results += 1
+        self._stats.last_result_at = result.created_at

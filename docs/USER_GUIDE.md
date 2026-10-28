@@ -631,6 +631,7 @@ Invalid values are rejected with `422`.
 | `stt_refiner` | str | `none` | `none`, `faster_whisper` | Optional second-pass STT |
 | `whisper_model` | str | `tiny.en` | name or path | faster-whisper model |
 | `whisper_compute_type` | str | `int8` | `int8`, `int8_float32`, `float32` | faster-whisper compute type |
+| `refiner_timeout_ms` | int | `5000` | 500–300000 | Second-pass refinement timeout; draft transcript used on timeout |
 | `wakeword_trigger` | str | `partial` | `partial`, `final` | `partial` opens a session on a partial hit (fast). `final` waits for a final result. |
 | `wakeword_distractors` | str | `commuter,compute,computing,commute` | CSV | Sound-alike words that reject false wakeword hits |
 | `audio_device` | str | `""` | index or name substring | Input device (`""` = system default) |

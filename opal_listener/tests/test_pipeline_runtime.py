@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from opal_listener.service.audio.capture import AudioCaptureError, AudioFrame, AudioSource
 from opal_listener.service.audio.vad import VadSettings
 from opal_listener.service.pipeline import RecognitionPipeline
-from opal_listener.service.providers.base import WakewordEvent, WakewordEventKind
+from opal_listener.service.providers.base import Transcript, WakewordEvent, WakewordEventKind
 from opal_listener.service.providers.fake_provider import FakeListenerProvider, FakeWakewordDetector
 from opal_listener.tests.conftest import patch_settings, silence_frame, tone_frame
 
@@ -728,6 +728,124 @@ def test_test_audio_does_not_disturb_live_listener(client: TestClient, fake_prov
         assert service._providers["fake"][1].is_loaded()  # type: ignore[attr-defined]
     finally:
         client.post("/api/v1/recognition/stop")
+
+
+class _FakeRefiner:
+    """SttRefiner test double: optional artificial delay, failure, or text suffix."""
+
+    name = "fake"
+
+    def __init__(self, delay: float = 0.0, fail: str | None = None, suffix: str = "") -> None:
+        self.delay = delay
+        self.fail = fail
+        self.suffix = suffix
+        self.calls: list[str] = []
+
+    def load(self, config: Any) -> None:
+        pass
+
+    def refine(self, pcm: bytes, draft: Transcript) -> Transcript:
+        self.calls.append(draft.text or "")
+        if self.delay:
+            time.sleep(self.delay)
+        if self.fail:
+            raise RuntimeError(self.fail)
+        return Transcript(text=(draft.text or "") + self.suffix, confidence=draft.confidence)
+
+
+def _spy_finalize(service: Any) -> list[tuple[Any, Any, Any, Any]]:
+    """Capture (outcome, snapshot, refined, error) tuples from both finalize paths: the worker's
+    hook and the inline fallback used when the queue is full."""
+    finalized: list[tuple[Any, Any, Any, Any]] = []
+    original_worker = service._refine_worker._finalize
+    original_inline = service._finalize_result
+    service._refine_worker._finalize = lambda *a: (finalized.append(a), original_worker(*a))[0]
+    service._finalize_result = lambda *a: (finalized.append(a), original_inline(*a))[0]
+    return finalized
+
+
+def test_slow_refiner_does_not_block_capture(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    refiner = _FakeRefiner(delay=1.0)
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert patch_settings(client, stt_refiner="faster_whisper").status_code == 200
+    fake_provider.script.extend(["turn on the kitchen light", "what time is it"])
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 2)
+    client.post("/api/v1/recognition/start")
+    try:
+        # all frames are consumed while the first slow refine still runs on the worker
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["frames_processed"] >= 50)
+        # each command is finalized exactly once, in capture order, after refinement completes
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 2, timeout=15)
+        assert client.get("/api/v1/logs/count").json()["total"] == 2
+        assert len(refiner.calls) == 2
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_refiner_error_falls_back_to_draft(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._refine_worker._refiner_for = lambda snap: _FakeRefiner(fail="boom")
+    finalized = _spy_finalize(service)
+    assert patch_settings(client, stt_refiner="faster_whisper").status_code == 200
+    fake_provider.script.append("what time is it")
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        wait_for(lambda: len(finalized) >= 1)
+    finally:
+        client.post("/api/v1/recognition/stop")
+    _, _, refined, error = finalized[0]
+    assert refined is None and error == "refiner_error: boom"
+
+
+def test_refiner_timeout_falls_back_to_draft(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._refine_worker._refiner_for = lambda snap: _FakeRefiner(delay=3.0)
+    finalized = _spy_finalize(service)
+    assert patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500").status_code == 200
+    fake_provider.script.append("what time is it")
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: len(finalized) >= 1)
+        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+    finally:
+        client.post("/api/v1/recognition/stop")
+    _, _, refined, error = finalized[0]
+    assert refined is None and error == "timeout"
+
+
+def test_full_refinement_queue_uses_draft(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._refine_worker._refiner_for = lambda snap: _FakeRefiner(delay=5.0)
+    finalized = _spy_finalize(service)
+    assert patch_settings(client, stt_refiner="faster_whisper").status_code == 200
+    fake_provider.script.extend(["turn on the kitchen light"] * 12)
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 12)
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: len(finalized) >= 2)  # queue fills while the first refine sleeps
+    finally:
+        client.post("/api/v1/recognition/stop")
+    errors = [f[3] for f in finalized]
+    assert "queue_full" in errors  # overflow tasks finalized on the draft transcript
+
+
+def test_shutdown_drains_pending_refinement(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    refiner = _FakeRefiner(delay=1.0)
+    service._refine_worker._refiner_for = lambda snap: refiner
+    finalized = _spy_finalize(service)
+    assert patch_settings(client, stt_refiner="faster_whisper").status_code == 200
+    fake_provider.script.append("what time is it")
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    wait_for(lambda: len(refiner.calls) >= 1)  # refine in flight; result not yet finalized
+    service.shutdown()  # must drain the pending refinement, not discard it
+    assert client.get("/api/v1/logs/count").json()["total"] == 1
+    assert finalized and finalized[0][3] is None  # refined result was finalized during shutdown
 
 
 def test_failed_capture_restart_uses_last_known_good(client: TestClient, fake_provider: type) -> None:

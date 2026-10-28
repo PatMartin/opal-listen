@@ -232,6 +232,7 @@ class RecognitionResult(BaseModel):
     total_latency_ms: int | None = None
     audio_level: float | None = None
     deduplicated: bool = False
+    refinement_error: str | None = None  # set when refinement failed/timed out and the draft was used
     recognition_log_id: int | None = None
     created_at: datetime
 

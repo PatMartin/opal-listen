@@ -4,6 +4,7 @@ stt:
   listener_provider: vosk
   stt_mode: grammar
   stt_refiner: none
+  refiner_timeout_ms: 5000
   whisper_model: tiny.en
   whisper_compute_type: int8
   wakeword_trigger: partial
