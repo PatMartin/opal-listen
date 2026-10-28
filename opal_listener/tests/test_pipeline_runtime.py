@@ -14,7 +14,7 @@ from opal_listener.service.audio.capture import AudioCaptureError, AudioFrame, A
 from opal_listener.service.audio.vad import VadSettings
 from opal_listener.service.pipeline import RecognitionPipeline
 from opal_listener.service.providers.fake_provider import FakeListenerProvider
-from opal_listener.tests.conftest import silence_frame, tone_frame
+from opal_listener.tests.conftest import patch_settings, silence_frame, tone_frame
 
 COMMAND = [silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 10
 
@@ -158,8 +158,9 @@ def test_live_runtime_produces_logged_result(client: TestClient, fake_provider: 
 
 def test_live_runtime_duplicate_results_are_flagged(client: TestClient, fake_provider: type) -> None:
     service = client.app.state.listener  # type: ignore[attr-defined]
-    client.put("/api/v1/settings/cooldown_ms", json={"value": "0"})
-    client.put("/api/v1/settings/dedup_window_ms", json={"value": "60000"})
+    updated = patch_settings(client, cooldown_ms="0", dedup_window_ms="60000")
+    assert updated.status_code == 200
+    assert (updated.json()["cooldown_ms"], updated.json()["dedup_window_ms"]) == ("0", "60000")
     fake_provider.script.extend(["what time is it", "what time is it"])
     published: list[dict[str, Any]] = []
     original = service.bus.publish
@@ -181,7 +182,8 @@ def test_live_runtime_duplicate_results_are_flagged(client: TestClient, fake_pro
 
 def test_watchdog_restarts_silent_audio_source(client: TestClient, fake_provider: type) -> None:
     service = client.app.state.listener  # type: ignore[attr-defined]
-    client.put("/api/v1/settings/audio_watchdog_timeout_ms", json={"value": "500"})
+    updated = patch_settings(client, audio_watchdog_timeout_ms="500")
+    assert updated.status_code == 200 and updated.json()["audio_watchdog_timeout_ms"] == "500"
     sources: list[ScriptedSource] = []
 
     def factory(settings: dict[str, Any]) -> ScriptedSource:
