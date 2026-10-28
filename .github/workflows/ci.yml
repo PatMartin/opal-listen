@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: lint + fast tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install dependencies (uv.lock)
+        run: uv sync --locked --extra dev
+      - name: Lint
+        run: uv run ruff check .
+      # Fast deterministic suite: unit, API, contract and fake-provider tests.
+      # No microphone hardware or Vosk model required; model-dependent tests are
+      # excluded by marker rather than skipped silently (see the 'model' job).
+      - name: Unit/API/contract/fake-provider tests
+        run: uv run pytest -m "not vosk" -q
+
+  model:
+    # Optional job for tests that need a Vosk model on disk
+    # (OPAL_LISTENER_VOSK_MODEL_PATH). Intended for self-hosted runners or the
+    # Raspberry Pi/arm64 setup; on public runners the tests self-skip.
+    name: model-dependent tests (optional)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked --extra dev
+      - name: Vosk model tests
+        run: uv run pytest -m vosk -q
+        env:
+          OPAL_LISTENER_VOSK_MODEL_PATH: ${{ vars.OPAL_LISTENER_VOSK_MODEL_PATH }}
+
+  opal-event:
+    # Cross-repository integration: validate published ZeroMQ messages against
+    # the real opal-event broker protocol (sibling checkout required by the tests).
+    name: opal-event integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/checkout@v4
+        with:
+          repository: PatMartin/opal-event
+          path: opal-event
+      - run: uv sync --locked --extra dev
+        working-directory: .
+      # the tests import opal_event from a sibling checkout at ../opal-event
+      - name: Link sibling checkout
+        run: ln -s "$PWD/opal-event" "$PWD/../opal-event"
+      - name: ZeroMQ protocol integration tests
+        run: uv run pytest opal_listener/tests/test_zmq_events.py -q
