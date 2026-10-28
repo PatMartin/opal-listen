@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
-import pytest
 
 from opal_listener.app_settings import AppSettings
 from opal_listener.service.http_events import (
@@ -117,6 +118,171 @@ def test_http_event_publisher_handles_network_failure_gracefully() -> None:
         # Should not raise any exception
         publisher.publish("opal.listen.intent.match", {"intent_name": "light_turn_on", "matched": True})
         time.sleep(0.3)
+    finally:
+        publisher.close()
+
+
+def _mock_publisher(
+    handler: Callable[[httpx.Request], httpx.Response], **kwargs: Any
+) -> HttpEventPublisher:
+    """Publisher whose HTTP client talks to a MockTransport (injected before the worker starts)."""
+    publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080", **kwargs)
+    publisher._client = httpx.Client(
+        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
+    )
+    return publisher
+
+
+def _ok_handler(received: list[httpx.Request], delay: float = 0.0) -> Callable:
+    def handler(request: httpx.Request) -> httpx.Response:
+        received.append(request)
+        if delay:
+            time.sleep(delay)
+        return httpx.Response(202, json={"id": "rec-1", "status": "accepted"})
+
+    return handler
+
+
+def test_publish_without_connect_lazily_starts_worker() -> None:
+    received: list[httpx.Request] = []
+    publisher = _mock_publisher(_ok_handler(received))
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "light_turn_on"})
+        assert _wait_until(lambda: len(received) == 1), "lazy-connected worker did not deliver"
+        assert publisher._worker_thread is not None and publisher._worker_thread.is_alive()
+    finally:
+        publisher.close()
+
+
+def test_concurrent_publishes_use_a_single_worker() -> None:
+    received: list[httpx.Request] = []
+    publisher = _mock_publisher(_ok_handler(received))
+    seen_workers: list[threading.Thread | None] = []
+    try:
+        threads = [
+            threading.Thread(
+                target=lambda i=i: (publisher.publish("t", {"i": i}), seen_workers.append(publisher._worker_thread))
+            )
+            for i in range(8)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        assert _wait_until(lambda: len(received) == 8, timeout=5)
+        assert len({w for w in seen_workers if w is not None}) == 1
+    finally:
+        publisher.close()
+
+
+def test_connect_is_idempotent() -> None:
+    publisher = _mock_publisher(_ok_handler([]))
+    try:
+        publisher.connect()
+        first = publisher._worker_thread
+        publisher.connect()
+        assert publisher._worker_thread is first and first is not None and first.is_alive()
+    finally:
+        publisher.close()
+
+
+def test_close_drains_queued_events() -> None:
+    received: list[httpx.Request] = []
+    publisher = _mock_publisher(_ok_handler(received, delay=0.05))
+    for i in range(5):
+        publisher.publish("t", {"i": i})
+    publisher.close()
+    assert len(received) == 5
+    assert publisher._worker_thread is None
+    assert publisher._client is None
+
+
+def test_close_during_slow_request_reports_incomplete_shutdown() -> None:
+    started = threading.Event()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        started.set()
+        time.sleep(3.0)
+        return httpx.Response(202, json={})
+
+    publisher = _mock_publisher(handler)
+    publisher.publish("t", {})
+    assert started.wait(timeout=2), "worker never picked up the request"
+    begin = time.monotonic()
+    publisher.close()
+    assert time.monotonic() - begin < 3.0, "close() waited for the whole in-flight request"
+    worker = publisher._worker_thread
+    assert worker is not None and worker.is_alive()
+    assert publisher.last_error is not None
+    # once the request completes the worker retires itself and closes the client
+    assert _wait_until(lambda: publisher._worker_thread is None, timeout=5)
+    assert publisher._client is None
+
+
+def test_connection_refused_records_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    publisher = _mock_publisher(handler)
+    try:
+        publisher.publish("t", {})
+        assert _wait_until(lambda: publisher.delivery_failures == 1)
+        assert "failed to send" in (publisher.last_error or "")
+        assert publisher._worker_thread is not None and publisher._worker_thread.is_alive()
+    finally:
+        publisher.close()
+
+
+def test_http_500_records_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "boom"})
+
+    publisher = _mock_publisher(handler)
+    try:
+        publisher.publish("t", {})
+        assert _wait_until(lambda: publisher.delivery_failures == 1)
+        assert "500" in (publisher.last_error or "")
+    finally:
+        publisher.close()
+
+
+def test_full_queue_drops_newest_and_records_failures() -> None:
+    started = threading.Event()
+    received: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received.append(request)
+        started.set()
+        time.sleep(0.4)
+        return httpx.Response(202, json={})
+
+    publisher = _mock_publisher(handler, queue_capacity=2)
+    try:
+        publisher.publish("t", {"i": 0})
+        assert started.wait(timeout=2), "worker never picked up the first request"
+        for i in range(1, 5):
+            publisher.publish("t", {"i": i})  # 2 queued, 2 dropped while the worker is busy
+        assert publisher.delivery_failures == 2
+        assert _wait_until(lambda: len(received) == 3, timeout=5)
+    finally:
+        publisher.close()
+
+
+def test_publish_after_close_reconnects() -> None:
+    received: list[httpx.Request] = []
+    publisher = _mock_publisher(_ok_handler(received))
+    publisher.publish("t", {"i": 0})
+    assert _wait_until(lambda: len(received) == 1)
+    publisher.close()
+    assert publisher._worker_thread is None
+    # inject a fresh mock client (the old one was closed by the retiring worker)
+    publisher._client = httpx.Client(
+        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(_ok_handler(received))
+    )
+    try:
+        publisher.publish("t", {"i": 1})
+        assert _wait_until(lambda: len(received) == 2)
+        assert publisher._worker_thread is not None and publisher._worker_thread.is_alive()
     finally:
         publisher.close()
 

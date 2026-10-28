@@ -17,7 +17,6 @@ from typing import Any
 import httpx
 
 from opal_listener.service.opal_context import (
-    CAUSATION_HEADER,
     REQUEST_HEADER,
     SESSION_HEADER,
     TRANSACTION_HEADER,
@@ -61,58 +60,96 @@ class HttpEventPublisher:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._timeout = timeout
-        self._queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue(maxsize=queue_capacity)
+        self._queue: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue(maxsize=queue_capacity)
         self._worker_thread: threading.Thread | None = None
         self._client: httpx.Client | None = None
         self._lock = threading.Lock()
         self._stopped = threading.Event()
+        # Observable delivery accounting: failures are counted and the last one kept for inspection.
+        self.delivery_failures = 0
+        self.last_error: str | None = None
 
     def connect(self) -> None:
+        """Start the delivery worker. Idempotent; also used to reconnect after close()."""
         with self._lock:
-            if self._worker_thread is None or not self._worker_thread.is_alive():
-                self._stopped.clear()
-                self._client = httpx.Client(base_url=self._base_url, timeout=self._timeout)
-                self._worker_thread = threading.Thread(
-                    target=self._worker_loop,
-                    name="http-event-publisher",
-                    daemon=True,
-                )
-                self._worker_thread.start()
+            self._start_worker_locked()
+
+    def _start_worker_locked(self) -> None:
+        """Create the client/worker if none is running. Caller must hold self._lock."""
+        if self._worker_thread is not None and self._worker_thread.is_alive():
+            return
+        self._stopped.clear()
+        if self._client is None:
+            self._client = httpx.Client(base_url=self._base_url, timeout=self._timeout)
+        worker = threading.Thread(target=self._worker_loop, name="http-event-publisher", daemon=True)
+        self._worker_thread = worker
+        try:
+            worker.start()
+        except Exception:
+            self._worker_thread = None
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+            raise
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
+        # Worker check and enqueue happen under the same lock: a publish racing a worker shutdown
+        # either attaches to the live worker or starts a new one — never deadlocks or spawns a
+        # second worker. put_nowait means audio/recognition never blocks on HTTP latency.
         with self._lock:
-            if self._worker_thread is None or not self._worker_thread.is_alive():
-                self.connect()
-
-        try:
-            self._queue.put_nowait((topic, payload))
-        except queue.Full:
-            # drop_newest policy: log warning and drop to never block audio/recognition
-            log.warning("HTTP event publisher queue is full (%d items); dropping event for %s", self._queue.maxsize, topic)
+            self._start_worker_locked()
+            try:
+                self._queue.put_nowait((topic, payload))
+            except queue.Full:
+                # drop_newest policy: count, warn and drop to never block audio/recognition
+                self.delivery_failures += 1
+                self.last_error = f"queue full ({self._queue.maxsize}); dropped event for '{topic}'"
+                log.warning(self.last_error)
 
     def _worker_loop(self) -> None:
-        while not self._stopped.is_set():
-            try:
-                item = self._queue.get(timeout=0.25)
-            except queue.Empty:
-                continue
+        try:
+            while True:
+                try:
+                    topic, payload = self._queue.get(timeout=0.25)
+                except queue.Empty:
+                    if self._stopped.is_set():
+                        return
+                    continue
+                try:
+                    self._deliver(topic, payload)
+                finally:
+                    self._queue.task_done()
+        finally:
+            self._retire_worker()
 
-            if item is None:
-                self._queue.task_done()
-                break
+    def _retire_worker(self) -> None:
+        """Worker exit: unregister and close the client. Only ever runs in the worker thread, so
+        the HTTP client is never closed while a request is in flight."""
+        with self._lock:
+            client = self._client
+            self._client = None
+            if self._worker_thread is threading.current_thread():
+                self._worker_thread = None
+        if client is not None:
+            client.close()
 
-            topic, payload = item
-            try:
-                self._send_event(topic, payload)
-            except Exception:  # noqa: BLE001 - event delivery must never crash the worker thread
-                log.warning("failed to send event '%s' to %s", topic, self._base_url, exc_info=True)
-            finally:
-                self._queue.task_done()
-
-    def _send_event(self, topic: str, payload: dict[str, Any]) -> None:
+    def _deliver(self, topic: str, payload: dict[str, Any]) -> None:
         client = self._client
         if client is None:
+            self._record_failure(f"no active HTTP client; dropped event for '{topic}'")
             return
+        try:
+            self._send_event(client, topic, payload)
+        except Exception as exc:  # noqa: BLE001 - delivery failure must never kill the worker
+            self._record_failure(f"failed to send event '{topic}' to {self._base_url}: {exc!r}")
+
+    def _record_failure(self, message: str) -> None:
+        with self._lock:
+            self.delivery_failures += 1
+            self.last_error = message
+        log.warning(message)
+
+    def _send_event(self, client: httpx.Client, topic: str, payload: dict[str, Any]) -> None:
 
         session_id = payload.get("session_id")
         transaction_id = new_opaque_id()
@@ -154,30 +191,25 @@ class HttpEventPublisher:
         log.info("sending HTTP event to topic '%s' at %s/api/v1/events/: %s", topic, self._base_url, event_input)
         response = client.post("/api/v1/events/", json=event_input, headers=headers)
         if response.status_code >= 400:
-            log.warning(
-                "opal-event POST /api/v1/events/ returned status %d: %s",
-                response.status_code,
-                response.text,
+            self._record_failure(
+                f"opal-event POST /api/v1/events/ returned status {response.status_code}: {response.text[:200]}"
             )
 
     def close(self) -> None:
+        """Signal the worker to drain and stop, then wait briefly. If it is still running (e.g.
+        inside a slow request) the shutdown is reported via last_error/log and the worker closes
+        the client itself on exit — the client is never closed underneath it."""
         self._stopped.set()
-        try:
-            self._queue.put_nowait(None)
-        except queue.Full:
-            pass
-
         with self._lock:
             worker = self._worker_thread
-            client = self._client
-            self._worker_thread = None
-            self._client = None
-
-        if worker and worker.is_alive():
-            worker.join(timeout=2.0)
-
-        if client:
-            client.close()
+        if worker is None:
+            return
+        worker.join(timeout=2.0)
+        if worker.is_alive():
+            message = "HTTP event publisher worker did not stop within 2s; delivery continues in background"
+            with self._lock:
+                self.last_error = message
+            log.warning(message)
 
 
 class CompositeEventPublisher:
