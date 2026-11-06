@@ -1,6 +1,7 @@
 openapi: 3.1.0
 info:
   title: Voice Intent API
+  version: 1.4.0
   description: "Wakeword, STT, intent recognition, and slot extraction engine\n\n\
     OPAL SUITE STANDARD v1.3 (normative)\nX-Opal-Session-Id is an optional logical\
     \ context identifier; it does not create a server-managed session or grant authorization.\
@@ -51,7 +52,6 @@ info:
     \ is now a configuration error;\n    external intent-match publication is disabled\
     \ by default (event_publication_enabled); a pending\n    wakeword candidate no\
     \ longer produces a command outcome without confirmation.\n    "
-  version: 1.3.0
 paths:
   /api/v1/wakewords/:
     get:
@@ -69,12 +69,22 @@ paths:
                   $ref: '#/components/schemas/WakewordRead'
                 type: array
                 title: Response List Wakewords Api V1 Wakewords  Get
-        '422':
-          description: OPAL standard error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection's portable configuration.
               schema:
-                $ref: '#/components/schemas/OpalError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - wakewords
@@ -93,12 +103,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WakewordRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/wakewords/{wakeword_id}:
     get:
       tags:
@@ -119,12 +140,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WakewordRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this resource's portable configuration; required as If-Match for its mutations.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - wakewords
@@ -144,6 +177,8 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/wakewords/{wakeword_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       requestBody:
         required: true
         content:
@@ -157,24 +192,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WakewordRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     delete:
       tags:
       - wakewords
@@ -194,27 +230,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/wakewords/{wakeword_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/intents/:
     get:
       tags:
@@ -231,12 +268,22 @@ paths:
                   $ref: '#/components/schemas/IntentReadWithPhrases'
                 type: array
                 title: Response List Intents Api V1 Intents  Get
-        '422':
-          description: OPAL standard error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection's portable configuration.
               schema:
-                $ref: '#/components/schemas/OpalError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - intents
@@ -255,12 +302,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntentReadWithPhrases'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/intents/{intent_id}:
     get:
       tags:
@@ -281,12 +339,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntentReadWithPhrases'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this resource's portable configuration; required as If-Match for its mutations.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - intents
@@ -306,6 +376,8 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/intents/{intent_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       requestBody:
         required: true
         content:
@@ -319,24 +391,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntentRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     delete:
       tags:
       - intents
@@ -356,27 +429,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/intents/{intent_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/intents/{intent_id}/phrases:
     get:
       tags:
@@ -400,12 +474,24 @@ paths:
                 items:
                   $ref: '#/components/schemas/IntentPhraseRead'
                 title: Response List Phrases Api V1 Intents  Intent Id  Phrases Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection; required as If-Match for member deletions.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - intents
@@ -431,12 +517,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IntentPhraseRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/intents/{intent_id}/phrases/{phrase_id}:
     delete:
       tags:
@@ -463,27 +562,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the phrase collection's ETag returned by GET /api/v1/intents/{intent_id}/phrases.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/slots/:
     get:
       tags:
@@ -500,12 +600,22 @@ paths:
                   $ref: '#/components/schemas/SlotReadWithValues'
                 type: array
                 title: Response List Slots Api V1 Slots  Get
-        '422':
-          description: OPAL standard error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection's portable configuration.
               schema:
-                $ref: '#/components/schemas/OpalError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - slots
@@ -524,12 +634,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SlotRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/slots/{slot_id}:
     get:
       tags:
@@ -550,12 +671,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SlotReadWithValues'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this resource's portable configuration; required as If-Match for its mutations.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - slots
@@ -575,6 +708,8 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/slots/{slot_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       requestBody:
         required: true
         content:
@@ -588,24 +723,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SlotRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     delete:
       tags:
       - slots
@@ -625,27 +761,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/slots/{slot_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/slots/{slot_id}/values:
     get:
       tags:
@@ -669,12 +806,24 @@ paths:
                 items:
                   $ref: '#/components/schemas/SlotValueReadWithAliases'
                 title: Response List Slot Values Api V1 Slots  Slot Id  Values Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection; required as If-Match for member deletions.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - slots
@@ -700,12 +849,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SlotValueRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/slots/{slot_id}/values/{value_id}:
     delete:
       tags:
@@ -732,27 +894,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the slot-value collection's ETag returned by GET /api/v1/slots/{slot_id}/values.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/slots/{slot_id}/values/{value_id}/aliases:
     get:
       tags:
@@ -783,12 +946,24 @@ paths:
                   $ref: '#/components/schemas/SlotAliasRead'
                 title: Response List Aliases Api V1 Slots  Slot Id  Values  Value
                   Id  Aliases Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection; required as If-Match for member deletions.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - slots
@@ -820,12 +995,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SlotAliasRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}:
     delete:
       tags:
@@ -858,27 +1046,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the alias collection's ETag returned by GET /api/v1/slots/{slot_id}/values/{value_id}/aliases.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/profiles/:
     get:
       tags:
@@ -895,12 +1084,22 @@ paths:
                   $ref: '#/components/schemas/ProfileRead'
                 type: array
                 title: Response List Profiles Api V1 Profiles  Get
-        '422':
-          description: OPAL standard error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this collection's portable configuration.
               schema:
-                $ref: '#/components/schemas/OpalError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - profiles
@@ -919,12 +1118,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProfileRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/profiles/{profile_id}:
     get:
       tags:
@@ -945,12 +1155,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProfileRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of this resource's portable configuration; required as If-Match for its mutations.
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - profiles
@@ -970,6 +1192,8 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/profiles/{profile_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       requestBody:
         required: true
         content:
@@ -983,24 +1207,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProfileRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     delete:
       tags:
       - profiles
@@ -1020,27 +1245,28 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the resource's ETag returned by GET /api/v1/profiles/{profile_id}.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/profiles/{profile_id}/activate:
     post:
       tags:
@@ -1062,12 +1288,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProfileRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/settings/:
     get:
       tags:
@@ -1081,15 +1314,24 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: string
+                additionalProperties: true
                 title: Response Get All Settings Api V1 Settings  Get
-        '422':
-          description: OPAL standard error
-          content:
-            application/json:
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of the whole settings map; required as If-Match for PATCH /api/v1/settings/.
               schema:
-                $ref: '#/components/schemas/OpalError'
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '422':
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - settings
@@ -1105,6 +1347,8 @@ paths:
           type: string
           minLength: 1
           title: If-Match
+        description: Required strong ETag for optimistic concurrency; missing 428, stale 412. Supply the settings map's ETag returned by GET /api/v1/settings/.
+        example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
       requestBody:
         required: true
         content:
@@ -1120,27 +1364,28 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: string
+                additionalProperties: true
                 title: Response Patch Listen Settings
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Updated settings-map revision after the atomic patch.
+              schema:
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
         '412':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError412'
         '428':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError428'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/recognition/test_text:
     post:
       tags:
@@ -1170,12 +1415,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecognitionResult'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/recognition/test_audio:
     post:
       tags:
@@ -1215,12 +1465,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecognitionResult'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/recognition/start:
     post:
       tags:
@@ -1237,12 +1492,17 @@ paths:
                   type: string
                 type: object
                 title: Response Start Pipeline Api V1 Recognition Start Post
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/recognition/stop:
     post:
       tags:
@@ -1259,12 +1519,17 @@ paths:
                   type: string
                 type: object
                 title: Response Stop Pipeline Api V1 Recognition Stop Post
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/recognition/status:
     get:
       tags:
@@ -1278,18 +1543,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PipelineStatus'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/recognition/stream:
     get:
       tags:
       - recognition
       summary: Stream Results
-      description: Server-Sent Events stream for live recognition results.
+      description: 'Server-Sent Events stream for live recognition results.
+
+
+        Wire framing: each message is sent as an `event: <name>` line and one `data:`
+        line containing a single-line JSON object, followed by a blank line. No `id:`
+        or `retry:` fields are sent.
+
+
+        On connect the server immediately emits a `status` event carrying the current
+        `PipelineStatus` object. Subsequent events are fanned out from the live pipeline
+        as they occur.
+
+
+        Event types and payload schemas:
+
+
+        - `status` - `PipelineStatus` object; sent on connect and when pipeline status changes.
+
+        - `result` - `RecognitionResult` object; emitted for every finalized recognition.
+
+        - `wakeword_candidate` - `{session_id, wakeword}`; a candidate wakeword hit opened a command session.
+
+        - `wakeword_confirmed` - `{session_id, wakeword, confidence}`; the candidate was confirmed.
+
+        - `wakeword_rejected` - `{session_id, wakeword, reason}`; reason is `below_threshold`,
+        `not_confirmed`, or `unresolved`.
+
+        - `speech_start` - `{session_id}`.
+
+        - `speech_end` - `{session_id, reason}`; reason is `speech_end`, `max_length`,
+        `no_speech`, `stt_endpoint`, or `end_of_audio`.
+
+        - `session_end` - `{session_id}`.
+
+        - `audio_level` - `{dbfs, state}`; only delivered when `debug=true`.
+
+        - `partial` - `{session_id, text}`; only delivered when `debug=true`.
+
+
+        Connection semantics: the server sends a keep-alive comment frame every 15
+        seconds. Each subscriber has a bounded queue; a consumer that falls behind
+        silently loses its oldest queued events. When the client disconnects the server
+        unsubscribes and ends the stream. If the stream fails after response headers are
+        sent, the connection simply terminates; no terminal event is guaranteed.
+
+
+        Replay and reconnection: the stream is live-only. No event ids are issued,
+        `Last-Event-ID` is not honored, and missed events are never replayed. A
+        reconnecting client receives a fresh `status` snapshot followed only by new
+        events.'
       operationId: stream_results_api_v1_recognition_stream_get
       parameters:
       - name: debug
@@ -1303,16 +1622,23 @@ paths:
         description: Include audio levels and partial transcripts
       responses:
         '200':
-          description: Successful Response
+          description: SSE stream of live recognition events.
           content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+                description: SSE frame sequence; each frame is `event:` plus single-line JSON `data:`.
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/logs/:
     get:
       tags:
@@ -1367,12 +1693,17 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response List Logs Api V1 Logs  Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/logs/count:
     get:
       tags:
@@ -1410,12 +1741,17 @@ paths:
                 additionalProperties:
                   type: integer
                 title: Response Count Logs Api V1 Logs Count Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/logs/{log_id}:
     get:
       tags:
@@ -1436,12 +1772,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecognitionLogRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/failed_utterances/:
     get:
       tags:
@@ -1491,12 +1834,17 @@ paths:
                 items:
                   $ref: '#/components/schemas/FailedUtteranceRead'
                 title: Response List Failed Utterances Api V1 Failed Utterances  Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - failed_utterances
@@ -1515,12 +1863,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FailedUtteranceRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/failed_utterances/{fu_id}:
     get:
       tags:
@@ -1541,12 +1898,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FailedUtteranceRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - failed_utterances
@@ -1572,12 +1936,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FailedUtteranceRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     delete:
       tags:
       - failed_utterances
@@ -1593,12 +1964,19 @@ paths:
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/failed_utterances/{fu_id}/promote:
     post:
       tags:
@@ -1635,12 +2013,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PromoteResult'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/regression/:
     get:
       tags:
@@ -1657,12 +2042,17 @@ paths:
                   $ref: '#/components/schemas/RegressionTestRead'
                 type: array
                 title: Response List Regression Tests Api V1 Regression  Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - regression
@@ -1681,12 +2071,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegressionTestRead'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: Resource URL
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/regression/run:
     post:
       tags:
@@ -1709,12 +2108,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegressionRunResult'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/regression/{test_id}:
     get:
       tags:
@@ -1735,12 +2139,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegressionTestRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     patch:
       tags:
       - regression
@@ -1766,12 +2177,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegressionTestRead'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
     delete:
       tags:
       - regression
@@ -1787,12 +2205,19 @@ paths:
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/performance/last:
     get:
       tags:
@@ -1810,12 +2235,17 @@ paths:
                 - $ref: '#/components/schemas/PerformanceResultRead'
                 - type: 'null'
                 title: Response Get Last Performance Api V1 Performance Last Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/performance/summary:
     get:
       tags:
@@ -1839,12 +2269,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PerformanceSummary'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/performance/history:
     get:
       tags:
@@ -1884,12 +2319,17 @@ paths:
                 additionalProperties: true
                 title: Response Get Performance History Api V1 Performance History
                   Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/health/:
     get:
       tags:
@@ -1903,12 +2343,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthReport'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/health/audio_devices:
     get:
       tags:
@@ -1925,12 +2370,17 @@ paths:
                   $ref: '#/components/schemas/AudioDevice'
                 type: array
                 title: Response Get Audio Devices Api V1 Health Audio Devices Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/health/live:
     get:
       tags:
@@ -1945,18 +2395,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpalHealthProbe'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '503':
           description: Service unavailable
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpalHealthProbe'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/health/ready:
     get:
       tags:
@@ -1972,18 +2436,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpalHealthProbe'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '503':
           description: Service unavailable
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpalHealthProbe'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/list:
     get:
       tags:
@@ -2000,12 +2478,17 @@ paths:
                   $ref: '#/components/schemas/BackupInfo'
                 type: array
                 title: Response List Backups Api V1 Backup List Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/create:
     post:
       tags:
@@ -2013,7 +2496,7 @@ paths:
       summary: Create Backup
       operationId: create_backup_api_v1_backup_create_post
       responses:
-        '200':
+        '201':
           description: Successful Response
           content:
             application/json:
@@ -2022,12 +2505,21 @@ paths:
                   type: string
                 type: object
                 title: Response Create Backup Api V1 Backup Create Post
-        '422':
-          description: OPAL standard error
-          content:
-            application/json:
+          headers:
+            Location:
+              description: URI of the created backup (/api/v1/backup/download/{filename}).
               schema:
-                $ref: '#/components/schemas/OpalError'
+                type: string
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '422':
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/download/{filename}:
     get:
       tags:
@@ -2044,12 +2536,19 @@ paths:
       responses:
         '200':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/restore/{filename}:
     post:
       tags:
@@ -2073,12 +2572,19 @@ paths:
                 additionalProperties:
                   type: string
                 title: Response Restore Backup Api V1 Backup Restore  Filename  Post
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/{filename}:
     delete:
       tags:
@@ -2095,12 +2601,19 @@ paths:
       responses:
         '204':
           description: Successful Response
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/export:
     get:
       tags:
@@ -2115,12 +2628,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConfigBundle'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/import:
     post:
       tags:
@@ -2144,12 +2662,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConfigImportResult'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /api/v1/backup/validate:
     get:
       tags:
@@ -2163,12 +2686,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConfigValidationReport'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
     post:
       tags:
       - backup
@@ -2189,12 +2717,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConfigValidationReport'
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          $ref: '#/components/responses/OpalError422'
   /:
     get:
       summary: Root
@@ -2209,12 +2742,17 @@ paths:
                   type: string
                 type: object
                 title: Response Root  Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
   /healthz:
     get:
       summary: Healthz
@@ -2229,13 +2767,115 @@ paths:
                   type: string
                 type: object
                 title: Response Healthz Healthz Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: '#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: '#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: '#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: '#/components/headers/OpalCausationIdHeader'
         '422':
-          description: OPAL standard error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OpalError'
+          $ref: '#/components/responses/OpalError422'
 components:
+  headers:
+    OpalSessionIdHeader:
+      description: Effective OPAL session context for this response. Returned when a session identifier is known; conditionally present.
+      required: false
+      schema:
+        type: string
+    OpalTransactionIdHeader:
+      description: Logical transaction identifier for this exchange. Always returned; generated when the inbound request lacks one.
+      required: true
+      schema:
+        type: string
+    OpalRequestIdHeader:
+      description: Identifier of this inbound HTTP exchange. Always returned; regenerated for each downstream hop.
+      required: true
+      schema:
+        type: string
+    OpalCausationIdHeader:
+      description: Immediate parent event/request identifier for this response. Returned when applicable; conditionally present.
+      required: false
+      schema:
+        type: string
+  responses:
+    NotFound:
+      description: Requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OpalError'
+      headers:
+        X-Opal-Session-Id:
+          $ref: '#/components/headers/OpalSessionIdHeader'
+        X-Opal-Transaction-Id:
+          $ref: '#/components/headers/OpalTransactionIdHeader'
+        X-Opal-Request-Id:
+          $ref: '#/components/headers/OpalRequestIdHeader'
+        X-Opal-Causation-Id:
+          $ref: '#/components/headers/OpalCausationIdHeader'
+    Conflict:
+      description: Request conflicts with the current state or an existing resource.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OpalError'
+      headers:
+        X-Opal-Session-Id:
+          $ref: '#/components/headers/OpalSessionIdHeader'
+        X-Opal-Transaction-Id:
+          $ref: '#/components/headers/OpalTransactionIdHeader'
+        X-Opal-Request-Id:
+          $ref: '#/components/headers/OpalRequestIdHeader'
+        X-Opal-Causation-Id:
+          $ref: '#/components/headers/OpalCausationIdHeader'
+    OpalError412:
+      description: OPAL standard error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OpalError'
+      headers:
+        X-Opal-Session-Id:
+          $ref: '#/components/headers/OpalSessionIdHeader'
+        X-Opal-Transaction-Id:
+          $ref: '#/components/headers/OpalTransactionIdHeader'
+        X-Opal-Request-Id:
+          $ref: '#/components/headers/OpalRequestIdHeader'
+        X-Opal-Causation-Id:
+          $ref: '#/components/headers/OpalCausationIdHeader'
+    OpalError422:
+      description: OPAL standard error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OpalError'
+      headers:
+        X-Opal-Session-Id:
+          $ref: '#/components/headers/OpalSessionIdHeader'
+        X-Opal-Transaction-Id:
+          $ref: '#/components/headers/OpalTransactionIdHeader'
+        X-Opal-Request-Id:
+          $ref: '#/components/headers/OpalRequestIdHeader'
+        X-Opal-Causation-Id:
+          $ref: '#/components/headers/OpalCausationIdHeader'
+    OpalError428:
+      description: OPAL standard error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OpalError'
+      headers:
+        X-Opal-Session-Id:
+          $ref: '#/components/headers/OpalSessionIdHeader'
+        X-Opal-Transaction-Id:
+          $ref: '#/components/headers/OpalTransactionIdHeader'
+        X-Opal-Request-Id:
+          $ref: '#/components/headers/OpalRequestIdHeader'
+        X-Opal-Causation-Id:
+          $ref: '#/components/headers/OpalCausationIdHeader'
   schemas:
     AudioDevice:
       properties:
@@ -2493,15 +3133,6 @@ components:
           title: Promoted To Phrase
       type: object
       title: FailedUtteranceUpdate
-    HTTPValidationError:
-      properties:
-        detail:
-          items:
-            $ref: '#/components/schemas/ValidationError'
-          type: array
-          title: Detail
-      type: object
-      title: HTTPValidationError
     HealthCheckResult:
       properties:
         name:
@@ -2836,42 +3467,6 @@ components:
       type: object
       required:
       - error
-    OpalErrorBody:
-      properties:
-        code:
-          type: string
-          title: Code
-        message:
-          type: string
-          title: Message
-        details:
-          anyOf:
-          - {}
-          - type: 'null'
-          title: Details
-        request_id:
-          type: string
-          title: Request Id
-        transaction_id:
-          type: string
-          title: Transaction Id
-        session_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Session Id
-        causation_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Causation Id
-      type: object
-      required:
-      - code
-      - message
-      - request_id
-      - transaction_id
-      title: OpalErrorBody
     OpalHealthProbe:
       properties:
         status:
@@ -4044,32 +4639,6 @@ components:
       required:
       - text
       title: TextTestRequest
-    ValidationError:
-      properties:
-        loc:
-          items:
-            anyOf:
-            - type: string
-            - type: integer
-          type: array
-          title: Location
-        msg:
-          type: string
-          title: Message
-        type:
-          type: string
-          title: Error Type
-        input:
-          title: Input
-        ctx:
-          type: object
-          title: Context
-      type: object
-      required:
-      - loc
-      - msg
-      - type
-      title: ValidationError
     WakewordCreate:
       properties:
         name:
@@ -4177,7 +4746,7 @@ components:
           type: string
         value:
           title: Value
-          type: string
+          description: Native JSON setting value.
         updated_at:
           format: date-time
           title: Updated At
@@ -4193,7 +4762,7 @@ components:
       properties:
         value:
           title: Value
-          type: string
+          description: Native JSON setting value.
       required:
       - value
       title: SettingUpdate
@@ -4230,6 +4799,7 @@ x-opal-context-standard:
     - causation_id
     metadata_schema_version: '2.0'
     zero_mq_frames: 2
+    compatibility: 'metadata_schema_version versions the optional data.metadata block only; the two-frame wire envelope (topic + JSON with topic/data) is unchanged across versions. Consumers extract known correlation keys (session_id, transaction_id, request_id, causation_id) and MUST ignore unknown metadata fields; producers may emit any metadata_schema_version without breaking the wire contract.'
   pagination:
     history: cursor
     configuration: none
