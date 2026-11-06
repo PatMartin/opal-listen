@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Response
 
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OPAL_PRECONDITION_RESPONSES
+from opal_listener.models.opal_standard import (
+    OPAL_404_RESPONSE,
+    OPAL_409_RESPONSE,
+    OPAL_422_RESPONSE,
+    OPAL_PRECONDITION_RESPONSES,
+)
 from opal_listener.models.schemas import WakewordCreate, WakewordRead, WakewordUpdate
 from opal_listener.models.tables import Wakeword
 from opal_listener.service import catalog
@@ -21,7 +26,7 @@ def list_wakewords(response: Response, svc: ListenerService = Depends(get_servic
     return items
 
 
-@router.post("/", response_model=WakewordRead, status_code=201)
+@router.post("/", response_model=WakewordRead, status_code=201, responses=OPAL_409_RESPONSE)
 def create_wakeword(
     data: WakewordCreate, response: Response, svc: ListenerService = Depends(get_service)
 ) -> WakewordRead:
@@ -31,7 +36,7 @@ def create_wakeword(
     return result
 
 
-@router.get("/{wakeword_id}", response_model=WakewordRead)
+@router.get("/{wakeword_id}", response_model=WakewordRead, responses=OPAL_404_RESPONSE)
 def get_wakeword(wakeword_id: int, response: Response, svc: ListenerService = Depends(get_service)) -> WakewordRead:
     with svc.db.session() as session:
         item = WakewordRead.model_validate(catalog.get_or_404(session, Wakeword, wakeword_id, "wakeword"))
@@ -39,7 +44,11 @@ def get_wakeword(wakeword_id: int, response: Response, svc: ListenerService = De
     return item
 
 
-@router.patch("/{wakeword_id}", response_model=WakewordRead, responses=OPAL_PRECONDITION_RESPONSES)
+@router.patch(
+    "/{wakeword_id}",
+    response_model=WakewordRead,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+)
 def update_wakeword(
     wakeword_id: int,
     data: WakewordUpdate,
@@ -53,7 +62,9 @@ def update_wakeword(
     return result
 
 
-@router.delete("/{wakeword_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES)
+@router.delete(
+    "/{wakeword_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
+)
 def delete_wakeword(
     wakeword_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),

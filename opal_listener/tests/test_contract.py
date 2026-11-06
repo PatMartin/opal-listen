@@ -1,7 +1,8 @@
-"""Contract test: the generated OpenAPI must be a compatible superset of opal_listen.yaml.
+"""Contract test: the generated OpenAPI must be a compatible superset of opal_listen_v1.4.0.yaml.
 
-Every path, method, operationId, parameter, request body and response status in the contract must exist;
-every contract schema must exist with the same fields, types, constraints and required list.
+Every path, method, operationId, parameter, request body, response status and documented response
+header in the contract must exist; every contract schema must exist with the same fields, types,
+constraints and required list. The app's declared info.version must equal the contract's.
 Additive changes (new optional fields, new endpoints, typed responses instead of free-form objects)
 are allowed.
 """
@@ -12,11 +13,12 @@ from typing import Any
 
 import pytest
 import yaml
+from fastapi.testclient import TestClient
 
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings
 from opal_listener.main import create_app
 
-CONTRACT = yaml.safe_load((PACKAGE_DIR.parent / "opal_listen.yaml").read_text())
+CONTRACT = yaml.safe_load((PACKAGE_DIR.parent / "opal_listen_v1.4.0.yaml").read_text(encoding="utf-8"))
 METHODS = ("get", "post", "put", "patch", "delete")
 CONSTRAINTS = ("maxLength", "minLength", "maximum", "minimum", "default", "format", "contentMediaType")
 
@@ -173,3 +175,94 @@ def test_web_ui_parity_table_matches_api_and_cli(generated: dict[str, Any]) -> N
     assert {n: (m, p) for n, (m, p, _) in ui.items()} == api
     for name, (_m, _p, cli) in ui.items():
         assert OPERATION_COMMANDS[name] in cli, f"{name}: UI says '{cli}', CLI says '{OPERATION_COMMANDS[name]}'"
+
+
+def test_info_version_matches_contract(generated: dict[str, Any]) -> None:
+    """The FastAPI-declared info.version is the REST contract version; it must track this file."""
+    assert generated["info"]["version"] == CONTRACT["info"]["version"]
+
+
+# Headers the OPAL standard manages: stamped at runtime and documented on contract responses.
+_MANAGED_HEADERS = {
+    "ETag",
+    "Location",
+    "X-Opal-Session-Id",
+    "X-Opal-Transaction-Id",
+    "X-Opal-Request-Id",
+    "X-Opal-Causation-Id",
+}
+
+
+def _response_headers(response: dict[str, Any], source: dict[str, Any]) -> set[str]:
+    """Header names documented on a response, resolving $ref'd component responses."""
+    if "$ref" in response:
+        response = source["components"]["responses"][_ref_name(response)]
+    return set(response.get("headers", {}))
+
+
+@pytest.mark.parametrize(("path", "method"), _operations(), ids=lambda v: str(v))
+def test_documented_response_headers(generated: dict[str, Any], path: str, method: str) -> None:
+    """Contract-documented response headers must be documented by the generated spec, and the
+    generated spec must not document managed headers the contract does not."""
+    want_op = CONTRACT["paths"][path][method]
+    got_op = generated["paths"][path][method]
+    for status, want_response in want_op["responses"].items():
+        want = _response_headers(want_response, CONTRACT)
+        got = _response_headers(got_op["responses"].get(status, {}), generated)
+        assert want <= got, f"{method.upper()} {path} {status}: undocumented headers {want - got}"
+        extra = (got & _MANAGED_HEADERS) - want
+        assert not extra, f"{method.upper()} {path} {status}: documents headers the contract lacks {extra}"
+
+
+def test_cli_command_map_resolves_to_real_commands() -> None:
+    """Every OPERATION_COMMANDS value must resolve to a real command in the `opal listen` CLI tree,
+    so a renamed or mistyped command cannot leave a dead REST-to-CLI mapping."""
+    from typer.main import get_command
+
+    from opal_listener.cli.main import OPERATION_COMMANDS, app
+
+    listen = get_command(app).commands["listen"]
+    unresolved: dict[str, str] = {}
+    for operation, command_path in OPERATION_COMMANDS.items():
+        node: Any = listen
+        for part in command_path.split():
+            node = getattr(node, "commands", {}).get(part)
+            if node is None:
+                unresolved[operation] = command_path
+                break
+    assert not unresolved, f"OPERATION_COMMANDS values that resolve to no command: {unresolved}"
+
+
+def test_opal_correlation_headers_stamped_at_runtime(client: TestClient) -> None:
+    """Behavioral check for the documented OPAL headers: transaction/request ids are always
+    returned (generated when absent), session/causation are echoed only when supplied, and
+    malformed ids are rejected with a 422 OpalError — on success and error responses alike."""
+    response = client.get("/api/v1/wakewords/")
+    assert response.status_code == 200
+    assert response.headers["X-Opal-Transaction-Id"]
+    assert response.headers["X-Opal-Request-Id"]
+    assert response.headers["ETag"]
+    assert "X-Opal-Session-Id" not in response.headers
+    assert "X-Opal-Causation-Id" not in response.headers
+
+    context = {
+        "X-Opal-Session-Id": "sess-1",
+        "X-Opal-Transaction-Id": "tx-1",
+        "X-Opal-Request-Id": "req-1",
+        "X-Opal-Causation-Id": "cause-1",
+    }
+    echoed = client.get("/api/v1/wakewords/", headers=context)
+    for name, value in context.items():
+        assert echoed.headers[name] == value
+
+    not_found = client.get("/api/v1/wakewords/999999")
+    assert not_found.status_code == 404
+    assert not_found.json()["error"]["code"] == "not_found"
+    assert not_found.headers["X-Opal-Transaction-Id"]
+    assert not_found.headers["X-Opal-Request-Id"]
+
+    invalid = client.get("/api/v1/wakewords/", headers={"X-Opal-Transaction-Id": "not opaque"})
+    assert invalid.status_code == 422
+    assert invalid.json()["error"]["code"] == "invalid_header"
+    assert invalid.headers["X-Opal-Transaction-Id"]
+    assert invalid.headers["X-Opal-Request-Id"]

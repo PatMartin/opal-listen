@@ -5,6 +5,7 @@ from __future__ import annotations
 
 class DomainError(Exception):
     status_code = 400
+    error_code = "bad_request"
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -13,10 +14,12 @@ class DomainError(Exception):
 
 class NotFoundError(DomainError):
     status_code = 404
+    error_code = "not_found"
 
 
 class ConflictError(DomainError):
     status_code = 409
+    error_code = "conflict"
 
 
 class InvalidRequestError(DomainError):
@@ -25,6 +28,7 @@ class InvalidRequestError(DomainError):
 
 class ServiceUnavailableError(DomainError):
     status_code = 503
+    error_code = "service_unavailable"
 
 
 class PreconditionRequiredError(DomainError):

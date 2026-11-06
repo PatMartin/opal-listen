@@ -76,6 +76,12 @@ class OpalCursorPageMetadata(BaseModel):
 
 
 # Reusable OpenAPI response overrides.
+OPAL_404_RESPONSE: dict[int | str, dict[str, Any]] = {
+    404: {"model": OpalError, "description": "OPAL standard error"},
+}
+OPAL_409_RESPONSE: dict[int | str, dict[str, Any]] = {
+    409: {"model": OpalError, "description": "OPAL standard error"},
+}
 OPAL_422_RESPONSE: dict[int | str, dict[str, Any]] = {
     422: {"model": OpalError, "description": "OPAL standard error"},
 }

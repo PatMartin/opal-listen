@@ -27,7 +27,13 @@ from opal_listener.service.errors import (
     PreconditionRequiredError,
 )
 from opal_listener.service.listener_service import ListenerService
-from opal_listener.service.opal_context import get_opal_context
+from opal_listener.service.opal_context import (
+    CAUSATION_HEADER,
+    REQUEST_HEADER,
+    SESSION_HEADER,
+    TRANSACTION_HEADER,
+    get_opal_context,
+)
 from opal_listener.service.runtime_config import ConfigInvalidError
 from opal_listener.view.api import ROUTERS
 from opal_listener.view.opal_middleware import OpalContextMiddleware
@@ -38,6 +44,116 @@ STATIC_DIR = PACKAGE_DIR / "view" / "static"
 # Schemas referenced by the contract but no longer produced by any route (the per-key settings
 # endpoints were removed in v1.2); kept so the generated OpenAPI remains a superset of the contract.
 _ORPHAN_CONTRACT_SCHEMAS = (SettingRead, SettingUpdate, OpalCursorPageMetadata)
+
+# OPAL SUITE STANDARD response-header documentation (opal_listen_v1.4.0.yaml components/headers).
+# OpalContextMiddleware stamps these on every response, so every operation documents them.
+_OPAL_HEADER_COMPONENTS: dict[str, Any] = {
+    "OpalSessionIdHeader": {
+        "description": "Effective OPAL session context for this response. Returned when a session identifier is known; conditionally present.",
+        "required": False,
+        "schema": {"type": "string"},
+    },
+    "OpalTransactionIdHeader": {
+        "description": "Logical transaction identifier for this exchange. Always returned; generated when the inbound request lacks one.",
+        "required": True,
+        "schema": {"type": "string"},
+    },
+    "OpalRequestIdHeader": {
+        "description": "Identifier of this inbound HTTP exchange. Always returned; regenerated for each downstream hop.",
+        "required": True,
+        "schema": {"type": "string"},
+    },
+    "OpalCausationIdHeader": {
+        "description": "Immediate parent event/request identifier for this response. Returned when applicable; conditionally present.",
+        "required": False,
+        "schema": {"type": "string"},
+    },
+}
+_OPAL_RESPONSE_HEADERS = {
+    SESSION_HEADER: {"$ref": "#/components/headers/OpalSessionIdHeader"},
+    TRANSACTION_HEADER: {"$ref": "#/components/headers/OpalTransactionIdHeader"},
+    REQUEST_HEADER: {"$ref": "#/components/headers/OpalRequestIdHeader"},
+    CAUSATION_HEADER: {"$ref": "#/components/headers/OpalCausationIdHeader"},
+}
+
+_ETAG_EXAMPLE = '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+
+
+def _etag_doc(description: str) -> dict[str, Any]:
+    return {"description": description, "example": _ETAG_EXAMPLE, "schema": {"type": "string"}}
+
+
+_COLLECTION_ETAG = _etag_doc("Strong revision of this collection's portable configuration.")
+_ITEM_ETAG = _etag_doc(
+    "Strong revision of this resource's portable configuration; required as If-Match for its mutations."
+)
+_MEMBER_ETAG = _etag_doc("Strong revision of this collection; required as If-Match for member deletions.")
+
+# Operations that return a strong ETag (set in code via collection_etag/item_etag), per operation.
+_ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
+    "list_wakewords_api_v1_wakewords__get": _COLLECTION_ETAG,
+    "list_intents_api_v1_intents__get": _COLLECTION_ETAG,
+    "list_slots_api_v1_slots__get": _COLLECTION_ETAG,
+    "list_profiles_api_v1_profiles__get": _COLLECTION_ETAG,
+    "get_wakeword_api_v1_wakewords__wakeword_id__get": _ITEM_ETAG,
+    "get_intent_api_v1_intents__intent_id__get": _ITEM_ETAG,
+    "get_slot_api_v1_slots__slot_id__get": _ITEM_ETAG,
+    "get_profile_api_v1_profiles__profile_id__get": _ITEM_ETAG,
+    "list_phrases_api_v1_intents__intent_id__phrases_get": _MEMBER_ETAG,
+    "list_slot_values_api_v1_slots__slot_id__values_get": _MEMBER_ETAG,
+    "list_aliases_api_v1_slots__slot_id__values__value_id__aliases_get": _MEMBER_ETAG,
+    "get_all_settings_api_v1_settings__get": _etag_doc(
+        "Strong revision of the whole settings map; required as If-Match for PATCH /api/v1/settings/."
+    ),
+    "patch_listen_settings": _etag_doc("Updated settings-map revision after the atomic patch."),
+}
+
+# Operations that set a Location header on their 201 responses.
+_LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
+    **{
+        opid: {"description": "Resource URL", "schema": {"type": "string"}}
+        for opid in (
+            "create_wakeword_api_v1_wakewords__post",
+            "create_intent_api_v1_intents__post",
+            "add_phrase_api_v1_intents__intent_id__phrases_post",
+            "create_slot_api_v1_slots__post",
+            "add_slot_value_api_v1_slots__slot_id__values_post",
+            "add_alias_api_v1_slots__slot_id__values__value_id__aliases_post",
+            "create_profile_api_v1_profiles__post",
+            "create_failed_utterance_api_v1_failed_utterances__post",
+            "create_regression_test_api_v1_regression__post",
+        )
+    },
+    "create_backup_api_v1_backup_create_post": {
+        "description": "URI of the created backup (/api/v1/backup/download/{filename}).",
+        "schema": {"type": "string"},
+    },
+}
+
+
+def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
+    """Document the response headers the runtime actually emits.
+
+    OpalContextMiddleware stamps the four X-Opal-* correlation headers on every response
+    (success, error, and streaming alike); ETag-bearing reads and Location-bearing creates
+    are annotated per operation, matching opal_listen_v1.4.0.yaml.
+    """
+    components = schema.setdefault("components", {})
+    components.setdefault("headers", {}).update(_OPAL_HEADER_COMPONENTS)
+    for item in schema.get("paths", {}).values():
+        for operation in item.values():
+            if not isinstance(operation, dict) or "responses" not in operation:
+                continue
+            opid = operation.get("operationId", "")
+            for status, response in operation["responses"].items():
+                if not isinstance(response, dict):
+                    continue
+                headers = response.setdefault("headers", {})
+                headers.update(_OPAL_RESPONSE_HEADERS)
+                if status == "200" and opid in _ETAG_OPERATION_HEADERS:
+                    headers["ETag"] = _ETAG_OPERATION_HEADERS[opid]
+                if status == "201" and opid in _LOCATION_OPERATION_HEADERS:
+                    headers["Location"] = _LOCATION_OPERATION_HEADERS[opid]
 
 
 def _validation_detail(messages: list[str], error_type: str) -> list[dict[str, object]]:
@@ -98,7 +214,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="1.2.0",
+        version="1.4.0",
         lifespan=lifespan,
     )
     app.state.listener = service
@@ -115,6 +231,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     def custom_openapi() -> dict[str, Any]:
         schema = default_openapi()
         _inject_orphan_schemas(schema)
+        _inject_documented_response_headers(schema)
         return schema
 
     app.openapi = custom_openapi  # type: ignore[method-assign]
@@ -127,10 +244,10 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
         )
 
     @app.exception_handler(DomainError)
-    async def _domain_error(_: Request, exc: DomainError) -> JSONResponse:
+    async def _domain_error(request: Request, exc: DomainError) -> JSONResponse:
         if exc.status_code == 422:
             return JSONResponse(status_code=422, content={"detail": _validation_detail([exc.message], "value_error")})
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+        return _opal_error_response(request, exc.status_code, getattr(exc, "error_code", "bad_request"), exc.message)
 
     async def _opal_standard_error(
         request: Request, exc: PreconditionRequiredError | PreconditionFailedError | OpalValidationError
@@ -150,9 +267,9 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
         return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(IntegrityError)
-    async def _integrity_error(_: Request, exc: IntegrityError) -> JSONResponse:
+    async def _integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
         log.info("integrity error: %s", exc.orig)
-        return JSONResponse(status_code=409, content={"detail": "conflicts with an existing record"})
+        return _opal_error_response(request, 409, "conflict", "conflicts with an existing record")
 
     for router in ROUTERS:
         app.include_router(router)

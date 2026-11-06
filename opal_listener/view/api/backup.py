@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, Response
 from fastapi.responses import FileResponse
 
 from opal_listener.models.config_schemas import ConfigBundle
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE
+from opal_listener.models.opal_standard import OPAL_404_RESPONSE, OPAL_422_RESPONSE
 from opal_listener.models.schemas import BackupInfo, ConfigImportResult, ConfigValidationReport
 from opal_listener.service import backup as backup_ops
 from opal_listener.service.config_store import ConfigFileError, export_bundle, load_config_dir
@@ -22,12 +22,14 @@ def list_backups(svc: ListenerService = Depends(get_service)) -> list[BackupInfo
     return backup_ops.list_backups(svc.app_settings.backup_dir)
 
 
-@router.post("/create", responses=OPAL_422_RESPONSE)
-def create_backup(svc: ListenerService = Depends(get_service)) -> dict[str, str]:
-    return {"status": "created", "filename": svc.create_backup("manual")}
+@router.post("/create", status_code=201, responses=OPAL_422_RESPONSE)
+def create_backup(response: Response, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
+    filename = svc.create_backup("manual")
+    response.headers["Location"] = f"/api/v1/backup/download/{filename}"
+    return {"status": "created", "filename": filename}
 
 
-@router.get("/download/{filename}", response_class=FileResponse)
+@router.get("/download/{filename}", response_class=FileResponse, responses=OPAL_404_RESPONSE)
 def download_backup(filename: str, svc: ListenerService = Depends(get_service)) -> FileResponse:
     path = backup_ops.safe_backup_path(svc.app_settings.backup_dir, filename)
     if not path.exists():
@@ -35,12 +37,12 @@ def download_backup(filename: str, svc: ListenerService = Depends(get_service)) 
     return FileResponse(path, media_type="application/octet-stream", filename=filename)
 
 
-@router.post("/restore/{filename}")
+@router.post("/restore/{filename}", responses=OPAL_404_RESPONSE)
 def restore_backup(filename: str, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
     return svc.restore_backup(filename)
 
 
-@router.delete("/{filename}", status_code=204)
+@router.delete("/{filename}", status_code=204, responses=OPAL_404_RESPONSE)
 def delete_backup(filename: str, svc: ListenerService = Depends(get_service)) -> Response:
     backup_ops.delete_backup(svc.app_settings.backup_dir, filename)
     return Response(status_code=204)

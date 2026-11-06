@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Response
 
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OPAL_PRECONDITION_RESPONSES
+from opal_listener.models.opal_standard import (
+    OPAL_404_RESPONSE,
+    OPAL_409_RESPONSE,
+    OPAL_422_RESPONSE,
+    OPAL_PRECONDITION_RESPONSES,
+)
 from opal_listener.models.schemas import ProfileCreate, ProfileRead, ProfileUpdate
 from opal_listener.models.tables import Profile
 from opal_listener.service import catalog
@@ -21,7 +26,7 @@ def list_profiles(response: Response, svc: ListenerService = Depends(get_service
     return items
 
 
-@router.post("/", response_model=ProfileRead, status_code=201)
+@router.post("/", response_model=ProfileRead, status_code=201, responses=OPAL_409_RESPONSE)
 def create_profile(data: ProfileCreate, response: Response, svc: ListenerService = Depends(get_service)) -> ProfileRead:
     with svc.config_change() as session:
         result = ProfileRead.model_validate(catalog.create_profile(session, data))
@@ -29,7 +34,7 @@ def create_profile(data: ProfileCreate, response: Response, svc: ListenerService
     return result
 
 
-@router.get("/{profile_id}", response_model=ProfileRead)
+@router.get("/{profile_id}", response_model=ProfileRead, responses=OPAL_404_RESPONSE)
 def get_profile(profile_id: int, response: Response, svc: ListenerService = Depends(get_service)) -> ProfileRead:
     with svc.db.session() as session:
         item = ProfileRead.model_validate(catalog.get_or_404(session, Profile, profile_id, "profile"))
@@ -37,7 +42,11 @@ def get_profile(profile_id: int, response: Response, svc: ListenerService = Depe
     return item
 
 
-@router.patch("/{profile_id}", response_model=ProfileRead, responses=OPAL_PRECONDITION_RESPONSES)
+@router.patch(
+    "/{profile_id}",
+    response_model=ProfileRead,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+)
 def update_profile(
     profile_id: int,
     data: ProfileUpdate,
@@ -51,7 +60,9 @@ def update_profile(
     return result
 
 
-@router.delete("/{profile_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES)
+@router.delete(
+    "/{profile_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
+)
 def delete_profile(
     profile_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),
@@ -64,7 +75,7 @@ def delete_profile(
     return Response(status_code=204)
 
 
-@router.post("/{profile_id}/activate", response_model=ProfileRead)
+@router.post("/{profile_id}/activate", response_model=ProfileRead, responses=OPAL_404_RESPONSE)
 def activate_profile(profile_id: int, svc: ListenerService = Depends(get_service)) -> ProfileRead:
     """Set this profile as active, deactivating all others."""
     with svc.config_change() as session:

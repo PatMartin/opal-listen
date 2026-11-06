@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Response
 from sqlmodel import col, select
 
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE
+from opal_listener.models.opal_standard import OPAL_404_RESPONSE, OPAL_422_RESPONSE
 from opal_listener.models.schemas import (
     RegressionRunResult,
     RegressionTestCreate,
@@ -46,13 +46,13 @@ def run_regression_tests(enabled_only: bool = True, svc: ListenerService = Depen
         return review.run_regression(session, svc, enabled_only)
 
 
-@router.get("/{test_id}", response_model=RegressionTestRead)
+@router.get("/{test_id}", response_model=RegressionTestRead, responses=OPAL_404_RESPONSE)
 def get_regression_test(test_id: int, svc: ListenerService = Depends(get_service)) -> RegressionTestRead:
     with svc.db.session() as session:
         return RegressionTestRead.model_validate(get_or_404(session, RegressionTest, test_id, "regression test"))
 
 
-@router.patch("/{test_id}", response_model=RegressionTestRead)
+@router.patch("/{test_id}", response_model=RegressionTestRead, responses=OPAL_404_RESPONSE)
 def update_regression_test(
     test_id: int, data: RegressionTestUpdate, svc: ListenerService = Depends(get_service)
 ) -> RegressionTestRead:
@@ -65,7 +65,7 @@ def update_regression_test(
         return RegressionTestRead.model_validate(obj)
 
 
-@router.delete("/{test_id}", status_code=204)
+@router.delete("/{test_id}", status_code=204, responses=OPAL_404_RESPONSE)
 def delete_regression_test(test_id: int, svc: ListenerService = Depends(get_service)) -> Response:
     with svc.db.session() as session:
         session.delete(get_or_404(session, RegressionTest, test_id, "regression test"))

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Response
 
+from opal_listener.models.opal_standard import OPAL_404_RESPONSE
+
 from opal_listener.models.schemas import (
     FailedUtteranceCreate,
     FailedUtteranceRead,
@@ -44,13 +46,13 @@ def create_failed_utterance(
     return result
 
 
-@router.get("/{fu_id}", response_model=FailedUtteranceRead)
+@router.get("/{fu_id}", response_model=FailedUtteranceRead, responses=OPAL_404_RESPONSE)
 def get_failed_utterance(fu_id: int, svc: ListenerService = Depends(get_service)) -> FailedUtteranceRead:
     with svc.db.session() as session:
         return FailedUtteranceRead.model_validate(get_or_404(session, FailedUtterance, fu_id, "failed utterance"))
 
 
-@router.patch("/{fu_id}", response_model=FailedUtteranceRead)
+@router.patch("/{fu_id}", response_model=FailedUtteranceRead, responses=OPAL_404_RESPONSE)
 def update_failed_utterance(
     fu_id: int, data: FailedUtteranceUpdate, svc: ListenerService = Depends(get_service)
 ) -> FailedUtteranceRead:
@@ -60,7 +62,7 @@ def update_failed_utterance(
         return FailedUtteranceRead.model_validate(obj)
 
 
-@router.delete("/{fu_id}", status_code=204)
+@router.delete("/{fu_id}", status_code=204, responses=OPAL_404_RESPONSE)
 def delete_failed_utterance(fu_id: int, svc: ListenerService = Depends(get_service)) -> Response:
     with svc.db.session() as session:
         session.delete(get_or_404(session, FailedUtterance, fu_id, "failed utterance"))
@@ -68,7 +70,7 @@ def delete_failed_utterance(fu_id: int, svc: ListenerService = Depends(get_servi
     return Response(status_code=204)
 
 
-@router.post("/{fu_id}/promote", response_model=PromoteResult)
+@router.post("/{fu_id}/promote", response_model=PromoteResult, responses=OPAL_404_RESPONSE)
 def promote_to_phrase(
     fu_id: int,
     intent_name: str,

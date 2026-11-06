@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Response
 
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OPAL_PRECONDITION_RESPONSES
+from opal_listener.models.opal_standard import (
+    OPAL_404_RESPONSE,
+    OPAL_409_RESPONSE,
+    OPAL_422_RESPONSE,
+    OPAL_PRECONDITION_RESPONSES,
+)
 from opal_listener.models.schemas import (
     SlotAliasCreate,
     SlotAliasRead,
@@ -31,7 +36,7 @@ def list_slots(response: Response, svc: ListenerService = Depends(get_service)) 
     return items
 
 
-@router.post("/", response_model=SlotRead, status_code=201)
+@router.post("/", response_model=SlotRead, status_code=201, responses=OPAL_409_RESPONSE)
 def create_slot(data: SlotCreate, response: Response, svc: ListenerService = Depends(get_service)) -> SlotRead:
     with svc.config_change() as session:
         result = SlotRead.model_validate(catalog.create_slot(session, data))
@@ -39,7 +44,7 @@ def create_slot(data: SlotCreate, response: Response, svc: ListenerService = Dep
     return result
 
 
-@router.get("/{slot_id}", response_model=SlotReadWithValues)
+@router.get("/{slot_id}", response_model=SlotReadWithValues, responses=OPAL_404_RESPONSE)
 def get_slot(slot_id: int, response: Response, svc: ListenerService = Depends(get_service)) -> SlotReadWithValues:
     with svc.db.session() as session:
         item = SlotReadWithValues.model_validate(catalog.get_or_404(session, Slot, slot_id, "slot"))
@@ -47,7 +52,11 @@ def get_slot(slot_id: int, response: Response, svc: ListenerService = Depends(ge
     return item
 
 
-@router.patch("/{slot_id}", response_model=SlotRead, responses=OPAL_PRECONDITION_RESPONSES)
+@router.patch(
+    "/{slot_id}",
+    response_model=SlotRead,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+)
 def update_slot(
     slot_id: int,
     data: SlotUpdate,
@@ -61,7 +70,9 @@ def update_slot(
     return result
 
 
-@router.delete("/{slot_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES)
+@router.delete(
+    "/{slot_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
+)
 def delete_slot(
     slot_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),
@@ -74,7 +85,7 @@ def delete_slot(
     return Response(status_code=204)
 
 
-@router.get("/{slot_id}/values", response_model=list[SlotValueReadWithAliases])
+@router.get("/{slot_id}/values", response_model=list[SlotValueReadWithAliases], responses=OPAL_404_RESPONSE)
 def list_slot_values(
     slot_id: int, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[SlotValueReadWithAliases]:
@@ -85,7 +96,12 @@ def list_slot_values(
     return items
 
 
-@router.post("/{slot_id}/values", response_model=SlotValueRead, status_code=201)
+@router.post(
+    "/{slot_id}/values",
+    response_model=SlotValueRead,
+    status_code=201,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE},
+)
 def add_slot_value(
     slot_id: int, data: SlotValueCreate, response: Response, svc: ListenerService = Depends(get_service)
 ) -> SlotValueRead:
@@ -95,7 +111,11 @@ def add_slot_value(
     return result
 
 
-@router.delete("/{slot_id}/values/{value_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES)
+@router.delete(
+    "/{slot_id}/values/{value_id}",
+    status_code=204,
+    responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+)
 def delete_slot_value(
     slot_id: int,
     value_id: int,
@@ -110,7 +130,7 @@ def delete_slot_value(
     return Response(status_code=204)
 
 
-@router.get("/{slot_id}/values/{value_id}/aliases", response_model=list[SlotAliasRead])
+@router.get("/{slot_id}/values/{value_id}/aliases", response_model=list[SlotAliasRead], responses=OPAL_404_RESPONSE)
 def list_aliases(
     slot_id: int, value_id: int, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[SlotAliasRead]:
@@ -121,7 +141,12 @@ def list_aliases(
     return items
 
 
-@router.post("/{slot_id}/values/{value_id}/aliases", response_model=SlotAliasRead, status_code=201)
+@router.post(
+    "/{slot_id}/values/{value_id}/aliases",
+    response_model=SlotAliasRead,
+    status_code=201,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE},
+)
 def add_alias(
     slot_id: int,
     value_id: int,
@@ -136,7 +161,9 @@ def add_alias(
 
 
 @router.delete(
-    "/{slot_id}/values/{value_id}/aliases/{alias_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES
+    "/{slot_id}/values/{value_id}/aliases/{alias_id}",
+    status_code=204,
+    responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
 )
 def delete_alias(
     slot_id: int,

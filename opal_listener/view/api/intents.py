@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, Response
 
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OPAL_PRECONDITION_RESPONSES
+from opal_listener.models.opal_standard import (
+    OPAL_404_RESPONSE,
+    OPAL_409_RESPONSE,
+    OPAL_422_RESPONSE,
+    OPAL_PRECONDITION_RESPONSES,
+)
 from opal_listener.models.schemas import (
     IntentCreate,
     IntentPhraseCreate,
@@ -28,7 +33,7 @@ def list_intents(response: Response, svc: ListenerService = Depends(get_service)
     return items
 
 
-@router.post("/", response_model=IntentReadWithPhrases, status_code=201)
+@router.post("/", response_model=IntentReadWithPhrases, status_code=201, responses=OPAL_409_RESPONSE)
 def create_intent(
     data: IntentCreate, response: Response, svc: ListenerService = Depends(get_service)
 ) -> IntentReadWithPhrases:
@@ -38,7 +43,7 @@ def create_intent(
     return result
 
 
-@router.get("/{intent_id}", response_model=IntentReadWithPhrases)
+@router.get("/{intent_id}", response_model=IntentReadWithPhrases, responses=OPAL_404_RESPONSE)
 def get_intent(
     intent_id: int, response: Response, svc: ListenerService = Depends(get_service)
 ) -> IntentReadWithPhrases:
@@ -48,7 +53,11 @@ def get_intent(
     return item
 
 
-@router.patch("/{intent_id}", response_model=IntentRead, responses=OPAL_PRECONDITION_RESPONSES)
+@router.patch(
+    "/{intent_id}",
+    response_model=IntentRead,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+)
 def update_intent(
     intent_id: int,
     data: IntentUpdate,
@@ -62,7 +71,9 @@ def update_intent(
     return result
 
 
-@router.delete("/{intent_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES)
+@router.delete(
+    "/{intent_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
+)
 def delete_intent(
     intent_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),
@@ -75,7 +86,7 @@ def delete_intent(
     return Response(status_code=204)
 
 
-@router.get("/{intent_id}/phrases", response_model=list[IntentPhraseRead])
+@router.get("/{intent_id}/phrases", response_model=list[IntentPhraseRead], responses=OPAL_404_RESPONSE)
 def list_phrases(
     intent_id: int, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[IntentPhraseRead]:
@@ -86,7 +97,12 @@ def list_phrases(
     return items
 
 
-@router.post("/{intent_id}/phrases", response_model=IntentPhraseRead, status_code=201)
+@router.post(
+    "/{intent_id}/phrases",
+    response_model=IntentPhraseRead,
+    status_code=201,
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE},
+)
 def add_phrase(
     intent_id: int, data: IntentPhraseCreate, response: Response, svc: ListenerService = Depends(get_service)
 ) -> IntentPhraseRead:
@@ -96,7 +112,11 @@ def add_phrase(
     return result
 
 
-@router.delete("/{intent_id}/phrases/{phrase_id}", status_code=204, responses=OPAL_PRECONDITION_RESPONSES)
+@router.delete(
+    "/{intent_id}/phrases/{phrase_id}",
+    status_code=204,
+    responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+)
 def delete_phrase(
     intent_id: int,
     phrase_id: int,

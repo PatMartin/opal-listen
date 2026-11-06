@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE
+from opal_listener.models.opal_standard import OPAL_404_RESPONSE, OPAL_422_RESPONSE
 from opal_listener.models.schemas import RecognitionLogRead
 from opal_listener.models.tables import RecognitionLog
 from opal_listener.service import recognition_store
@@ -51,7 +51,7 @@ def count_logs(
         return recognition_store.count_logs(session)
 
 
-@router.get("/{log_id}", response_model=RecognitionLogRead)
+@router.get("/{log_id}", response_model=RecognitionLogRead, responses=OPAL_404_RESPONSE)
 def get_log(log_id: int, svc: ListenerService = Depends(get_service)) -> RecognitionLogRead:
     with svc.db.session() as session:
         return RecognitionLogRead.model_validate(get_or_404(session, RecognitionLog, log_id, "recognition log"))
