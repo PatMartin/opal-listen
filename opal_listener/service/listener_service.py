@@ -278,11 +278,11 @@ class ListenerService:
                 raise
             self._apply(snapshot)
 
-    def validate_bundle(self, bundle: ConfigBundle) -> s.ConfigValidationReport:
+    def validate_bundle(self, bundle: ConfigBundle) -> s.OpalValidationReport:
         report, _ = compile_bundle(bundle)
-        return s.ConfigValidationReport(valid=report.ok, errors=report.errors, warnings=report.warnings)
+        return s.OpalValidationReport(valid=report.ok, errors=report.errors, warnings=report.warnings)
 
-    def import_bundle(self, bundle: ConfigBundle) -> s.ConfigImportResult:
+    def import_bundle(self, bundle: ConfigBundle) -> s.OpalImportResult:
         """Validate, back up, then replace configuration in one transaction (rolled back on failure)."""
         report, _ = compile_bundle(bundle)
         if not report.ok:
@@ -291,7 +291,7 @@ class ListenerService:
             backup_name = self.create_backup("pre_import")
             with self.config_change() as session:
                 counts = replace_config(session, bundle)
-        return s.ConfigImportResult(
+        return s.OpalImportResult(
             status="imported", backup_filename=backup_name, counts=counts, warnings=report.warnings
         )
 

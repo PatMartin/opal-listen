@@ -139,14 +139,14 @@ const ROUTES = [
   ["list_aliases", "GET", "/api/v1/slots/{slot_id}/values/{value_id}/aliases", "slots aliases", "slots"],
   ["add_alias", "POST", "/api/v1/slots/{slot_id}/values/{value_id}/aliases", "slots add-alias", "slots"],
   ["delete_alias", "DELETE", "/api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}", "slots remove-alias", "slots"],
-  ["list_profiles", "GET", "/api/v1/profiles/", "profiles list", "profiles"],
-  ["create_profile", "POST", "/api/v1/profiles/", "profiles add", "profiles"],
-  ["get_profile", "GET", "/api/v1/profiles/{profile_id}", "profiles get", "profiles"],
-  ["update_profile", "PATCH", "/api/v1/profiles/{profile_id}", "profiles update", "profiles"],
-  ["delete_profile", "DELETE", "/api/v1/profiles/{profile_id}", "profiles remove", "profiles"],
-  ["activate_profile", "POST", "/api/v1/profiles/{profile_id}/activate", "profiles activate", "profiles"],
-  ["get_all_settings", "GET", "/api/v1/settings/", "settings list", "settings"],
-  ["patch_listen_settings", "PATCH", "/api/v1/settings/", "settings set", "settings"],
+  ["opal_profiles_list", "GET", "/api/v1/profiles/", "profiles list", "profiles"],
+  ["opal_profiles_create", "POST", "/api/v1/profiles/", "profiles add", "profiles"],
+  ["opal_profile_get", "GET", "/api/v1/profiles/{profile_id}", "profiles get", "profiles"],
+  ["opal_profile_patch", "PATCH", "/api/v1/profiles/{profile_id}", "profiles update", "profiles"],
+  ["opal_profile_delete", "DELETE", "/api/v1/profiles/{profile_id}", "profiles remove", "profiles"],
+  ["opal_profile_activate", "POST", "/api/v1/profiles/{profile_id}/activate", "profiles activate", "profiles"],
+  ["opal_settings_get", "GET", "/api/v1/settings/", "settings list", "settings"],
+  ["opal_settings_patch", "PATCH", "/api/v1/settings/", "settings set", "settings"],
   ["opal_setting_get", "GET", "/api/v1/settings/{key}", "settings get", "settings"],
   ["opal_setting_put", "PUT", "/api/v1/settings/{key}", "settings set", "settings"],
   ["opal_setting_delete", "DELETE", "/api/v1/settings/{key}", "settings unset", "settings"],
@@ -174,19 +174,19 @@ const ROUTES = [
   ["get_last_performance", "GET", "/api/v1/performance/last", "perf last", "perf"],
   ["get_performance_summary", "GET", "/api/v1/performance/summary", "perf summary", "perf"],
   ["get_performance_history", "GET", "/api/v1/performance/history", "perf history", "perf"],
-  ["health_check", "GET", "/api/v1/health/", "system doctor", "system"],
+  ["opal_health_get", "GET", "/api/v1/health/", "system doctor", "system"],
   ["get_audio_devices", "GET", "/api/v1/health/audio_devices", "system devices", "system"],
-  ["get_listen_health_live", "GET", "/api/v1/health/live", "system live", "system"],
-  ["get_listen_health_ready", "GET", "/api/v1/health/ready", "system ready", "system"],
-  ["list_backups", "GET", "/api/v1/backup/list", "config backups", "config"],
-  ["create_backup", "POST", "/api/v1/backup/create", "config backup", "config"],
-  ["download_backup", "GET", "/api/v1/backup/download/{filename}", "config download", "config"],
-  ["restore_backup", "POST", "/api/v1/backup/restore/{filename}", "config restore", "config"],
-  ["delete_backup", "DELETE", "/api/v1/backup/{filename}", "config delete-backup", "config"],
-  ["export_config", "GET", "/api/v1/backup/export", "config export", "config"],
-  ["import_config", "POST", "/api/v1/backup/import", "config import", "config"],
-  ["validate_config", "GET", "/api/v1/backup/validate", "config validate", "config"],
-  ["validate_listen_backup_payload", "POST", "/api/v1/backup/validate", "config validate --from-dir", "config"],
+  ["opal_health_live_get", "GET", "/api/v1/health/live", "system live", "system"],
+  ["opal_health_ready_get", "GET", "/api/v1/health/ready", "system ready", "system"],
+  ["opal_backup_list", "GET", "/api/v1/backup/list", "config backups", "config"],
+  ["opal_backup_create", "POST", "/api/v1/backup/create", "config backup", "config"],
+  ["opal_backup_download", "GET", "/api/v1/backup/download/{filename}", "config download", "config"],
+  ["opal_backup_restore", "POST", "/api/v1/backup/restore/{filename}", "config restore", "config"],
+  ["opal_backup_delete", "DELETE", "/api/v1/backup/{filename}", "config delete-backup", "config"],
+  ["opal_backup_export", "GET", "/api/v1/backup/export", "config export", "config"],
+  ["opal_backup_import", "POST", "/api/v1/backup/import", "config import", "config"],
+  ["opal_backup_validate_stored", "GET", "/api/v1/backup/validate", "config validate", "config"],
+  ["opal_backup_validate", "POST", "/api/v1/backup/validate", "config validate --from-dir", "config"],
   ["root", "GET", "/", "system info", "system"],
   ["healthz", "GET", "/healthz", "system ping", "system"],
 ];
@@ -411,10 +411,10 @@ VIEWS.system = async () => {
       ${card("Ping", ["healthz"], err(ping) + kv(val(ping)))}
     </div>
     <div class="cols">
-      ${card("Liveness", ["get_listen_health_live"], err(live) + probe(live))}
-      ${card("Readiness", ["get_listen_health_ready"], err(ready) + probe(ready))}
+      ${card("Liveness", ["opal_health_live_get"], err(live) + probe(live))}
+      ${card("Readiness", ["opal_health_ready_get"], err(ready) + probe(ready))}
     </div>
-    ${card("Doctor", ["health_check"], err(health) + (h ? `<p>overall ${statusBadge(h.status)} <span class="muted">checked ${cell(h.checked_at)}</span></p>` +
+    ${card("Doctor", ["opal_health_get"], err(health) + (h ? `<p>overall ${statusBadge(h.status)} <span class="muted">checked ${cell(h.checked_at)}</span></p>` +
       table(h.checks, [["name", "check"], ["status", "status", r => statusBadge(r.status)], ["detail", "detail"]]) : ""),
       btn("Re-run", "refresh", {}, "ghost small"))}
     ${card("Audio input devices", ["get_audio_devices"], err(devices) +
@@ -557,25 +557,25 @@ VIEWS.profiles = async ([id]) => {
     const p = await api("GET", `/api/v1/profiles/${id}`);
     return `<p><a href="#/profiles">← Profiles</a></p><h2>${esc(p.name)} ${p.is_active ? '<span class="badge ok">active</span>' : ""}</h2>
       <div class="sub">Lists and maps replace the stored values on save.</div>
-      ${card("Edit profile", ["get_profile", "update_profile"], profileForm(p, lists),
+      ${card("Edit profile", ["opal_profile_get", "opal_profile_patch"], profileForm(p, lists),
         (p.is_active ? "" : btn("Activate", "profileActivate", { id: p.id }, "small")) + btn("Delete", "profileDelete", { id: p.id, name: p.name }, "danger small"))}`;
   }
   const items = await api("GET", "/api/v1/profiles/");
   return `<h2>Profiles</h2><div class="sub">Exactly one profile is active; it selects wakewords, thresholds, VAD settings, models and enabled intents/slots.</div>
-    ${opsLine(["list_profiles", "create_profile", "get_profile", "update_profile", "delete_profile", "activate_profile"])}
-    ${card("Profiles", ["list_profiles"], table(items, [["id", "id"], ["name", "name"], ["is_active", "active"], ["confidence_thresholds", "thresholds"],
+    ${opsLine(["opal_profiles_list", "opal_profiles_create", "opal_profile_get", "opal_profile_patch", "opal_profile_delete", "opal_profile_activate"])}
+    ${card("Profiles", ["opal_profiles_list"], table(items, [["id", "id"], ["name", "name"], ["is_active", "active"], ["confidence_thresholds", "thresholds"],
       ["vad_settings", "vad"], ["enabled_intents", "intents"], ["description", "description"]],
       { rowAct: r => `data-act="go" data-to="#/profiles/${r.id}"`,
         actions: r => (r.is_active ? "" : btn("Activate", "profileActivate", { id: r.id }, "small")) + btn("Delete", "profileDelete", { id: r.id, name: r.name }, "danger small") }))}
-    ${card("Add profile", ["create_profile"], profileForm({}, lists))}`;
+    ${card("Add profile", ["opal_profiles_create"], profileForm({}, lists))}`;
 };
 
 VIEWS.settings = async () => {
   const settings = await api("GET", "/api/v1/settings/");
   const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
   return `<h2>Settings</h2><div class="sub">Values are validated by type and range on save; changes are applied atomically via PATCH with the current ETag.</div>
-    ${opsLine(["get_all_settings", "patch_listen_settings", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
-    ${card("Settings", ["get_all_settings", "patch_listen_settings", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
+    ${opsLine(["opal_settings_get", "opal_settings_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
+    ${card("Settings", ["opal_settings_get", "opal_settings_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
       ["value", "value", r => `<input data-setting="${esc(r.key)}" value="${esc(r.value)}" style="width:100%">`]],
       { actions: r => btn("Save", "settingSave", { key: r.key }, "small") + btn("Reset", "settingReset", { key: r.key }, "small ghost") }))}`;
 };
@@ -697,16 +697,16 @@ function chart(rows) {
 VIEWS.config = async () => {
   const backups = await api("GET", "/api/v1/backup/list");
   return `<h2>Config & backups</h2><div class="sub">Every change is validated before it is applied; imports and restores take an automatic backup and roll back on failure.</div>
-    ${opsLine(["validate_config", "validate_listen_backup_payload", "export_config", "import_config", "list_backups", "create_backup", "download_backup", "restore_backup", "delete_backup"])}
-    ${card("Validate", ["validate_config"], `${btn("Validate server config dir + database", "configValidate")}<div id="validateResult"></div>`)}
-    ${card("Configuration bundle (JSON)", ["export_config", "validate_listen_backup_payload", "import_config"], `<div class="row">
+    ${opsLine(["opal_backup_validate_stored", "opal_backup_validate", "opal_backup_export", "opal_backup_import", "opal_backup_list", "opal_backup_create", "opal_backup_download", "opal_backup_restore", "opal_backup_delete"])}
+    ${card("Validate", ["opal_backup_validate_stored"], `${btn("Validate server config dir + database", "configValidate")}<div id="validateResult"></div>`)}
+    ${card("Configuration bundle (JSON)", ["opal_backup_export", "opal_backup_validate", "opal_backup_import"], `<div class="row">
         ${btn("Export", "configExport", {}, "ghost")} ${btn("Download JSON", "configDownload", {}, "ghost")}
         <label class="muted">load file <input type="file" id="bundleFile" accept=".json,application/json"></label></div>
       <textarea class="mono" id="bundleText" style="min-height:220px;margin-top:8px" placeholder="Export, load a file, or paste a bundle {wakewords, stt, intents, slots, profiles, settings}"></textarea>
       <div class="row">${btn("Validate bundle", "bundleValidate", {}, "ghost")} ${btn("Import bundle", "bundleImport", {}, "danger")}
         ${btn("Import server ./config/ YAML", "configImportServer", {}, "danger")}</div>
       <div id="bundleResult"></div><p class="hint">YAML files: use <code>opal listen config export --out-dir</code> / <code>import --from-dir</code>.</p>`)}
-    ${card("Backups", ["list_backups", "create_backup", "download_backup", "restore_backup", "delete_backup"],
+    ${card("Backups", ["opal_backup_list", "opal_backup_create", "opal_backup_download", "opal_backup_restore", "opal_backup_delete"],
       `<p>${btn("Create backup", "backupCreate")}</p>` + table(backups, [["filename", "file"], ["size_bytes", "bytes"], ["created_at", "created"]],
         { actions: r => `<a class="op" href="${esc(S.base)}/api/v1/backup/download/${enc(r.filename)}" download>download</a> ` +
           btn("Restore", "backupRestore", { name: r.filename }, "small") + btn("Delete", "backupDelete", { name: r.filename }, "danger small"), empty: "No backups." }))}`;
@@ -766,7 +766,7 @@ const ACT = {
   aliasList: async d => modal(`<h3>Aliases</h3>${op("list_aliases")}${table(await api("GET", `/api/v1/slots/${d.slot}/values/${d.value}/aliases`),
     [["id", "id"], ["alias", "alias"], ["created_at", "created"]], { empty: "No aliases." })}<p>${btn("Close", "closeModal")}</p>`),
 
-  profileActivate: async d => { const p = await api("POST", `/api/v1/profiles/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
+  profileActivate: async d => { const p = await apiWithEtag("POST", `/api/v1/profiles/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
   profileDelete: async d => { confirmOr(`Delete profile '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/profiles/${d.id}`); toast("profile deleted"); location.hash = "#/profiles"; },
 
   settingSave: async d => { const s = await apiWithEtag("PUT", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/", body: { value: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s.value}`); render(); },
@@ -843,20 +843,20 @@ const ACT = {
   bundleImport: async () => {
     const bundle = parseJson($("#bundleText").value, "bundle");
     confirmOr("Replace wakewords, intents, slots, profiles and settings with this bundle? (a backup is taken first)");
-    const r = await api("POST", "/api/v1/backup/import", { body: bundle });
+    const r = await apiWithEtag("POST", "/api/v1/backup/import", { etagPath: "/api/v1/backup/export", body: bundle });
     $("#bundleResult").innerHTML = importHtml(r);
     refreshHeader();
   },
   configImportServer: async () => {
     confirmOr("Replace the configuration with the server's ./config/ YAML files? (a backup is taken first)");
-    const r = await api("POST", "/api/v1/backup/import");
+    const r = await apiWithEtag("POST", "/api/v1/backup/import", { etagPath: "/api/v1/backup/export" });
     $("#bundleResult").innerHTML = importHtml(r);
     refreshHeader();
   },
   backupCreate: async () => { toast(`backup created: ${(await api("POST", "/api/v1/backup/create")).filename}`); render(); },
   backupRestore: async d => {
     confirmOr(`Restore ${d.name}? The current database is backed up first and restored automatically if this fails.`);
-    const r = await api("POST", `/api/v1/backup/restore/${enc(d.name)}`);
+    const r = await apiWithEtag("POST", `/api/v1/backup/restore/${enc(d.name)}`, { etagPath: "/api/v1/backup/export" });
     toast(`restored ${r.filename} (previous state: ${r.rollback_backup})`); render(); refreshHeader();
   },
   backupDelete: async d => { confirmOr(`Delete backup ${d.name}?`); await api("DELETE", `/api/v1/backup/${enc(d.name)}`); toast("backup deleted"); render(); },
@@ -926,7 +926,7 @@ const FORM = {
     };
     const p = f.dataset.id
       ? await apiWithEtag("PATCH", `/api/v1/profiles/${f.dataset.id}`, { body })
-      : await api("POST", "/api/v1/profiles/", { body });
+      : await apiWithEtag("POST", "/api/v1/profiles/", { etagPath: "/api/v1/profiles/", body });
     toast(`profile '${p.name}' saved`); refreshHeader();
     if (f.dataset.id) render(); else location.hash = `#/profiles/${p.id}`;
   },

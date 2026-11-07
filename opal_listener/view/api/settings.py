@@ -12,6 +12,7 @@ from opal_listener.models.opal_standard import (
     OPAL_409_RESPONSE,
     OPAL_422_RESPONSE,
     OPAL_PRECONDITION_RESPONSES,
+    OpalSettingsMap,
 )
 from opal_listener.models.schemas import SettingRead, SettingUpdate
 from opal_listener.models.tables import Setting, utc_now
@@ -71,28 +72,34 @@ def _known_key(key: str) -> str:
     return key
 
 
-@router.get("/", responses=OPAL_422_RESPONSE)
-def get_all_settings(response: Response, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
+@router.get("/", response_model=OpalSettingsMap, responses=OPAL_422_RESPONSE, operation_id="opal_settings_get")
+def opal_settings_get(response: Response, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
     with svc.db.session() as session:
         data = _all_settings(session)
     response.headers["ETag"] = compute_etag(data)
     return data
 
 
-@router.patch("/", operation_id="patch_listen_settings", responses=OPAL_PRECONDITION_RESPONSES)
-def patch_listen_settings(
-    changes: dict[str, Any],
+@router.patch(
+    "/",
+    response_model=OpalSettingsMap,
+    responses={**OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    operation_id="opal_settings_patch",
+)
+def opal_settings_patch(
+    changes: OpalSettingsMap,
     response: Response,
     if_match: str = Header(..., alias="If-Match", min_length=1),
     svc: ListenerService = Depends(get_service),
 ) -> dict[str, str]:
     """Atomically patch one or more settings. Requires a strong If-Match (missing 428, stale 412)."""
-    if not changes:
+    patch = changes.model_dump()
+    if not patch:
         raise InvalidRequestError("at least one setting must be provided")
     with svc.config_change() as session:
         current = _all_settings(session)
         require_matching_etag(if_match, compute_etag(current), "settings")
-        for key, raw_value in changes.items():
+        for key, raw_value in patch.items():
             try:
                 parsed = parse_setting(key, raw_value)
             except SettingValueError as exc:
@@ -154,7 +161,7 @@ def opal_setting_put(
     "/{key}",
     status_code=204,
     operation_id="opal_setting_delete",
-    responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
 )
 def opal_setting_delete(
     key: str = Path(min_length=1),

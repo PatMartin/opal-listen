@@ -247,7 +247,7 @@ def _deactivate_others(session: Session, keep_id: int | None) -> None:
             session.add(other)
 
 
-def create_profile(session: Session, data: s.ProfileCreate) -> Profile:
+def create_profile(session: Session, data: s.OpalProfileCreate) -> Profile:
     _ensure_unique(session, Profile, data.name, "profile")
     obj = Profile(**data.model_dump())
     session.add(obj)
@@ -258,7 +258,7 @@ def create_profile(session: Session, data: s.ProfileCreate) -> Profile:
     return obj
 
 
-def update_profile(session: Session, obj_id: int, data: s.ProfileUpdate) -> Profile:
+def update_profile(session: Session, obj_id: int, data: s.OpalProfilePatch) -> Profile:
     obj = get_or_404(session, Profile, obj_id, "profile")
     changes = data.model_dump(exclude_unset=True, exclude_none=True)
     if "name" in changes:

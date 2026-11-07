@@ -24,7 +24,7 @@ def _check(name: str, status: s.CheckStatus, detail: str) -> s.HealthCheckResult
     return s.HealthCheckResult(name=name, status=status, detail=detail)
 
 
-def run_health_checks(service: ListenerService) -> s.HealthReport:
+def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
     checks: list[s.HealthCheckResult] = []
 
     try:
@@ -32,7 +32,7 @@ def run_health_checks(service: ListenerService) -> s.HealthReport:
         checks.append(_check("sqlite", "ok", str(service.db.path)))
     except Exception as exc:  # noqa: BLE001
         checks.append(_check("sqlite", "error", f"database unavailable: {exc}"))
-        return s.HealthReport(status="error", checks=checks, checked_at=utc_now())
+        return s.OpalHealthReport(status="error", checks=checks, checked_at=utc_now())
 
     with service.db.engine.connect() as conn:
         current = MigrationContext.configure(conn).get_current_revision()
@@ -116,4 +116,4 @@ def run_health_checks(service: ListenerService) -> s.HealthReport:
         worst = "error"
     elif any(c.status == "warning" for c in checks):
         worst = "warning"
-    return s.HealthReport(status=worst, checks=checks, checked_at=utc_now())
+    return s.OpalHealthReport(status=worst, checks=checks, checked_at=utc_now())

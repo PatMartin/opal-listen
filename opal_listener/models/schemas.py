@@ -142,8 +142,8 @@ class SlotUpdate(BaseModel):
 # --- profiles --------------------------------------------------------------------------------
 
 
-class ProfileCreate(BaseModel):
-    name: str = Field(max_length=100)
+class OpalProfileCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     is_active: bool = False
     wakeword_names: list[str] = []
@@ -154,23 +154,25 @@ class ProfileCreate(BaseModel):
     model_paths: dict[str, str] = {}
 
 
-class ProfileRead(_Read):
+class OpalProfile(_Read):
+    """Kernel OpalProfile; only id/is_active/name are normative — the rest are service fields."""
+
     id: int
     name: str
-    description: str | None
     is_active: bool
-    wakeword_names: list[str]
-    confidence_thresholds: dict[str, Any]
-    vad_settings: dict[str, Any]
-    enabled_intents: list[str]
-    enabled_slots: list[str]
-    model_paths: dict[str, str]
-    created_at: datetime
-    updated_at: datetime
+    description: str | None = None
+    wakeword_names: list[str] = []
+    confidence_thresholds: dict[str, Any] = {}
+    vad_settings: dict[str, Any] = {}
+    enabled_intents: list[str] = []
+    enabled_slots: list[str] = []
+    model_paths: dict[str, str] = {}
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
-class ProfileUpdate(BaseModel):
-    name: str | None = None
+class OpalProfilePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     is_active: bool | None = None
     wakeword_names: list[str] | None = None
@@ -185,10 +187,10 @@ class ProfileUpdate(BaseModel):
 
 
 class SettingRead(_Read):
-    id: int
+    id: int | None = None
     key: str
     value: Any
-    updated_at: datetime
+    updated_at: datetime | None = None
     default: Any | None = None
     is_default: bool | None = None
     pending_restart: bool | None = None
@@ -418,10 +420,12 @@ class HealthCheckResult(BaseModel):
     detail: str
 
 
-class HealthReport(BaseModel):
+class OpalHealthReport(BaseModel):
+    """Kernel OpalHealthReport; status is the only normative member."""
+
     status: CheckStatus
-    checks: list[HealthCheckResult]
-    checked_at: datetime
+    checks: list[HealthCheckResult] = []
+    checked_at: datetime | None = None
 
 
 class AudioDevice(BaseModel):
@@ -432,7 +436,7 @@ class AudioDevice(BaseModel):
     is_default: bool
 
 
-class BackupInfo(BaseModel):
+class OpalBackupInfo(BaseModel):
     filename: str
     size_bytes: int
     created_at: datetime
@@ -446,15 +450,21 @@ class OpalBackupCreateResponse(BaseModel):
     message: str = "backup created"
 
 
-class ConfigValidationReport(BaseModel):
+class OpalValidationReport(BaseModel):
+    """Kernel OpalValidationReport; valid is the only normative member."""
+
     valid: bool
-    errors: list[str]
-    warnings: list[str]
+    errors: list[str | dict[str, Any]] = []
+    warnings: list[str | dict[str, Any]] = []
     sources: dict[str, bool] = {}
 
 
-class ConfigImportResult(BaseModel):
-    status: Literal["imported"]
-    backup_filename: str
-    counts: dict[str, int]
-    warnings: list[str]
+class OpalImportResult(BaseModel):
+    """Kernel OpalImportResult; no members are normative — service fields layer on top."""
+
+    model_config = ConfigDict(extra="allow")
+
+    status: str | None = None
+    backup_filename: str | None = None
+    counts: dict[str, int] | None = None
+    warnings: list[str | dict[str, Any]] | None = None

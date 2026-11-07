@@ -7,7 +7,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from opal_listener.models.schemas import BackupInfo
+from opal_listener.models.schemas import OpalBackupInfo
 from opal_listener.service.errors import InvalidRequestError, NotFoundError
 
 FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}\.db$")
@@ -40,11 +40,11 @@ def safe_backup_path(backup_dir: Path, filename: str) -> Path:
     return path
 
 
-def list_backups(backup_dir: Path) -> list[BackupInfo]:
+def list_backups(backup_dir: Path) -> list[OpalBackupInfo]:
     if not backup_dir.exists():
         return []
     items = [
-        BackupInfo(
+        OpalBackupInfo(
             filename=p.name,
             size_bytes=p.stat().st_size,
             created_at=datetime.fromtimestamp(p.stat().st_mtime, UTC).replace(tzinfo=None),

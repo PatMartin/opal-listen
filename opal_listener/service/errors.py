@@ -24,6 +24,7 @@ class ConflictError(DomainError):
 
 class InvalidRequestError(DomainError):
     status_code = 422
+    error_code = "invalid_request"
 
 
 class ServiceUnavailableError(DomainError):

@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Response
 
 from opal_listener import __version__
-from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OpalHealthProbe
-from opal_listener.models.schemas import AudioDevice, HealthReport
+from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OPAL_503_RESPONSE, OpalHealthProbe
+from opal_listener.models.schemas import AudioDevice, OpalHealthReport
 from opal_listener.service.audio.capture import list_input_devices
 from opal_listener.service.health import run_health_checks
 from opal_listener.service.listener_service import ListenerService
@@ -15,8 +15,13 @@ router = APIRouter(prefix="/api/v1/health", tags=["health"])
 _PROBE_503 = {503: {"model": OpalHealthProbe, "description": "Service unavailable"}}
 
 
-@router.get("/", response_model=HealthReport, responses=OPAL_422_RESPONSE)
-def health_check(svc: ListenerService = Depends(get_service)) -> HealthReport:
+@router.get(
+    "/",
+    response_model=OpalHealthReport,
+    responses={**OPAL_422_RESPONSE, **OPAL_503_RESPONSE},
+    operation_id="opal_health_get",
+)
+def opal_health_get(svc: ListenerService = Depends(get_service)) -> OpalHealthReport:
     return run_health_checks(svc)
 
 
@@ -28,11 +33,11 @@ def get_audio_devices() -> list[AudioDevice]:
 @router.get(
     "/live",
     response_model=OpalHealthProbe,
-    operation_id="get_listen_health_live",
+    operation_id="opal_health_live_get",
     summary="Liveness probe",
     responses={**_PROBE_503, **OPAL_422_RESPONSE},
 )
-def get_listen_health_live(response: Response, svc: ListenerService = Depends(get_service)) -> OpalHealthProbe:
+def opal_health_live_get(response: Response, svc: ListenerService = Depends(get_service)) -> OpalHealthProbe:
     """Cheap liveness check: the process is up and the database is reachable."""
     try:
         svc.db.ping()
@@ -45,11 +50,11 @@ def get_listen_health_live(response: Response, svc: ListenerService = Depends(ge
 @router.get(
     "/ready",
     response_model=OpalHealthProbe,
-    operation_id="get_listen_health_ready",
+    operation_id="opal_health_ready_get",
     summary="Readiness probe",
     responses={**_PROBE_503, **OPAL_422_RESPONSE},
 )
-def get_listen_health_ready(response: Response, svc: ListenerService = Depends(get_service)) -> OpalHealthProbe:
+def opal_health_ready_get(response: Response, svc: ListenerService = Depends(get_service)) -> OpalHealthProbe:
     """Full readiness check: configuration compiles, the listener provider loads, etc."""
     report = run_health_checks(svc)
     if report.status == "error":

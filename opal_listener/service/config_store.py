@@ -28,6 +28,7 @@ from opal_listener.models.tables import (
     Wakeword,
     utc_now,
 )
+from opal_listener.service.concurrency import compute_etag
 from opal_listener.service.nlu.normalizer import normalize_text
 from opal_listener.service.settings_registry import SETTINGS, effective_settings, keys_in_group, to_storage
 
@@ -86,6 +87,17 @@ def export_bundle(session: Session) -> ConfigBundle:
         ],
         settings={k: settings[k] for k in keys_in_group("settings")},
     )
+
+
+def config_etag(session: Session) -> str:
+    """ETag over the complete logical configuration (If-Match scope for import/restore).
+
+    exported_at is volatile metadata and deliberately excluded so the tag is stable
+    for an unchanged configuration.
+    """
+    payload = export_bundle(session).model_dump(mode="json")
+    payload.pop("exported_at", None)
+    return compute_etag(payload)
 
 
 def replace_config(session: Session, bundle: ConfigBundle) -> dict[str, int]:
