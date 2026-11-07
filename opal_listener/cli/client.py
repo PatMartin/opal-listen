@@ -14,6 +14,8 @@ import typer
 
 DEFAULT_API_URL = "http://localhost:8000"
 API_URL_ENV = "OPAL_LISTEN_API_URL"
+# Bearer credential sent to servers running with OPAL_LISTENER_API_TOKEN configured.
+API_TOKEN_ENV = "OPAL_LISTENER_API_TOKEN"
 # opal-event broker endpoints (see opal-event zeromq.publishers/subscribers): producers connect
 # PUB to the XSUB frontend on 5555, consumers connect SUB to the XPUB backend on 5556.
 DEFAULT_XPUB_URL = "tcp://127.0.0.1:5555"
@@ -35,6 +37,16 @@ class CliError(_ClickException):  # type: ignore[misc,valid-type]
 
 def _default_factory(base_url: str, timeout: float) -> httpx.Client:
     return httpx.Client(base_url=base_url, timeout=timeout)
+
+
+def _bearer_headers() -> dict[str, str]:
+    token = os.environ.get(API_TOKEN_ENV)
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _authed_headers(kwargs: dict[str, Any]) -> dict[str, Any]:
+    kwargs["headers"] = {**_bearer_headers(), **kwargs.get("headers", {})}
+    return kwargs
 
 
 # Tests replace this with a factory returning a FastAPI TestClient.
@@ -75,7 +87,7 @@ class ApiClient:
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
-            response = self.http.request(method, path, **kwargs)
+            response = self.http.request(method, path, **_authed_headers(kwargs))
         except httpx.TransportError as exc:
             raise CliError(
                 f"cannot reach the opal listener API at {self.base_url} ({exc}).\n"
@@ -110,7 +122,7 @@ class ApiClient:
     def etag(self, path: str) -> str:
         """Fetch the current strong ETag of a resource (for a subsequent If-Match mutation)."""
         try:
-            response = self.http.request("GET", path)
+            response = self.http.request("GET", path, headers=_bearer_headers())
         except httpx.TransportError as exc:
             raise CliError(
                 f"cannot reach the opal listener API at {self.base_url} ({exc}).\n"
@@ -145,7 +157,7 @@ class ApiClient:
         """
         try:
             timeout = httpx.Timeout(None, read=idle_timeout)
-            with self.http.stream("GET", path, params=params, timeout=timeout) as response:
+            with self.http.stream("GET", path, params=params, headers=_bearer_headers(), timeout=timeout) as response:
                 if response.status_code >= 400:
                     raise CliError(f"HTTP {response.status_code} opening event stream")
                 event, data_lines = "message", []

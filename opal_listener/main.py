@@ -36,6 +36,7 @@ from opal_listener.service.opal_context import (
 )
 from opal_listener.service.runtime_config import ConfigInvalidError
 from opal_listener.view.api import ROUTERS
+from opal_listener.view.opal_auth import OpalAuthMiddleware
 from opal_listener.view.opal_middleware import OpalContextMiddleware
 
 log = logging.getLogger(__name__)
@@ -135,6 +136,41 @@ _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
 }
 
 
+# BearerAuth security scheme + auth-failure response documentation, mirroring the shared kernel
+# (openapi/shared/opal_kernel.yaml). OpalAuthMiddleware enforces these at runtime when
+# OPAL_LISTENER_API_TOKEN is configured.
+_BEARER_AUTH_SCHEME: dict[str, Any] = {
+    "type": "http",
+    "scheme": "bearer",
+    "bearerFormat": "opaque",
+    "description": "Optional on loopback deployments; required on non-loopback interfaces. Bearer"
+    " credentials are configured via token_env. Correlation headers are transport context, never"
+    " authorization credentials.",
+}
+_AUTH_FAILURE_RESPONSES: dict[str, dict[str, Any]] = {
+    "401": {
+        "description": "Missing or invalid authentication credentials.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpalError"}}},
+    },
+    "403": {
+        "description": "Authenticated but not permitted for this operation.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OpalError"}}},
+    },
+}
+
+
+def _inject_security_requirements(schema: dict[str, Any]) -> None:
+    """Document BearerAuth globally and 401/403 on every operation (contract-level security)."""
+    schema.setdefault("components", {}).setdefault("securitySchemes", {})["BearerAuth"] = _BEARER_AUTH_SCHEME
+    schema["security"] = [{"BearerAuth": []}]
+    for item in schema.get("paths", {}).values():
+        for operation in item.values():
+            if not isinstance(operation, dict) or "responses" not in operation:
+                continue
+            for status, response_doc in _AUTH_FAILURE_RESPONSES.items():
+                operation["responses"].setdefault(status, response_doc)
+
+
 def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
     """Document the response headers the runtime actually emits.
 
@@ -222,6 +258,10 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
         lifespan=lifespan,
     )
     app.state.listener = service
+    # Registration order is reversed at runtime: OpalContext runs first (correlation ids exist
+    # for auth-failure envelopes and get stamped on the 401s), CORS answers preflights next, and
+    # OpalAuth guards the actual routes last.
+    app.add_middleware(OpalAuthMiddleware, token=settings.api_token)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -235,6 +275,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     def custom_openapi() -> dict[str, Any]:
         schema = default_openapi()
         _inject_orphan_schemas(schema)
+        _inject_security_requirements(schema)
         _inject_documented_response_headers(schema)
         return schema
 
@@ -274,6 +315,13 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     async def _integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
         log.info("integrity error: %s", exc.orig)
         return _opal_error_response(request, 409, "conflict", "conflicts with an existing record")
+
+    @app.exception_handler(Exception)
+    async def _unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+        # Contract: unexpected failures surface as the OpalError envelope (kernel InternalError),
+        # not a bare 500. ServerErrorMiddleware still re-raises so the traceback gets logged.
+        log.exception("unhandled error during %s %s", request.method, request.url.path)
+        return _opal_error_response(request, 500, "internal_error", "internal server error")
 
     for router in ROUTERS:
         app.include_router(router)

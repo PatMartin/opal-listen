@@ -96,6 +96,7 @@
   <span class="grow"></span>
   <form data-form="setBase" class="row">
     <label class="muted">API <input name="base" id="baseInput" autocomplete="off"></label>
+    <label class="muted">Token <input name="token" id="tokenInput" type="password" autocomplete="off" placeholder="optional"></label>
     <button class="ghost small" type="submit">Connect</button>
   </form>
 </header>
@@ -201,6 +202,7 @@ const STREAM_EVENTS = ["status", "wakeword_candidate", "wakeword_confirmed", "wa
 
 const S = {
   base: localStorage.getItem("opal_api") || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000"),
+  token: localStorage.getItem("opal_token") || "",
   timers: [], es: null, startedHere: false, lastResult: null,
   logs: { limit: 25, offset: 0, intent: "", matched: "" },
   failed: { limit: 25, offset: 0, reviewed: "", promoted: "" },
@@ -230,6 +232,7 @@ async function api(method, path, { query, body, form, headers } = {}) {
     if (q.toString()) url += "?" + q;
   }
   const init = { method, headers: { ...headers } };
+  if (S.token) init.headers["Authorization"] = `Bearer ${S.token}`;
   if (form) init.body = form;
   else if (body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(body); }
   let res;
@@ -243,7 +246,7 @@ async function api(method, path, { query, body, form, headers } = {}) {
 
 // Fetch the current strong ETag of a resource, for a subsequent mutation's mandatory If-Match.
 async function etagOf(path) {
-  const res = await fetch(S.base + path, { method: "GET" });
+  const res = await fetch(S.base + path, { method: "GET", headers: S.token ? { "Authorization": `Bearer ${S.token}` } : {} });
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ETag for ${path}`);
   const etag = res.headers.get("etag");
   if (!etag) throw new Error(`server did not return an ETag for ${path}`);
@@ -865,7 +868,7 @@ function importHtml(r) {
 }
 
 const FORM = {
-  setBase: v => { S.base = v.base.replace(/\/+$/, ""); localStorage.setItem("opal_api", S.base); render(); refreshHeader(); },
+  setBase: v => { S.base = v.base.replace(/\/+$/, ""); S.token = v.token || ""; localStorage.setItem("opal_api", S.base); localStorage.setItem("opal_token", S.token); render(); refreshHeader(); },
 
   wwAdd: async v => { const w = await api("POST", "/api/v1/wakewords/", { body: v }); toast(`wakeword '${w.name}' added`); render(); },
 
@@ -975,7 +978,7 @@ async function listenStart(debug) {
   listenClose();
   S.startedHere = false;
   if ($("#autoStart")?.checked) S.startedHere = (await api("POST", "/api/v1/recognition/start")).status === "started";
-  const es = new EventSource(`${S.base}/api/v1/recognition/stream?debug=${debug}`);
+  const es = new EventSource(`${S.base}/api/v1/recognition/stream?debug=${debug}${S.token ? `&token=${enc(S.token)}` : ""}`);
   S.es = es;
   $("#liveState").textContent = debug ? "listening (debug)" : "listening";
   $("#liveState").className = "badge ok";
@@ -1075,6 +1078,7 @@ window.addEventListener("hashchange", render);
 window.addEventListener("beforeunload", () => { if (S.startedHere) navigator.sendBeacon?.(`${S.base}/api/v1/recognition/stop`); });
 
 $("#baseInput").value = S.base;
+$("#tokenInput").value = S.token;
 render();
 refreshHeader();
 setInterval(() => refreshHeader(), 5000);

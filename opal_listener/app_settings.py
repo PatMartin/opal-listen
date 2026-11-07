@@ -24,6 +24,10 @@ class AppSettings(BaseSettings):
     cors_origins: list[str] = ["*"]
     max_upload_bytes: int = 10 * 1024 * 1024
     seed_on_empty: bool = True
+    # Bearer credential for the OPAL BearerAuth contract (token_env in the shared kernel). Unset
+    # disables authentication, which the kernel permits on loopback deployments; set it whenever
+    # the service listens on a non-loopback interface. Never exposed in settings or exports.
+    api_token: str | None = None
     # Shared with the CLI's --xpub/--xsub (see cli/client.py); no OPAL_LISTENER_ prefix so the
     # server and CLI agree on the same event bus without separate configuration.
     xpub_url: str = Field(
