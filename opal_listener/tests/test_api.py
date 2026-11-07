@@ -192,6 +192,12 @@ def test_profiles_activate_and_filters(client: TestClient) -> None:
     assert created["is_active"] is True
     assert _by_name(client, "/api/v1/profiles/", "car")["is_active"] is False
     created_etag = _etag(client, f"/api/v1/profiles/{created['id']}")
+    # the active profile cannot be deleted (kernel contract)
+    assert client.delete(f"/api/v1/profiles/{created['id']}", headers={"If-Match": created_etag}).status_code == 409
+    client.post(
+        f"/api/v1/profiles/{car['id']}/activate", headers={"If-Match": _etag(client, f"/api/v1/profiles/{car['id']}")}
+    )
+    created_etag = _etag(client, f"/api/v1/profiles/{created['id']}")
     assert client.delete(f"/api/v1/profiles/{created['id']}", headers={"If-Match": created_etag}).status_code == 204
 
 

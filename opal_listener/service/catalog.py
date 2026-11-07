@@ -282,5 +282,8 @@ def activate_profile(session: Session, obj_id: int) -> Profile:
 
 
 def delete_profile(session: Session, obj_id: int) -> None:
-    session.delete(get_or_404(session, Profile, obj_id, "profile"))
+    obj = get_or_404(session, Profile, obj_id, "profile")
+    if obj.is_active:
+        raise ConflictError("the active profile cannot be deleted")
+    session.delete(obj)
     session.flush()

@@ -142,6 +142,7 @@ prefix is `OPAL_LISTENER_`.
 | `OPAL_LISTENER_HOST` | `0.0.0.0` | Bind address. Use `127.0.0.1` for local-only access. |
 | `OPAL_LISTENER_PORT` | `8000` | API port |
 | `OPAL_LISTENER_CORS_ORIGINS` | `["*"]` | Browser origins allowed to call the API (JSON list) |
+| `OPAL_LISTENER_API_TOKEN` | _None_ | Bearer token required on all API routes when set (see [Authentication](#authentication)). Never appears in settings or exports. |
 | `OPAL_LISTENER_MAX_UPLOAD_BYTES` | `10485760` (10 MiB) | Maximum WAV upload size |
 | `OPAL_LISTENER_SEED_ON_EMPTY` | `true` | Seed an empty database from the config dir on startup |
 | `OPAL_LISTEN_API_URL` | `http://localhost:8000` | API URL used by the **CLI** (no `ER`) |
@@ -715,7 +716,7 @@ without phrases, no enabled wakewords, profiles that reference unknown names, an
 - **Content type:** JSON (`Content-Type: application/json`), except `test_audio` (multipart form) and
   `backup/download` (binary).
 - **Timestamps:** ISO 8601, UTC, for example `2026-09-30T12:34:56.123456`.
-- **Authentication:** none (see [Security](#27-access-from-other-machines)).
+- **Authentication:** optional Bearer token (see [Authentication](#authentication)).
 - **Correlation headers (OPAL SUITE STANDARD v1.2):** every response carries `X-Opal-Transaction-Id` and
   `X-Opal-Request-Id` (assigned by the server if you don't supply them); `X-Opal-Session-Id` and
   `X-Opal-Causation-Id` are echoed back if you send them. All four are opaque 1–128 character printable
@@ -732,36 +733,47 @@ The examples below use:
 API=http://localhost:8000
 ```
 
+#### Authentication
+
+Authentication is **off by default** — with no `OPAL_LISTENER_API_TOKEN` set, every route is open (the
+loopback-deployment case the OPAL standard allows). Set `OPAL_LISTENER_API_TOKEN` to enable Bearer auth on
+every API route (`/` and `/healthz` included):
+
+```bash
+curl -s $API/api/v1/health/ -H "Authorization: Bearer $TOKEN"
+```
+
+Missing/wrong credentials → `401` `OpalError` (`code: unauthorized`) with `WWW-Authenticate: Bearer`.
+`/docs`, `/redoc`, `/openapi.json` and `/ui` stay open so the console and API browser keep working. The
+browser `EventSource` used by `/api/v1/recognition/stream` cannot set headers, so that one route also
+accepts `?token=`. The CLI reads the same `OPAL_LISTENER_API_TOKEN` env var; the UI stores a token typed
+into the header form in `localStorage`. The token is env-only — it never appears in `GET /settings`,
+config exports, or responses.
+
 ### 5.2 Errors
 
-| Status | When | Body |
+Every error response uses the OPAL standard `OpalError` envelope:
+
+```json
+{"error": {"code": "not_found", "message": "intent 99 not found", "details": null,
+           "request_id": "...", "transaction_id": "...", "session_id": null, "causation_id": null}}
+```
+
+| Status | `code` | When |
 |---|---|---|
-| `404` | Resource not found | `{"detail": "intent 99 not found"}` |
-| `409` | Duplicate name, value, alias or phrase | `{"detail": "intent 'light_turn_on' already exists"}` |
-| `412` | Stale `If-Match` on a mutation | `{"error": {"code": "precondition_failed", "message": "...", "request_id": "...", "transaction_id": "..."}}` |
-| `422` | Request validation, or the configuration would become invalid | FastAPI validation shape (below), or `OpalError` for a malformed correlation header / invalid cursor |
-| `428` | Missing/empty `If-Match` on a mutation that requires one | `{"error": {"code": "precondition_required", "message": "...", "request_id": "...", "transaction_id": "..."}}` |
-| `503` | Listener provider or model unavailable | `{"detail": "listener provider unavailable: ..."}` |
+| `400` | `bad_request` | Generic request failure |
+| `401` | `unauthorized` | `OPAL_LISTENER_API_TOKEN` is set and the request lacks a valid `Authorization: Bearer` |
+| `403` | `forbidden` | Documented for future permission tiers (single-token deployments never produce it) |
+| `404` | `not_found` | Resource not found |
+| `409` | `conflict` | Duplicate name/value/alias/phrase, or deleting the active profile |
+| `412` | `precondition_failed` | Stale `If-Match` on a mutation |
+| `422` | `invalid_request` | Request validation, invalid correlation header/cursor, or the configuration would become invalid |
+| `428` | `precondition_required` | Missing/empty `If-Match` on a mutation that requires one |
+| `500` | `internal_error` | Unhandled server error or failed backup operation |
+| `503` | `service_unavailable` | Listener provider/model unavailable; health probes return `OpalHealthProbe` instead |
 
-`422` example (config validation errors have `type: config_invalid`):
-
-```json
-{
-  "detail": [
-    {"loc": ["body"], "msg": "intent 'light_color' phrase 'make it {colour}': unknown slot 'colour'", "type": "config_invalid"}
-  ]
-}
-```
-
-Request schema errors use FastAPI's standard shape with `loc` pointing at the field, for example
-`["body", "confidence_threshold"]`. Routes with no body/path validation surface of their own (pure
-collection `GET`s, health, root) instead document `422` as the OPAL standard error envelope, since the
-only way they can fail is an invalid correlation header:
-
-```json
-{"error": {"code": "invalid_header", "message": "invalid value for header(s): X-Opal-Session-Id",
-           "request_id": "...", "transaction_id": "..."}}
-```
+`details` carries the specifics where they exist (e.g. `unknown slot 'colour'`, per-field validation
+locations).
 
 ---
 
@@ -1163,9 +1175,10 @@ curl -s -X POST $API/api/v1/profiles/2/activate | jq '{name, is_active}'
 
 ### 5.8 Settings — `/api/v1/settings`
 
-See [4.2 Settings](#42-settings) for all keys. Per the OPAL v1.2 standard, settings are exposed as a
-single atomic resource — `GET`/`PATCH /api/v1/settings/` exclusively, no per-key routes — with a strong
-`ETag` and mandatory `If-Match` on `PATCH`.
+See [4.2 Settings](#42-settings) for all keys. The collection (`GET`/`PATCH /api/v1/settings/`) carries a
+strong `ETag` covering the whole settings map — every settings mutation (collection `PATCH` and per-key
+`PUT`/`DELETE`) requires it as `If-Match`, and any successful change rotates it. Per-key routes
+`GET`/`PUT`/`DELETE /api/v1/settings/{key}` read, replace, or reset a single setting.
 
 #### `GET /api/v1/settings/` — all settings as a key → string map
 
@@ -1214,6 +1227,44 @@ curl -s -X PATCH $API/api/v1/settings/ -H 'If-Match: "stale"' \
   -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
 # 412: {"error": {"code": "precondition_failed", "message": "settings has changed ... (stale If-Match)", ...}}
 ```
+
+All 422 responses use the standard `OpalError` envelope — `{"error": {"code": "invalid_request",
+"message": "...", "details": "...", "request_id": ..., ...}}`.
+
+#### `GET /api/v1/settings/{key}` — one setting with lifecycle metadata
+
+```bash
+curl -s $API/api/v1/settings/cooldown_ms
+```
+```json
+{"key": "cooldown_ms", "value": 1500, "default": 1500, "is_default": true, "pending_restart": false}
+```
+
+`value` is returned in the setting's native JSON type. `default`/`is_default` come from the settings
+registry; `pending_restart` is always `false` — every setting hot-applies. Unknown key → `404`.
+
+#### `PUT /api/v1/settings/{key}` — replace one setting
+
+Body is a strict `{"value": <v>}` object (unknown fields → `422`). Requires the settings-map `If-Match`
+(fetch it with `GET /api/v1/settings/` — the per-key `GET` does not carry an item ETag). The same
+validation as `PATCH` applies; returns the `SettingRead` above.
+
+```bash
+curl -s -X PUT $API/api/v1/settings/cooldown_ms -H "If-Match: $ETAG" \
+  -H 'Content-Type: application/json' -d '{"value": 1000}'
+```
+
+#### `DELETE /api/v1/settings/{key}` — reset to the registry default
+
+Removes any override and writes the registry default back into the row; returns `204`. Requires the
+settings-map `If-Match`.
+
+```bash
+curl -s -X DELETE $API/api/v1/settings/cooldown_ms -H "If-Match: $ETAG" -w '%{http_code}\n'
+```
+
+CLI equivalents: `opal listen settings get <key>`, `opal listen settings set <key> <value>` (per-key PUT),
+`opal listen settings unset <key>` (DELETE → default).
 
 ---
 
