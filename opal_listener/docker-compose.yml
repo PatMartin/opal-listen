@@ -20,7 +20,7 @@ services:
     volumes:
       - listener_data:/data
       - ./config:/config:ro
-      - ${VOSK_MODELS_DIR:-/nabu/ears/vosk/models}:/models:ro
+      - ${VOSK_MODELS_DIR:-/resources/vosk/models}:/models:ro
     devices:
       - /dev/snd:/dev/snd
     group_add:

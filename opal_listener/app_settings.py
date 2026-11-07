@@ -18,7 +18,7 @@ class AppSettings(BaseSettings):
     database_file: str = "opal_listener.db"
     backup_dir_name: str = "backups"
     config_dir: Path = PACKAGE_DIR / "config"
-    vosk_model_path: str = "/nabu/ears/vosk/models/vosk-model-small-en-us-0.15"
+    vosk_model_path: str = "/resources/vosk/models/vosk-model-small-en-us-0.15"
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: list[str] = ["*"]
