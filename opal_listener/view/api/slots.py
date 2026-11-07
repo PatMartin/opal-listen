@@ -70,9 +70,7 @@ def update_slot(
     return result
 
 
-@router.delete(
-    "/{slot_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
-)
+@router.delete("/{slot_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES})
 def delete_slot(
     slot_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),

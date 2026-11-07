@@ -215,6 +215,8 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const enc = encodeURIComponent;
 
 function detail(payload) {
+  const e = payload && typeof payload === "object" ? payload.error : null;
+  if (e && typeof e === "object") return [e.code, e.message].filter(Boolean).join(": ");
   const d = payload && typeof payload === "object" && "detail" in payload ? payload.detail : payload;
   if (Array.isArray(d)) return d.map(x => typeof x === "object" ? [(x.loc || []).filter(p => p !== "body").join("."), x.msg].filter(Boolean).join(": ") : String(x)).join("\n");
   return typeof d === "string" ? d : JSON.stringify(d);

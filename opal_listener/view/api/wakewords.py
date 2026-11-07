@@ -62,9 +62,7 @@ def update_wakeword(
     return result
 
 
-@router.delete(
-    "/{wakeword_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
-)
+@router.delete("/{wakeword_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES})
 def delete_wakeword(
     wakeword_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),

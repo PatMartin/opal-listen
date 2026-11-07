@@ -151,8 +151,8 @@ Retention: `max_recognition_logs` (default 10 000) pruned every 100 results.
 
 ## 4. API contract
 
-`opal_listen.yaml` is the source of truth (currently pinned to the OPAL SUITE STANDARD v1.2; prior
-versions are kept as `opal_listen.1.0.0.yaml` / `opal_listen.1.2.0.yaml` for reference).
+`opal_listen_v1.4.0.yaml` is the source of truth (REST contract 1.4.0 on the OPAL SUITE STANDARD
+v1.3).
 `tests/test_contract.py` asserts that the generated OpenAPI is a compatible superset: same paths,
 methods, operationIds, tags, parameters, request bodies, response codes, schemas, field types,
 constraints and required lists. Additive changes (all optional/backwards compatible):

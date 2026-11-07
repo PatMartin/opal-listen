@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Response
 
 from opal_listener.models.opal_standard import OPAL_404_RESPONSE
-
 from opal_listener.models.schemas import (
     FailedUtteranceCreate,
     FailedUtteranceRead,

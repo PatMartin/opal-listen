@@ -60,9 +60,7 @@ def update_profile(
     return result
 
 
-@router.delete(
-    "/{profile_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
-)
+@router.delete("/{profile_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES})
 def delete_profile(
     profile_id: int,
     if_match: str = Header(..., alias="If-Match", min_length=1),

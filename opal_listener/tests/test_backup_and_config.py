@@ -14,8 +14,10 @@ from opal_listener.tests.conftest import patch_settings
 
 
 def test_backup_create_list_download_delete(client: TestClient) -> None:
-    created = client.post("/api/v1/backup/create").json()
-    filename = created["filename"]
+    created = client.post("/api/v1/backup/create")
+    assert created.status_code == 201
+    filename = created.json()["filename"]
+    assert created.headers["Location"] == f"/api/v1/backup/download/{filename}"
     assert filename.endswith(".db")
     assert filename in [b["filename"] for b in client.get("/api/v1/backup/list").json()]
     download = client.get(f"/api/v1/backup/download/{filename}")

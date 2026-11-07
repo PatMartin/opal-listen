@@ -1,4 +1,4 @@
-"""Shared schemas for the OPAL SUITE STANDARD v1.2 (correlation errors, health probes, cursor pages).
+"""Shared schemas for the OPAL SUITE STANDARD v1.3 (correlation errors, health probes, cursor pages).
 
 OpalError and OpalCursorPageMetadata override __get_pydantic_json_schema__ to emit the exact inline
 shape the OPAL standard mandates (nested "error" object, JSON Schema 2020-12 ``type: [string, null]``

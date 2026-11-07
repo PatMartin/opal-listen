@@ -2674,7 +2674,7 @@ python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixture
 | Negative phrases | `tests/negative/negative_phrases.yaml` | Must be `no_match` with a reason |
 | Audio fixtures | `tests/audio/manifest.yaml`, `fixtures/*.wav` | Full pipeline via REST, wakeword false positives and negatives |
 | Noise | `tests/noise/test_noise.py` (`slow`) | Golden WAVs with white/pink noise at 20/10 dB SNR |
-| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `opal_listen.yaml` |
+| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `opal_listen_v1.4.0.yaml` |
 | CLI | `test_cli.py`, `test_e2e_server.py` | Every command, parity map, real server + SSE |
 | Config / backup | `test_config_schema.py`, `test_backup_and_config.py` | YAML schemas, validate-before-apply, rollback |
 | Migrations | `test_migrations.py` | Upgrade/downgrade, drift, foreign keys |
@@ -2816,4 +2816,4 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/backup/validate` | `validate_listen_backup_payload` | `config validate --from-dir` | Config & backups |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen.yaml](../opal_listen.yaml).
+REST contract [opal_listen_v1.4.0.yaml](../opal_listen_v1.4.0.yaml).

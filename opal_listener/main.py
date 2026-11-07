@@ -49,22 +49,26 @@ _ORPHAN_CONTRACT_SCHEMAS = (SettingRead, SettingUpdate, OpalCursorPageMetadata)
 # OpalContextMiddleware stamps these on every response, so every operation documents them.
 _OPAL_HEADER_COMPONENTS: dict[str, Any] = {
     "OpalSessionIdHeader": {
-        "description": "Effective OPAL session context for this response. Returned when a session identifier is known; conditionally present.",
+        "description": "Effective OPAL session context for this response. Returned when a session"
+        " identifier is known; conditionally present.",
         "required": False,
         "schema": {"type": "string"},
     },
     "OpalTransactionIdHeader": {
-        "description": "Logical transaction identifier for this exchange. Always returned; generated when the inbound request lacks one.",
+        "description": "Logical transaction identifier for this exchange. Always returned; generated"
+        " when the inbound request lacks one.",
         "required": True,
         "schema": {"type": "string"},
     },
     "OpalRequestIdHeader": {
-        "description": "Identifier of this inbound HTTP exchange. Always returned; regenerated for each downstream hop.",
+        "description": "Identifier of this inbound HTTP exchange. Always returned; regenerated for each"
+        " downstream hop.",
         "required": True,
         "schema": {"type": "string"},
     },
     "OpalCausationIdHeader": {
-        "description": "Immediate parent event/request identifier for this response. Returned when applicable; conditionally present.",
+        "description": "Immediate parent event/request identifier for this response. Returned when"
+        " applicable; conditionally present.",
         "required": False,
         "schema": {"type": "string"},
     },

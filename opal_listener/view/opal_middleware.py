@@ -1,4 +1,4 @@
-"""ASGI middleware implementing the OPAL SUITE STANDARD v1.2 correlation-header contract.
+"""ASGI middleware implementing the OPAL SUITE STANDARD v1.3 correlation-header contract.
 
 Reads/validates X-Opal-Session-Id, X-Opal-Transaction-Id, X-Opal-Request-Id and X-Opal-Causation-Id
 on every request, generating transaction/request ids when absent, rejecting malformed values with a

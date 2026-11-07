@@ -1,4 +1,4 @@
-"""OPAL SUITE STANDARD v1.2 correlation context: opaque ids, header parsing/validation, propagation."""
+"""OPAL SUITE STANDARD v1.3 correlation context: opaque ids, header parsing/validation, propagation."""
 
 from __future__ import annotations
 

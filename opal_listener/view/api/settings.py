@@ -1,4 +1,4 @@
-"""Atomic portable settings: GET and PATCH /api/v1/settings/ exclusively (OPAL v1.2)."""
+"""Atomic portable settings: GET and PATCH /api/v1/settings/ exclusively (OPAL v1.3)."""
 
 from __future__ import annotations
 

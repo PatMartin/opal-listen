@@ -1,4 +1,4 @@
-"""Pydantic API contracts. Names and fields mirror opal_listen.yaml; extra models/fields are additive."""
+"""Pydantic API contracts. Names and fields mirror opal_listen_v1.4.0.yaml; extra models/fields are additive."""
 
 from __future__ import annotations
 
@@ -187,12 +187,12 @@ class ProfileUpdate(BaseModel):
 class SettingRead(_Read):
     id: int
     key: str
-    value: str
+    value: Any
     updated_at: datetime
 
 
 class SettingUpdate(BaseModel):
-    value: str
+    value: Any
 
 
 # --- recognition -----------------------------------------------------------------------------

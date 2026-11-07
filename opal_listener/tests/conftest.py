@@ -83,7 +83,7 @@ def client(service: ListenerService, app_settings: AppSettings) -> Iterator[Test
 
 
 def patch_settings(client: TestClient, **changes: Any) -> Any:
-    """PATCH /api/v1/settings/ with the current strong ETag, per the OPAL v1.2 If-Match contract."""
+    """PATCH /api/v1/settings/ with the current strong ETag, per the OPAL v1.3 If-Match contract."""
     etag = client.get("/api/v1/settings/").headers["etag"]
     return client.patch("/api/v1/settings/", json=changes, headers={"If-Match": etag})
 
