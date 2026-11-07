@@ -57,6 +57,7 @@ class OpalHealthProbe(BaseModel):
     status: Literal["ok", "degraded", "unavailable"]
     ready: bool
     details: dict[str, Any] | None = None
+    version: str | None = None
 
 
 class OpalCursorPageMetadata(BaseModel):

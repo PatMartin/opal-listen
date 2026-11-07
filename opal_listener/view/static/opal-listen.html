@@ -147,6 +147,9 @@ const ROUTES = [
   ["activate_profile", "POST", "/api/v1/profiles/{profile_id}/activate", "profiles activate", "profiles"],
   ["get_all_settings", "GET", "/api/v1/settings/", "settings list", "settings"],
   ["patch_listen_settings", "PATCH", "/api/v1/settings/", "settings set", "settings"],
+  ["opal_setting_get", "GET", "/api/v1/settings/{key}", "settings get", "settings"],
+  ["opal_setting_put", "PUT", "/api/v1/settings/{key}", "settings set", "settings"],
+  ["opal_setting_delete", "DELETE", "/api/v1/settings/{key}", "settings unset", "settings"],
   ["test_text", "POST", "/api/v1/recognition/test_text", "test text", "test"],
   ["test_audio", "POST", "/api/v1/recognition/test_audio", "test audio", "test"],
   ["start_pipeline", "POST", "/api/v1/recognition/start", "pipeline start", "pipeline"],
@@ -571,10 +574,10 @@ VIEWS.settings = async () => {
   const settings = await api("GET", "/api/v1/settings/");
   const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
   return `<h2>Settings</h2><div class="sub">Values are validated by type and range on save; changes are applied atomically via PATCH with the current ETag.</div>
-    ${opsLine(["get_all_settings", "patch_listen_settings"])}
-    ${card("Settings", ["get_all_settings", "patch_listen_settings"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
+    ${opsLine(["get_all_settings", "patch_listen_settings", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
+    ${card("Settings", ["get_all_settings", "patch_listen_settings", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
       ["value", "value", r => `<input data-setting="${esc(r.key)}" value="${esc(r.value)}" style="width:100%">`]],
-      { actions: r => btn("Save", "settingSave", { key: r.key }, "small") }))}`;
+      { actions: r => btn("Save", "settingSave", { key: r.key }, "small") + btn("Reset", "settingReset", { key: r.key }, "small ghost") }))}`;
 };
 
 VIEWS.test = async () => {
@@ -766,7 +769,8 @@ const ACT = {
   profileActivate: async d => { const p = await api("POST", `/api/v1/profiles/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
   profileDelete: async d => { confirmOr(`Delete profile '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/profiles/${d.id}`); toast("profile deleted"); location.hash = "#/profiles"; },
 
-  settingSave: async d => { const s = await apiWithEtag("PATCH", "/api/v1/settings/", { body: { [d.key]: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s[d.key]}`); render(); },
+  settingSave: async d => { const s = await apiWithEtag("PUT", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/", body: { value: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s.value}`); render(); },
+  settingReset: async d => { await apiWithEtag("DELETE", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/" }); toast(`${d.key} reset to default`); render(); },
 
   listenStart: async d => listenStart(d.debug === "1"),
   listenStop: async () => listenStop(),

@@ -19,7 +19,6 @@ from opal_listener import __version__
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings, get_app_settings
 from opal_listener.data.db import Database
 from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OpalCursorPageMetadata
-from opal_listener.models.schemas import SettingRead, SettingUpdate
 from opal_listener.service.errors import (
     DomainError,
     OpalValidationError,
@@ -42,9 +41,9 @@ from opal_listener.view.opal_middleware import OpalContextMiddleware
 log = logging.getLogger(__name__)
 STATIC_DIR = PACKAGE_DIR / "view" / "static"
 
-# Schemas referenced by the contract but no longer produced by any route (the per-key settings
-# endpoints were removed in v1.2); kept so the generated OpenAPI remains a superset of the contract.
-_ORPHAN_CONTRACT_SCHEMAS = (SettingRead, SettingUpdate, OpalCursorPageMetadata)
+# Schemas referenced by the contract but not produced by any route; kept so the generated
+# OpenAPI remains a superset of the contract.
+_ORPHAN_CONTRACT_SCHEMAS = (OpalCursorPageMetadata,)
 
 # OPAL SUITE STANDARD response-header documentation (opal_listen_v1.4.0.yaml components/headers).
 # OpalContextMiddleware stamps these on every response, so every operation documents them.

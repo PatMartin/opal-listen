@@ -189,9 +189,14 @@ class SettingRead(_Read):
     key: str
     value: Any
     updated_at: datetime
+    default: Any | None = None
+    is_default: bool | None = None
+    pending_restart: bool | None = None
 
 
 class SettingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     value: Any
 
 
@@ -431,6 +436,14 @@ class BackupInfo(BaseModel):
     filename: str
     size_bytes: int
     created_at: datetime
+
+
+class OpalBackupCreateResponse(BaseModel):
+    """Kernel OpalBackupCreateResponse: filename is the only required member."""
+
+    filename: str
+    status: str = "created"
+    message: str = "backup created"
 
 
 class ConfigValidationReport(BaseModel):

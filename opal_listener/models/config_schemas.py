@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -98,6 +99,9 @@ class ConfigBundle(_Spec):
     """Complete declarative configuration (union of all YAML files)."""
 
     version: int = CONFIG_VERSION
+    # OPAL kernel OpalConfigExport members; `version` above remains the per-file format marker.
+    format_version: str = "1.0.0"
+    exported_at: datetime | None = None
     wakewords: list[WakewordSpec] = []
     stt: dict[str, SettingScalar] = {}
     intents: list[IntentSpec] = []

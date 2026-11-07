@@ -163,7 +163,10 @@ def test_export_import_roundtrip(client: TestClient) -> None:
     result = client.post("/api/v1/backup/import", json=exported).json()
     assert result["status"] == "imported" and result["backup_filename"]
     assert [w["name"] for w in client.get("/api/v1/wakewords/").json()] == ["computer"]
-    assert client.get("/api/v1/backup/export").json() == exported
+    reexported = client.get("/api/v1/backup/export").json()
+    assert {k: v for k, v in reexported.items() if k != "exported_at"} == {
+        k: v for k, v in exported.items() if k != "exported_at"
+    }
 
 
 def test_import_from_server_config_dir(client: TestClient) -> None:
@@ -179,7 +182,10 @@ def test_invalid_import_changes_nothing(client: TestClient) -> None:
     bad = {**before, "intents": [{"name": "broken", "phrases": ["turn on {ghost}"]}]}
     response = client.post("/api/v1/backup/import", json=bad)
     assert response.status_code == 422
-    assert client.get("/api/v1/backup/export").json() == before
+    after = client.get("/api/v1/backup/export").json()
+    assert {k: v for k, v in after.items() if k != "exported_at"} == {
+        k: v for k, v in before.items() if k != "exported_at"
+    }
     assert len(client.get("/api/v1/backup/list").json()) == backups_before
 
 

@@ -498,8 +498,21 @@ def settings_list(ctx: typer.Context) -> None:
     render_kv(ctx, state(ctx).api.get(SETTINGS), "Settings")
 
 
+@settings_app.command("get")
+def settings_get(ctx: typer.Context, key: str) -> None:
+    """Read one setting with its default metadata."""
+    render_kv(ctx, state(ctx).api.get(f"{SETTINGS}{key}"), f"Setting '{key}'")
+
+
 @settings_app.command("set")
 def settings_set(ctx: typer.Context, key: str, value: str) -> None:
-    """Atomically set a setting (validated server-side; fetches the current ETag automatically)."""
-    updated = state(ctx).api.patch_with_etag(SETTINGS, json={key: value})
-    done(ctx, f"{key} = {updated[key]}", updated)
+    """Atomically set a setting (validated server-side; fetches the settings ETag automatically)."""
+    read = state(ctx).api.put_with_etag(f"{SETTINGS}{key}", etag_path=SETTINGS, json={"value": value})
+    done(ctx, f"{key} = {read['value']}", read)
+
+
+@settings_app.command("unset")
+def settings_unset(ctx: typer.Context, key: str) -> None:
+    """Revert a setting to its default."""
+    state(ctx).api.delete_with_etag(f"{SETTINGS}{key}", etag_path=SETTINGS)
+    done(ctx, f"{key} reverted to default", {"key": key})

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response
 
+from opal_listener import __version__
 from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OpalHealthProbe
 from opal_listener.models.schemas import AudioDevice, HealthReport
 from opal_listener.service.audio.capture import list_input_devices
@@ -37,8 +38,8 @@ def get_listen_health_live(response: Response, svc: ListenerService = Depends(ge
         svc.db.ping()
     except Exception as exc:  # noqa: BLE001
         response.status_code = 503
-        return OpalHealthProbe(status="unavailable", ready=False, details={"error": str(exc)})
-    return OpalHealthProbe(status="ok", ready=True)
+        return OpalHealthProbe(version=__version__, status="unavailable", ready=False, details={"error": str(exc)})
+    return OpalHealthProbe(version=__version__, status="ok", ready=True)
 
 
 @router.get(
@@ -54,7 +55,7 @@ def get_listen_health_ready(response: Response, svc: ListenerService = Depends(g
     if report.status == "error":
         response.status_code = 503
         failures = [c.detail for c in report.checks if c.status == "error"]
-        return OpalHealthProbe(status="unavailable", ready=False, details={"failures": failures})
+        return OpalHealthProbe(version=__version__, status="unavailable", ready=False, details={"failures": failures})
     if report.status == "warning":
-        return OpalHealthProbe(status="degraded", ready=True)
-    return OpalHealthProbe(status="ok", ready=True)
+        return OpalHealthProbe(version=__version__, status="degraded", ready=True)
+    return OpalHealthProbe(version=__version__, status="ok", ready=True)

@@ -148,6 +148,11 @@ class ApiClient:
         headers = {**kw.pop("headers", {}), "If-Match": self.etag(etag_path or path)}
         return self.delete(path, headers=headers, **kw)
 
+    def put_with_etag(self, path: str, *, etag_path: str | None = None, **kw: Any) -> Any:
+        """PUT after fetching the current ETag, for the mandatory strong If-Match contract."""
+        headers = {**kw.pop("headers", {}), "If-Match": self.etag(etag_path or path)}
+        return self.put(path, headers=headers, **kw)
+
     def stream_events(
         self, path: str, params: dict[str, Any] | None = None, idle_timeout: float | None = None
     ) -> Iterator[tuple[str, Any]]:

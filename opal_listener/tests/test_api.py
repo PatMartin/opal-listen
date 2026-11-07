@@ -221,6 +221,51 @@ def test_settings_patch_validation_and_atomicity(client: TestClient) -> None:
     assert restored["cooldown_ms"] == "1500"
 
 
+def test_settings_key_endpoints(client: TestClient) -> None:
+    """Per-key GET/PUT/DELETE /api/v1/settings/{key} (kernel opal_setting_*)."""
+    read = client.get("/api/v1/settings/cooldown_ms")
+    assert read.status_code == 200
+    body = read.json()
+    assert body["key"] == "cooldown_ms" and body["value"] == 1500  # native JSON, not stored string
+    assert body["default"] == 1500 and body["is_default"] is True and body["pending_restart"] is False
+    assert body["id"] and body["updated_at"]
+    assert client.get("/api/v1/settings/not_a_setting").status_code == 404
+
+    etag = _etag(client, "/api/v1/settings/")
+    assert client.put("/api/v1/settings/cooldown_ms", json={"value": 4200}).status_code == 428
+    assert (
+        client.put("/api/v1/settings/cooldown_ms", json={"value": 4200}, headers={"If-Match": '"stale"'}).status_code
+        == 412
+    )
+    updated = client.put("/api/v1/settings/cooldown_ms", json={"value": 4200}, headers={"If-Match": etag})
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["value"] == 4200 and body["is_default"] is False
+    assert client.get("/api/v1/settings/").json()["cooldown_ms"] == "4200"
+
+    etag = _etag(client, "/api/v1/settings/")
+    assert (
+        client.put("/api/v1/settings/not_a_setting", json={"value": 1}, headers={"If-Match": etag}).status_code == 404
+    )
+    assert (
+        client.put("/api/v1/settings/cooldown_ms", json={"value": "soon"}, headers={"If-Match": etag}).status_code
+        == 422
+    )
+    assert (  # SettingUpdate is a strict {value} body
+        client.put(
+            "/api/v1/settings/cooldown_ms", json={"value": 1, "extra": 2}, headers={"If-Match": etag}
+        ).status_code
+        == 422
+    )
+
+    etag = _etag(client, "/api/v1/settings/")
+    assert client.delete("/api/v1/settings/not_a_setting", headers={"If-Match": etag}).status_code == 404
+    assert client.delete("/api/v1/settings/cooldown_ms").status_code == 428
+    assert client.delete("/api/v1/settings/cooldown_ms", headers={"If-Match": etag}).status_code == 204
+    body = client.get("/api/v1/settings/cooldown_ms").json()
+    assert body["value"] == 1500 and body["is_default"] is True
+
+
 def test_model_path_change_is_validated(client: TestClient) -> None:
     etag = _etag(client, "/api/v1/settings/")
     response = client.patch(
@@ -274,9 +319,7 @@ def test_diagnostic_text_results_are_not_published_to_the_event_bus(client: Test
     assert publisher.events == []
 
 
-def test_diagnostic_audio_results_are_not_published_to_the_event_bus(
-    client: TestClient, fake_provider: type
-) -> None:
+def test_diagnostic_audio_results_are_not_published_to_the_event_bus(client: TestClient, fake_provider: type) -> None:
     publisher = client.app.state.listener.event_publisher  # type: ignore[attr-defined]
     # even with publication enabled, diagnostic audio results are never actionable
     assert patch_settings(client, event_publication_enabled="true").status_code == 200
@@ -284,9 +327,7 @@ def test_diagnostic_audio_results_are_not_published_to_the_event_bus(
     wav = write_wav_bytes(b"".join([silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 15))
 
     before = client.get("/api/v1/logs/count").json()["total"]
-    matched = client.post(
-        "/api/v1/recognition/test_audio", files={"file": ("command.wav", wav, "audio/wav")}
-    ).json()
+    matched = client.post("/api/v1/recognition/test_audio", files={"file": ("command.wav", wav, "audio/wav")}).json()
     assert matched["matched"] is True and matched["source"] == "audio"
     assert client.get("/api/v1/logs/count").json()["total"] == before + 1
     no_match = client.post(

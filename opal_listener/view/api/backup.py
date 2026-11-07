@@ -5,7 +5,12 @@ from fastapi.responses import FileResponse
 
 from opal_listener.models.config_schemas import ConfigBundle
 from opal_listener.models.opal_standard import OPAL_404_RESPONSE, OPAL_422_RESPONSE
-from opal_listener.models.schemas import BackupInfo, ConfigImportResult, ConfigValidationReport
+from opal_listener.models.schemas import (
+    BackupInfo,
+    ConfigImportResult,
+    ConfigValidationReport,
+    OpalBackupCreateResponse,
+)
 from opal_listener.service import backup as backup_ops
 from opal_listener.service.config_store import ConfigFileError, export_bundle, load_config_dir
 from opal_listener.service.errors import NotFoundError
@@ -22,11 +27,11 @@ def list_backups(svc: ListenerService = Depends(get_service)) -> list[BackupInfo
     return backup_ops.list_backups(svc.app_settings.backup_dir)
 
 
-@router.post("/create", status_code=201, responses=OPAL_422_RESPONSE)
-def create_backup(response: Response, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
+@router.post("/create", status_code=201, response_model=OpalBackupCreateResponse, responses=OPAL_422_RESPONSE)
+def create_backup(response: Response, svc: ListenerService = Depends(get_service)) -> OpalBackupCreateResponse:
     filename = svc.create_backup("manual")
     response.headers["Location"] = f"/api/v1/backup/download/{filename}"
-    return {"status": "created", "filename": filename}
+    return OpalBackupCreateResponse(filename=filename, message=f"backup '{filename}' created")
 
 
 @router.get("/download/{filename}", response_class=FileResponse, responses=OPAL_404_RESPONSE)

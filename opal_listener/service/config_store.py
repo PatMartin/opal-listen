@@ -45,6 +45,7 @@ def stored_settings(session: Session) -> dict[str, str]:
 def export_bundle(session: Session) -> ConfigBundle:
     settings = effective_settings(stored_settings(session))
     return ConfigBundle(
+        exported_at=utc_now(),
         wakewords=[
             WakewordSpec(name=w.name, enabled=w.enabled, confidence_threshold=w.confidence_threshold)
             for w in session.exec(select(Wakeword).order_by(Wakeword.id)).all()
