@@ -311,7 +311,7 @@ def _info(t: CliRestTest) -> str:
     return f"version {info.get('version')}"
 
 
-@step("system doctor", "health_check")
+@step("system doctor", "opal_health_get")
 def _doctor(t: CliRestTest) -> str:
     call = t.run("system", "doctor")
     report = parse_json(call)
@@ -330,14 +330,14 @@ def _devices(t: CliRestTest) -> str:
     return f"{len(devices)} input device(s)"
 
 
-@step("system live", "get_listen_health_live")
+@step("system live", "opal_health_live_get")
 def _live(t: CliRestTest) -> str:
     probe = t.ok("system", "live")
     expect(probe.get("status") == "ok" and probe.get("ready") is True, f"unexpected probe {probe}")
     return f"status {probe['status']}"
 
 
-@step("system ready", "get_listen_health_ready")
+@step("system ready", "opal_health_ready_get")
 def _ready(t: CliRestTest) -> str:
     call = t.run("system", "ready")
     if call.exit_code == 0:
@@ -352,36 +352,62 @@ def _ready(t: CliRestTest) -> str:
     return "not ready (HTTP 503, probe body returned)"
 
 
-@step("config backups (before)", "list_backups")
+@step("config backups (before)", "opal_backup_list")
 def _backups_before(t: CliRestTest) -> str:
     backups = t.ok("config", "backups")
     t.state["backups_before"] = {b["filename"] for b in backups}
     return f"{len(backups)} existing backup(s)"
 
 
-@step("config backup", "create_backup")
+@step("config backup", "opal_backup_create")
 def _safety_backup(t: CliRestTest) -> str:
     result = t.ok("config", "backup")
     t.state["safety_backup"] = result["filename"]
     return f"safety backup {result['filename']}"
 
 
-@step("settings list", "get_all_settings")
+@step("settings list", "opal_settings_get")
 def _settings_list(t: CliRestTest) -> str:
     settings = t.ok("settings", "list")
     expect("cooldown_ms" in settings, "cooldown_ms missing from settings")
     return f"{len(settings)} settings (cooldown_ms={settings['cooldown_ms']})"
 
 
-@step("settings set", "patch_listen_settings")
+@step("settings set", "opal_setting_put")
 def _settings_set(t: CliRestTest) -> str:
     updated = t.ok("settings", "set", "cooldown_ms", "1234")
-    expect(updated["cooldown_ms"] == "1234", f"cooldown_ms not stored: {updated}")
+    expect(updated["value"] == 1234, f"cooldown_ms not stored: {updated}")
     t.rejected("settings", "set", "cooldown_ms", "soon", contains="cooldown_ms")
     t.rejected("settings", "set", "not_a_setting", "1", contains="not_a_setting")
     restored = t.ok("settings", "set", "cooldown_ms", "1500")
-    expect(restored["cooldown_ms"] == "1500", f"cooldown_ms not restored: {restored}")
-    return "patched 1234, invalid value + unknown key rejected, restored 1500"
+    expect(restored["value"] == 1500, f"cooldown_ms not restored: {restored}")
+    return "put 1234, invalid value + unknown key rejected, restored 1500"
+
+
+@step("settings get", "opal_setting_get", requires=("settings set",))
+def _settings_get(t: CliRestTest) -> str:
+    read = t.ok("settings", "get", "cooldown_ms")
+    expect(read["key"] == "cooldown_ms" and read["value"] == 1500, f"unexpected SettingRead: {read}")
+    expect(read["is_default"] is True and read["pending_restart"] is False, f"missing metadata: {read}")
+    return f"cooldown_ms={read['value']} (default={read['default']})"
+
+
+@step("settings patch", "opal_settings_patch", requires=("settings get",))
+def _settings_patch(t: CliRestTest) -> str:
+    updated = t.ok("settings", "patch", "cooldown_ms=2345", "dedup_window_ms=1000")
+    expect(updated["cooldown_ms"] == "2345" and updated["dedup_window_ms"] == "1000", f"not patched: {updated}")
+    t.rejected("settings", "patch", "not_a_setting=1", contains="not_a_setting")
+    t.ok("settings", "patch", "cooldown_ms=1500", "dedup_window_ms=2000")
+    return "atomic multi-key patch, unknown key rejected, restored"
+
+
+@step("settings unset", "opal_setting_delete", requires=("settings patch",))
+def _settings_unset(t: CliRestTest) -> str:
+    t.ok("settings", "set", "cooldown_ms", "999")
+    t.ok("settings", "unset", "cooldown_ms")
+    read = t.ok("settings", "get", "cooldown_ms")
+    expect(read["value"] == 1500 and read["is_default"] is True, f"not reverted: {read}")
+    return "999 reverted to default 1500"
 
 
 @step("wakewords add", "create_wakeword")
@@ -528,7 +554,7 @@ def _intent_remove_phrase(t: CliRestTest) -> str:
     return "1 phrase left"
 
 
-@step("profiles list", "list_profiles")
+@step("profiles list", "opal_profiles_list")
 def _profiles_list(t: CliRestTest) -> str:
     profiles = t.ok("profiles", "list")
     active = [p["name"] for p in profiles if p["is_active"]]
@@ -536,7 +562,7 @@ def _profiles_list(t: CliRestTest) -> str:
     return f"{len(profiles)} profile(s), active: {t.state['original_profile']}"
 
 
-@step("profiles add", "create_profile", requires=("intents add",))
+@step("profiles add", "opal_profiles_create", requires=("intents add",))
 def _profile_add(t: CliRestTest) -> str:
     created = t.ok(
         "profiles", "add", t.profile,
@@ -548,14 +574,14 @@ def _profile_add(t: CliRestTest) -> str:
     return f"created '{t.profile}'"
 
 
-@step("profiles get", "get_profile", requires=("profiles add",))
+@step("profiles get", "opal_profile_get", requires=("profiles add",))
 def _profile_get(t: CliRestTest) -> str:
     profile = t.ok("profiles", "get", t.profile)
     expect(profile["enabled_intents"] == [t.intent], f"unexpected profile {profile}")
     return f"enabled_intents {profile['enabled_intents']}"
 
 
-@step("profiles update", "update_profile", requires=("profiles add",))
+@step("profiles update", "opal_profile_patch", requires=("profiles add",))
 def _profile_update(t: CliRestTest) -> str:
     updated = t.ok("profiles", "update", t.profile, "--description", "smoke profile")
     expect(updated["description"] == "smoke profile", f"not updated: {updated}")
@@ -563,7 +589,7 @@ def _profile_update(t: CliRestTest) -> str:
     return "description updated, invalid VAD value rejected"
 
 
-@step("profiles activate", "activate_profile", requires=("profiles add", "test text"))
+@step("profiles activate", "opal_profile_activate", requires=("profiles add", "test text"))
 def _profile_activate(t: CliRestTest) -> str:
     t.ok("profiles", "activate", t.profile)
     result = t.ok("test", "text", "paint the wall navy", "--no-save", "--verbose")
@@ -577,7 +603,7 @@ def _profile_activate(t: CliRestTest) -> str:
     return f"recognition used '{t.profile}', '{original}' re-activated"
 
 
-@step("profiles remove", "delete_profile", requires=("profiles add",))
+@step("profiles remove", "opal_profile_delete", requires=("profiles add",))
 def _profile_remove(t: CliRestTest) -> str:
     t.ok("profiles", "remove", t.profile)
     names = [p["name"] for p in t.ok("profiles", "list")]
@@ -823,7 +849,7 @@ def _ww_remove(t: CliRestTest) -> str:
     return "removed"
 
 
-@step("config validate", "validate_config")
+@step("config validate", "opal_backup_validate_stored")
 def _config_validate(t: CliRestTest) -> str:
     call = t.run("config", "validate")
     report = parse_json(call)
@@ -834,7 +860,7 @@ def _config_validate(t: CliRestTest) -> str:
     return f"valid={report['valid']} sources={report.get('sources')}"
 
 
-@step("config export", "export_config")
+@step("config export", "opal_backup_export")
 def _config_export(t: CliRestTest) -> str:
     out_dir = t.tmp / "export"
     t.ok("config", "export", "--out-dir", str(out_dir))
@@ -845,14 +871,14 @@ def _config_export(t: CliRestTest) -> str:
     return f"6 YAML files in {out_dir}"
 
 
-@step("config validate --from-dir", "validate_listen_backup_payload", requires=("config export",))
+@step("config validate --from-dir", "opal_backup_validate", requires=("config export",))
 def _config_validate_dir(t: CliRestTest) -> str:
     report = t.ok("config", "validate", "--from-dir", str(t.state["export_dir"]))
     expect(report["valid"] is True, f"exported configuration does not validate: {report['errors']}")
     return "exported YAML validates"
 
 
-@step("config download", "download_backup", requires=("config backup",))
+@step("config download", "opal_backup_download", requires=("config backup",))
 def _config_download(t: CliRestTest) -> str:
     t.ok("config", "download", t.state["safety_backup"], "--out", str(t.tmp))
     data = (t.tmp / t.state["safety_backup"]).read_bytes()
@@ -860,14 +886,14 @@ def _config_download(t: CliRestTest) -> str:
     return f"{len(data)} bytes"
 
 
-@step("config import", "import_config", requires=("config export",))
+@step("config import", "opal_backup_import", requires=("config export",))
 def _config_import(t: CliRestTest) -> str:
     result = t.ok("config", "import", "--from-dir", str(t.state["export_dir"]), "--yes")
     expect(result["status"] == "imported" and result["backup_filename"], f"unexpected {result}")
     return f"imported {result['counts']} (pre-import backup {result['backup_filename']})"
 
 
-@step("config restore", "restore_backup", requires=("config backup",))
+@step("config restore", "opal_backup_restore", requires=("config backup",))
 def _config_restore(t: CliRestTest) -> str:
     result = t.ok("config", "restore", t.state["safety_backup"], "--yes")
     expect(result["status"] == "restored", f"unexpected {result}")
@@ -876,7 +902,7 @@ def _config_restore(t: CliRestTest) -> str:
     return "database restored to the state before this run"
 
 
-@step("config delete-backup", "delete_backup", requires=("config backups (before)",))
+@step("config delete-backup", "opal_backup_delete", requires=("config backups (before)",))
 def _config_delete_backups(t: CliRestTest) -> str:
     created = {b["filename"] for b in t.ok("config", "backups")} - t.state["backups_before"]
     for filename in sorted(created):

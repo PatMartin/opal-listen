@@ -646,16 +646,19 @@ opal listen profiles remove test_profile
 ## 9. `settings`: global settings
 
 Settings are typed global key/value pairs. The server validates the type, range and allowed choices on
-`set`. Per the OPAL v1.2 standard, the REST API exposes settings as a single atomic resource
-(`GET`/`PATCH /api/v1/settings/` exclusively, no per-key routes); `set` fetches the current strong `ETag`
-and sends it back as `If-Match` automatically, so the update is applied atomically and safely even if
-another client changed settings concurrently (a stale `If-Match` is rejected with `412`, a missing one
-with `428`).
+every change. Per the OPAL standard, the collection `GET`/`PATCH /api/v1/settings/` is a single atomic
+resource and each key is also addressable via `GET`/`PUT`/`DELETE /api/v1/settings/{key}`; all settings
+commands fetch the current strong `ETag` and send it back as `If-Match` automatically, so updates apply
+atomically and safely even if another client changed settings concurrently (a stale `If-Match` is
+rejected with `412`, a missing one with `428`).
 
 | Command | Description |
 |---|---|
 | `list` | Show all settings with their effective values |
-| `set KEY VALUE` | Atomically set one setting (fetches the current ETag and sends it as `If-Match`) |
+| `get KEY` | Show one setting's value, registry default, `is_default` and `pending_restart` |
+| `set KEY VALUE` | Set one setting (`PUT /settings/{key}`; sends the settings-map `If-Match`) |
+| `patch KEY=VALUE ...` | Set several settings atomically in one collection `PATCH` (all-or-nothing) |
+| `unset KEY` | Revert a setting to its registry default (`DELETE /settings/{key}`) |
 
 ### Known keys
 
@@ -706,6 +709,15 @@ opal listen settings set auto_start_listener true
 
 # Shorten the cooldown between commands
 opal listen settings set cooldown_ms 1000
+
+# ... or change several settings atomically in one PATCH
+opal listen settings patch cooldown_ms=1000 dedup_window_ms=3000
+
+# Inspect one setting's metadata (default, is_default, pending_restart)
+opal listen settings get cooldown_ms
+
+# Revert a key to its registry default
+opal listen settings unset cooldown_ms
 
 # Add a sound-alike word that should never trigger the wakeword
 opal listen settings set wakeword_distractors "commuter,compute,computing,commute,commuting"

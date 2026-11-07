@@ -146,7 +146,7 @@ const ROUTES = [
   ["opal_profile_delete", "DELETE", "/api/v1/profiles/{profile_id}", "profiles remove", "profiles"],
   ["opal_profile_activate", "POST", "/api/v1/profiles/{profile_id}/activate", "profiles activate", "profiles"],
   ["opal_settings_get", "GET", "/api/v1/settings/", "settings list", "settings"],
-  ["opal_settings_patch", "PATCH", "/api/v1/settings/", "settings set", "settings"],
+  ["opal_settings_patch", "PATCH", "/api/v1/settings/", "settings patch", "settings"],
   ["opal_setting_get", "GET", "/api/v1/settings/{key}", "settings get", "settings"],
   ["opal_setting_put", "PUT", "/api/v1/settings/{key}", "settings set", "settings"],
   ["opal_setting_delete", "DELETE", "/api/v1/settings/{key}", "settings unset", "settings"],
@@ -207,9 +207,9 @@ const S = {
   base: localStorage.getItem("opal_api") || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000"),
   token: localStorage.getItem("opal_token") || "",
   timers: [], es: null, startedHere: false, lastResult: null,
-  logs: { limit: 25, offset: 0, intent: "", matched: "" },
+  logs: { limit: 25, intent: "", matched: "", cursor: null, back: [] },
   failed: { limit: 25, offset: 0, reviewed: "", promoted: "" },
-  history: { limit: 50, offset: 0 },
+  history: { limit: 50, cursor: null, back: [] },
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -577,7 +577,7 @@ VIEWS.settings = async () => {
     ${opsLine(["opal_settings_get", "opal_settings_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
     ${card("Settings", ["opal_settings_get", "opal_settings_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
       ["value", "value", r => `<input data-setting="${esc(r.key)}" value="${esc(r.value)}" style="width:100%">`]],
-      { actions: r => btn("Save", "settingSave", { key: r.key }, "small") + btn("Reset", "settingReset", { key: r.key }, "small ghost") }))}`;
+      { actions: r => btn("Info", "settingGet", { key: r.key }, "ghost small") + btn("Save", "settingSave", { key: r.key }, "small") + btn("Reset", "settingReset", { key: r.key }, "small ghost") }))}`;
 };
 
 VIEWS.test = async () => {
@@ -620,10 +620,12 @@ VIEWS.failed = async () => {
       <input name="notes" placeholder="notes" style="flex:1"><button type="submit">Add</button></form>`)}`;
 };
 
-function pager(key, count) {
+function pager(key, count, hasMore = true) {
   const p = S[key];
-  return `<div class="pager">${btn("‹ Prev", "page", { key, dir: -1 }, "ghost small")}<span class="muted">rows ${p.offset + 1}–${p.offset + count}</span>
-    ${btn("Next ›", "page", { key, dir: 1 }, "ghost small")} <label class="muted">per page <select data-filter="${key}.limit">${[10, 25, 50, 100, 500]
+  const base = p.cursor !== undefined ? p.back.length * p.limit : p.offset;
+  const next = p.cursor !== undefined && !hasMore ? "" : btn("Next ›", "page", { key, dir: 1 }, "ghost small");
+  return `<div class="pager">${btn("‹ Prev", "page", { key, dir: -1 }, "ghost small")}<span class="muted">rows ${base + 1}–${base + count}</span>
+    ${next} <label class="muted">per page <select data-filter="${key}.limit">${[10, 25, 50, 100, 500]
       .map(n => `<option ${n === p.limit ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>`;
 }
 
@@ -646,10 +648,12 @@ VIEWS.regression = async () => {
 
 VIEWS.logs = async () => {
   const l = S.logs;
-  const [logs, count, intents] = await Promise.all([
-    api("GET", "/api/v1/logs/", { query: { limit: l.limit, offset: l.offset, intent_name: l.intent, matched: l.matched } }),
+  const [page, count, intents] = await Promise.all([
+    api("GET", "/api/v1/logs/", { query: { limit: l.limit, cursor: l.cursor, intent_name: l.intent, matched: l.matched } }),
     api("GET", "/api/v1/logs/count"), api("GET", "/api/v1/intents/"),
   ]);
+  l._next = page.next_cursor;
+  const logs = page.items;
   const intentSel = `<select data-filter="logs.intent"><option value="">any intent</option>${["no_match", ...intents.map(i => i.name)]
     .map(n => `<option ${n === l.intent ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
   const matchedSel = `<select data-filter="logs.matched"><option value="">matched + no_match</option><option value="true" ${l.matched === "true" ? "selected" : ""}>matched</option>
@@ -659,15 +663,17 @@ VIEWS.logs = async () => {
     ${card("Counts", ["count_logs"], `<div class="row"><span class="badge">total ${count.total}</span><span class="badge ok">matched ${count.matched}</span><span class="badge warn">no_match ${count.no_match}</span></div>`)}
     ${card("Logs", ["list_logs"], `<div class="row">${intentSel} ${matchedSel}</div>` + table(logs, [["id", "id"], ["created_at", "time"], ["source", "source"],
       ["wakeword", "wakeword"], ["normalized_transcript", "transcript"], ["intent_name", "intent"], ["slot_values", "slots"], ["intent_confidence", "conf"],
-      ["matched", "matched"], ["no_match_reason", "reason"], ["total_latency_ms", "ms"]], { rowAct: r => `data-act="logShow" data-id="${r.id}"` }) + pager("logs", logs.length))}`;
+      ["matched", "matched"], ["no_match_reason", "reason"], ["total_latency_ms", "ms"]], { rowAct: r => `data-act="logShow" data-id="${r.id}"` }) + pager("logs", logs.length, page.has_more))}`;
 };
 
 VIEWS.perf = async () => {
   const h = S.history;
-  const [last, summary, history] = await Promise.all([
+  const [last, summary, page] = await Promise.all([
     api("GET", "/api/v1/performance/last"), api("GET", "/api/v1/performance/summary", { query: { limit: 100 } }),
-    api("GET", "/api/v1/performance/history", { query: { limit: h.limit, offset: h.offset } }),
+    api("GET", "/api/v1/performance/history", { query: { limit: h.limit, cursor: h.cursor } }),
   ]);
+  h._next = page.next_cursor;
+  const history = page.items;
   const flat = Object.fromEntries(Object.entries(summary).filter(([, v]) => typeof v !== "object" || v === null));
   const latency = Object.entries(summary).filter(([, v]) => v && typeof v === "object").map(([k, v]) => ({ metric: k, ...v }));
   return `<h2>Performance</h2><div class="sub">Latency (ms), confidence and match rate. Summary covers the last 100 recognitions.</div>
@@ -678,7 +684,7 @@ VIEWS.perf = async () => {
     </div>
     ${card("History", ["get_performance_history"], chart(history) + table(history, [["id", "id"], ["created_at", "time"], ["recognition_log_id", "log"],
       ["wakeword_latency_ms", "wake ms"], ["stt_latency_ms", "stt ms"], ["intent_latency_ms", "intent ms"], ["total_latency_ms", "total ms"],
-      ["wakeword_confidence", "wake conf"], ["intent_confidence", "intent conf"], ["matched", "matched"]]) + pager("history", history.length))}`;
+      ["wakeword_confidence", "wake conf"], ["intent_confidence", "intent conf"], ["matched", "matched"]]) + pager("history", history.length, page.has_more))}`;
 };
 
 function chart(rows) {
@@ -708,7 +714,7 @@ VIEWS.config = async () => {
       <div id="bundleResult"></div><p class="hint">YAML files: use <code>opal listen config export --out-dir</code> / <code>import --from-dir</code>.</p>`)}
     ${card("Backups", ["opal_backup_list", "opal_backup_create", "opal_backup_download", "opal_backup_restore", "opal_backup_delete"],
       `<p>${btn("Create backup", "backupCreate")}</p>` + table(backups, [["filename", "file"], ["size_bytes", "bytes"], ["created_at", "created"]],
-        { actions: r => `<a class="op" href="${esc(S.base)}/api/v1/backup/download/${enc(r.filename)}" download>download</a> ` +
+        { actions: r => btn("Download", "backupDownload", { name: r.filename }, "ghost small") +
           btn("Restore", "backupRestore", { name: r.filename }, "small") + btn("Delete", "backupDelete", { name: r.filename }, "danger small"), empty: "No backups." }))}`;
 };
 
@@ -745,7 +751,14 @@ const ACT = {
   go: d => { location.hash = d.to; },
   refresh: () => render(),
   closeModal: () => closeModal(),
-  page: d => { const p = S[d.key]; p.offset = Math.max(0, p.offset + Number(d.dir) * p.limit); render(); },
+  page: d => {
+    const p = S[d.key];
+    if (p.cursor !== undefined) {  // cursor-paginated views (contract: opaque next_cursor, no offsets)
+      if (Number(d.dir) > 0) { if (!p._next) return; p.back.push(p.cursor); p.cursor = p._next; }
+      else p.cursor = p.back.pop() ?? null;
+    } else p.offset = Math.max(0, p.offset + Number(d.dir) * p.limit);
+    render();
+  },
 
   pipeStart: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/start")).status}`),
   pipeStop: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/stop")).status}`),
@@ -769,6 +782,7 @@ const ACT = {
   profileActivate: async d => { const p = await apiWithEtag("POST", `/api/v1/profiles/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
   profileDelete: async d => { confirmOr(`Delete profile '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/profiles/${d.id}`); toast("profile deleted"); location.hash = "#/profiles"; },
 
+  settingGet: async d => modal(`<h3>Setting <code>${esc(d.key)}</code></h3>${op("opal_setting_get")}${kv(await api("GET", `/api/v1/settings/${enc(d.key)}`))}<p>${btn("Close", "closeModal")}</p>`),
   settingSave: async d => { const s = await apiWithEtag("PUT", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/", body: { value: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s.value}`); render(); },
   settingReset: async d => { await apiWithEtag("DELETE", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/" }); toast(`${d.key} reset to default`); render(); },
 
@@ -858,6 +872,12 @@ const ACT = {
     confirmOr(`Restore ${d.name}? The current database is backed up first and restored automatically if this fails.`);
     const r = await apiWithEtag("POST", `/api/v1/backup/restore/${enc(d.name)}`, { etagPath: "/api/v1/backup/export" });
     toast(`restored ${r.filename} (previous state: ${r.rollback_backup})`); render(); refreshHeader();
+  },
+  backupDownload: async d => {
+    const res = await fetch(`${S.base}/api/v1/backup/download/${enc(d.name)}`, { headers: S.token ? { Authorization: `Bearer ${S.token}` } : {} });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await res.blob()); a.download = d.name; a.click(); URL.revokeObjectURL(a.href);
   },
   backupDelete: async d => { confirmOr(`Delete backup ${d.name}?`); await api("DELETE", `/api/v1/backup/${enc(d.name)}`); toast("backup deleted"); render(); },
 };
@@ -1073,7 +1093,7 @@ document.addEventListener("change", ev => {
   if (filter) {
     const [key, field] = filter.split(".");
     S[key][field] = field === "limit" ? Number(ev.target.value) : ev.target.value;
-    S[key].offset = 0;
+    S[key].offset = 0; S[key].cursor = null; S[key].back = [];
     render();
   }
   if (ev.target.id === "bundleFile" && ev.target.files[0]) ev.target.files[0].text().then(t => { $("#bundleText").value = t; });

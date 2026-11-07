@@ -385,6 +385,56 @@ def test_cli_command_map_resolves_to_real_commands() -> None:
     assert not unresolved, f"OPERATION_COMMANDS values that resolve to no command: {unresolved}"
 
 
+def _normalize_ui_path(path: str) -> str:
+    """Fold SPA path templates to a contract-comparable shape: `{id}` and `${expr}` both -> `{}`."""
+    import re
+
+    return re.sub(r"\$\{[^}]*\}|\{[^}]*\}", "{}", path)
+
+
+def _ui_call_paths(html: str) -> set[str]:
+    """Every path literal the SPA can actually invoke (api/apiWithEtag/fetch/EventSource)."""
+    import re
+
+    pattern = r'(?:api|apiWithEtag|fetch|EventSource)\(\s*`?(?:\$\{S\.base\})?(/[^`"]*?)`?'
+    return {_normalize_ui_path(m.group(1)) for m in re.finditer(pattern, html)}
+
+
+def test_web_ui_exercises_every_contract_path() -> None:
+    """Every contract path must be reachable from a real SPA call — a parity-table row alone is not
+    an action (regression: opal_setting_get and opal_backup_download had rows but no call sites)."""
+    html = (PACKAGE_DIR / "view" / "static" / "opal-listen.html").read_text(encoding="utf-8")
+    called = _ui_call_paths(html)
+    missing = {_normalize_ui_path(p) for p in CONTRACT["paths"]} - called
+    assert not missing, f"contract paths with no SPA call site: {sorted(missing)}"
+
+
+def test_web_ui_query_params_match_contract() -> None:
+    """Query keys the SPA sends must be declared contract query params — undeclared params are
+    silently dropped by FastAPI (regression: the SPA sent `offset` to cursor-paginated endpoints)."""
+    import re
+
+    html = (PACKAGE_DIR / "view" / "static" / "opal-listen.html").read_text(encoding="utf-8")
+    contract_query: dict[tuple[str, str], set[str]] = {}
+    for path, item in CONTRACT["paths"].items():
+        for method, op in item.items():
+            if method in ("get", "post", "put", "patch", "delete"):
+                names = {p["name"] for p in op.get("parameters") or [] if p.get("in") == "query"}
+                contract_query[(method.upper(), _normalize_ui_path(path))] = names
+    violations: dict[str, set[str]] = {}
+    for m in re.finditer(r'(?:api|apiWithEtag)\(\s*"([A-Z]+)",\s*`?(/[^`"]*?)`?', html):
+        method, path = m.group(1), _normalize_ui_path(m.group(2))
+        if (method, path) not in contract_query:
+            continue
+        qm = re.search(r"query:\s*\{([^}]*)\}", html[m.end() : m.end() + 400])
+        if not qm:
+            continue
+        sent = {k for k in re.findall(r"(\w+)\s*:", qm.group(1))} - contract_query[(method, path)]
+        if sent:
+            violations[f"{method} {path}"] = sent
+    assert not violations, f"SPA sends query params the contract does not declare: {violations}"
+
+
 def test_opal_correlation_headers_stamped_at_runtime(client: TestClient) -> None:
     """Behavioral check for the documented OPAL headers: transaction/request ids are always
     returned (generated when absent), session/causation are echoed only when supplied, and

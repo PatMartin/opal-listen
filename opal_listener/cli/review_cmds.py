@@ -201,9 +201,14 @@ def logs_get(ctx: typer.Context, log_id: int) -> None:
 
 
 @logs_app.command("count")
-def logs_count(ctx: typer.Context) -> None:
+def logs_count(
+    ctx: typer.Context,
+    limit: int = typer.Option(100, "--limit", max=500),
+    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation token from a previous page"),
+) -> None:
     """Count logs (total / matched / no_match)."""
-    render_kv(ctx, state(ctx).api.get(f"{LOGS}count"), "Recognition logs")
+    params = {k: v for k, v in {"limit": limit, "cursor": cursor}.items() if v is not None}
+    render_kv(ctx, state(ctx).api.get(f"{LOGS}count", params=params), "Recognition logs")
 
 
 # --- perf ------------------------------------------------------------------------------------

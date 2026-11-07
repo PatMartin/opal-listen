@@ -47,7 +47,7 @@ OPERATION_COMMANDS: dict[str, str] = {
     "opal_profile_delete": "profiles remove",
     "opal_profile_activate": "profiles activate",
     "opal_settings_get": "settings list",
-    "opal_settings_patch": "settings set",
+    "opal_settings_patch": "settings patch",
     "opal_setting_get": "settings get",
     "opal_setting_put": "settings set",
     "opal_setting_delete": "settings unset",

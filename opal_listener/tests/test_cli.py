@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import typer
+from starlette.testclient import TestClient
 
 from opal_listener.cli.main import OPERATION_COMMANDS
 from opal_listener.cli.main import app as cli_app
@@ -32,6 +33,7 @@ REQUIRED_COMMANDS = {
     "intents list", "intents add", "intents remove", "intents add-phrase",
     "slots list", "slots add", "slots add-value", "slots add-alias",
     "profiles list", "profiles add",
+    "settings list", "settings get", "settings set", "settings patch", "settings unset",
     "test text", "test audio", "test listen", "test listen-debug", "test regression",
     "failed list", "failed promote",
     "perf last", "perf summary",
@@ -360,3 +362,48 @@ def test_listen_tree_tracks_command_changes(cli: CliHarness) -> None:
         assert f"+-- {marker} --newopt" in cli("tree").output
     finally:
         listen_app.registered_commands = [c for c in listen_app.registered_commands if c.name != marker]
+
+
+def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`settings patch` sends one atomic collection PATCH with If-Match and a typed map body."""
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    original = client.request
+
+    def spy(method: str, url: str, **kw: Any) -> Any:
+        calls.append((method, str(url), kw))
+        return original(method, url, **kw)
+
+    monkeypatch.setattr(client, "request", spy)
+    result = cli("settings", "patch", "cooldown_ms=2500", "filler_words=um")
+    assert result.exit_code == 0, result.output
+    patches = [c for c in calls if c[0] == "PATCH"]
+    assert len(patches) == 1
+    _method, url, kw = patches[0]
+    assert url.endswith("/api/v1/settings/")
+    assert kw["headers"]["If-Match"].startswith('"')
+    assert kw["json"] == {"cooldown_ms": 2500, "filler_words": "um"}
+    # the collection ETag was fetched first
+    etag_gets = [c for c in calls[: calls.index(patches[0])] if c[0] == "GET" and c[1].endswith("/api/v1/settings/")]
+    assert etag_gets, "expected a GET /api/v1/settings/ ETag probe before the PATCH"
+    assert cli.json("settings", "get", "cooldown_ms")["value"] == 2500
+    # atomicity: one invalid key means none are applied
+    assert cli("settings", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
+    assert cli.json("settings", "get", "cooldown_ms")["value"] == 2500
+
+
+def test_logs_count_sends_contract_params(
+    cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`logs count` exposes the contract's optional limit/cursor query params."""
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+    original = client.request
+
+    def spy(method: str, url: str, **kw: Any) -> Any:
+        calls.append((method, str(url), kw))
+        return original(method, url, **kw)
+
+    monkeypatch.setattr(client, "request", spy)
+    result = cli("logs", "count", "--limit", "10", "--cursor", "opaque-cursor")
+    assert result.exit_code == 0, result.output
+    gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/logs/count")]
+    assert gets and gets[0][2]["params"] == {"limit": 10, "cursor": "opaque-cursor"}

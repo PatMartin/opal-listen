@@ -511,6 +511,16 @@ def settings_set(ctx: typer.Context, key: str, value: str) -> None:
     done(ctx, f"{key} = {read['value']}", read)
 
 
+@settings_app.command("patch")
+def settings_patch(
+    ctx: typer.Context,
+    pairs: list[str] = typer.Argument(..., help="Setting key=value pairs (values parsed as YAML scalars)"),
+) -> None:
+    """Atomically set several settings in one collection PATCH (all-or-nothing validation)."""
+    updated = state(ctx).api.patch_with_etag(SETTINGS, json=parse_pairs(pairs))
+    render_kv(ctx, updated, "Settings updated")
+
+
 @settings_app.command("unset")
 def settings_unset(ctx: typer.Context, key: str) -> None:
     """Revert a setting to its default."""
