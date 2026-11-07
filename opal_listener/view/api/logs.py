@@ -9,7 +9,7 @@ from opal_listener.models.schemas import RecognitionLogRead
 from opal_listener.models.tables import RecognitionLog
 from opal_listener.service import recognition_store
 from opal_listener.service.catalog import get_or_404
-from opal_listener.service.errors import InvalidRequestError, OpalValidationError
+from opal_listener.service.errors import InvalidRequestError
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.service.pagination import decode_cursor, encode_cursor
 from opal_listener.view.api.deps import get_service
@@ -41,12 +41,8 @@ def list_logs(
 
 @router.get("/count", responses=OPAL_422_RESPONSE)
 def count_logs(
-    limit: int = Query(default=100, ge=1, le=500, description=_LIMIT_DESC),
-    cursor: str = Query(default=None, min_length=1, description=_CURSOR_DESC),
     svc: ListenerService = Depends(get_service),
 ) -> dict[str, int]:
-    if cursor is not None:
-        decode_cursor(cursor, "logs_count", {}, OpalValidationError)
     with svc.db.session() as session:
         return recognition_store.count_logs(session)
 

@@ -135,12 +135,7 @@ paths:
       summary: Get Wakeword
       operationId: get_wakeword_api_v1_wakewords__wakeword_id__get
       parameters:
-      - name: wakeword_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Wakeword Id
+      - $ref: '#/components/parameters/WakewordId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -176,12 +171,7 @@ paths:
       summary: Update Wakeword
       operationId: update_wakeword_api_v1_wakewords__wakeword_id__patch
       parameters:
-      - name: wakeword_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Wakeword Id
+      - $ref: '#/components/parameters/WakewordId'
       - name: If-Match
         in: header
         required: true
@@ -233,12 +223,7 @@ paths:
       summary: Delete Wakeword
       operationId: delete_wakeword_api_v1_wakewords__wakeword_id__delete
       parameters:
-      - name: wakeword_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Wakeword Id
+      - $ref: '#/components/parameters/WakewordId'
       - name: If-Match
         in: header
         required: true
@@ -354,12 +339,7 @@ paths:
       summary: Get Intent
       operationId: get_intent_api_v1_intents__intent_id__get
       parameters:
-      - name: intent_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Intent Id
+      - $ref: '#/components/parameters/IntentId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -395,12 +375,7 @@ paths:
       summary: Update Intent
       operationId: update_intent_api_v1_intents__intent_id__patch
       parameters:
-      - name: intent_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Intent Id
+      - $ref: '#/components/parameters/IntentId'
       - name: If-Match
         in: header
         required: true
@@ -452,12 +427,7 @@ paths:
       summary: Delete Intent
       operationId: delete_intent_api_v1_intents__intent_id__delete
       parameters:
-      - name: intent_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Intent Id
+      - $ref: '#/components/parameters/IntentId'
       - name: If-Match
         in: header
         required: true
@@ -498,12 +468,7 @@ paths:
       summary: List Phrases
       operationId: list_phrases_api_v1_intents__intent_id__phrases_get
       parameters:
-      - name: intent_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Intent Id
+      - $ref: '#/components/parameters/IntentId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -542,12 +507,7 @@ paths:
       summary: Add Phrase
       operationId: add_phrase_api_v1_intents__intent_id__phrases_post
       parameters:
-      - name: intent_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Intent Id
+      - $ref: '#/components/parameters/IntentId'
       requestBody:
         required: true
         content:
@@ -591,12 +551,7 @@ paths:
       summary: Delete Phrase
       operationId: delete_phrase_api_v1_intents__intent_id__phrases__phrase_id__delete
       parameters:
-      - name: intent_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Intent Id
+      - $ref: '#/components/parameters/IntentId'
       - name: phrase_id
         in: path
         required: true
@@ -718,12 +673,7 @@ paths:
       summary: Get Slot
       operationId: get_slot_api_v1_slots__slot_id__get
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
+      - $ref: '#/components/parameters/SlotId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -759,12 +709,7 @@ paths:
       summary: Update Slot
       operationId: update_slot_api_v1_slots__slot_id__patch
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
+      - $ref: '#/components/parameters/SlotId'
       - name: If-Match
         in: header
         required: true
@@ -816,12 +761,7 @@ paths:
       summary: Delete Slot
       operationId: delete_slot_api_v1_slots__slot_id__delete
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
+      - $ref: '#/components/parameters/SlotId'
       - name: If-Match
         in: header
         required: true
@@ -862,12 +802,7 @@ paths:
       summary: List Slot Values
       operationId: list_slot_values_api_v1_slots__slot_id__values_get
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
+      - $ref: '#/components/parameters/SlotId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -906,12 +841,7 @@ paths:
       summary: Add Slot Value
       operationId: add_slot_value_api_v1_slots__slot_id__values_post
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
+      - $ref: '#/components/parameters/SlotId'
       requestBody:
         required: true
         content:
@@ -955,18 +885,8 @@ paths:
       summary: Delete Slot Value
       operationId: delete_slot_value_api_v1_slots__slot_id__values__value_id__delete
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
-      - name: value_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Value Id
+      - $ref: '#/components/parameters/SlotId'
+      - $ref: '#/components/parameters/ValueId'
       - name: If-Match
         in: header
         required: true
@@ -1007,18 +927,8 @@ paths:
       summary: List Aliases
       operationId: list_aliases_api_v1_slots__slot_id__values__value_id__aliases_get
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
-      - name: value_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Value Id
+      - $ref: '#/components/parameters/SlotId'
+      - $ref: '#/components/parameters/ValueId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1058,18 +968,8 @@ paths:
       summary: Add Alias
       operationId: add_alias_api_v1_slots__slot_id__values__value_id__aliases_post
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
-      - name: value_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Value Id
+      - $ref: '#/components/parameters/SlotId'
+      - $ref: '#/components/parameters/ValueId'
       requestBody:
         required: true
         content:
@@ -1113,18 +1013,8 @@ paths:
       summary: Delete Alias
       operationId: delete_alias_api_v1_slots__slot_id__values__value_id__aliases__alias_id__delete
       parameters:
-      - name: slot_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Slot Id
-      - name: value_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Value Id
+      - $ref: '#/components/parameters/SlotId'
+      - $ref: '#/components/parameters/ValueId'
       - name: alias_id
         in: path
         required: true
@@ -1526,27 +1416,6 @@ paths:
       - logs
       summary: Count Logs
       operationId: count_logs_api_v1_logs_count_get
-      parameters:
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 500
-          minimum: 1
-          description: Maximum items per page.
-          default: 100
-          title: Limit
-        description: Maximum items per page.
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-          minLength: 1
-          description: Opaque continuation token returned from the preceding page.
-          title: Cursor
-        description: Opaque continuation token returned from the preceding page.
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1717,12 +1586,7 @@ paths:
       summary: Get Failed Utterance
       operationId: get_failed_utterance_api_v1_failed_utterances__fu_id__get
       parameters:
-      - name: fu_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Fu Id
+      - $ref: '#/components/parameters/FuId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1753,12 +1617,7 @@ paths:
       summary: Update Failed Utterance
       operationId: update_failed_utterance_api_v1_failed_utterances__fu_id__patch
       parameters:
-      - name: fu_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Fu Id
+      - $ref: '#/components/parameters/FuId'
       requestBody:
         required: true
         content:
@@ -1795,12 +1654,7 @@ paths:
       summary: Delete Failed Utterance
       operationId: delete_failed_utterance_api_v1_failed_utterances__fu_id__delete
       parameters:
-      - name: fu_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Fu Id
+      - $ref: '#/components/parameters/FuId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1829,12 +1683,7 @@ paths:
       description: Promote a failed utterance as a training phrase for the given intent.
       operationId: promote_to_phrase_api_v1_failed_utterances__fu_id__promote_post
       parameters:
-      - name: fu_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Fu Id
+      - $ref: '#/components/parameters/FuId'
       - name: intent_name
         in: query
         required: true
@@ -1986,12 +1835,7 @@ paths:
       summary: Get Regression Test
       operationId: get_regression_test_api_v1_regression__test_id__get
       parameters:
-      - name: test_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Test Id
+      - $ref: '#/components/parameters/TestId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -2022,12 +1866,7 @@ paths:
       summary: Update Regression Test
       operationId: update_regression_test_api_v1_regression__test_id__patch
       parameters:
-      - name: test_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Test Id
+      - $ref: '#/components/parameters/TestId'
       requestBody:
         required: true
         content:
@@ -2064,12 +1903,7 @@ paths:
       summary: Delete Regression Test
       operationId: delete_regression_test_api_v1_regression__test_id__delete
       parameters:
-      - name: test_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Test Id
+      - $ref: '#/components/parameters/TestId'
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -2326,6 +2160,49 @@ paths:
         '422':
           $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
 components:
+  parameters:
+    WakewordId:
+      name: wakeword_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        title: Wakeword Id
+    IntentId:
+      name: intent_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        title: Intent Id
+    SlotId:
+      name: slot_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        title: Slot Id
+    ValueId:
+      name: value_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        title: Value Id
+    FuId:
+      name: fu_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        title: Fu Id
+    TestId:
+      name: test_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        title: Test Id
   securitySchemes:
     BearerAuth: {$ref: './shared/opal_kernel.yaml#/components/securitySchemes/BearerAuth'}
   schemas:
@@ -2460,27 +2337,6 @@ components:
           title: Promoted To Phrase
       type: object
       title: FailedUtteranceUpdate
-    HealthCheckResult:
-      properties:
-        name:
-          type: string
-          title: Name
-        status:
-          type: string
-          enum:
-          - ok
-          - warning
-          - error
-          title: Status
-        detail:
-          type: string
-          title: Detail
-      type: object
-      required:
-      - name
-      - status
-      - detail
-      title: HealthCheckResult
     IntentAlternative:
       properties:
         intent_name:
@@ -2649,40 +2505,6 @@ components:
       - created_at
       - updated_at
       title: IntentReadWithPhrases
-    IntentSpec:
-      properties:
-        name:
-          type: string
-          maxLength: 100
-          minLength: 1
-          title: Name
-        description:
-          anyOf:
-          - type: string
-            maxLength: 500
-          - type: 'null'
-          title: Description
-        enabled:
-          type: boolean
-          title: Enabled
-          default: true
-        confidence_threshold:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          title: Confidence Threshold
-          default: 0.7
-        phrases:
-          items:
-            type: string
-          type: array
-          title: Phrases
-          default: []
-      additionalProperties: false
-      type: object
-      required:
-      - name
-      title: IntentSpec
     IntentUpdate:
       properties:
         name:
@@ -2943,61 +2765,6 @@ components:
       - last_result_at
       - last_error
       title: PipelineStatus
-    ProfileSpec:
-      properties:
-        name:
-          type: string
-          maxLength: 100
-          minLength: 1
-          title: Name
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Description
-        is_active:
-          type: boolean
-          title: Is Active
-          default: false
-        wakeword_names:
-          items:
-            type: string
-          type: array
-          title: Wakeword Names
-          default: []
-        confidence_thresholds:
-          additionalProperties: true
-          type: object
-          title: Confidence Thresholds
-          default: {}
-        vad_settings:
-          additionalProperties: true
-          type: object
-          title: Vad Settings
-          default: {}
-        enabled_intents:
-          items:
-            type: string
-          type: array
-          title: Enabled Intents
-          default: []
-        enabled_slots:
-          items:
-            type: string
-          type: array
-          title: Enabled Slots
-          default: []
-        model_paths:
-          additionalProperties:
-            type: string
-          type: object
-          title: Model Paths
-          default: {}
-      additionalProperties: false
-      type: object
-      required:
-      - name
-      title: ProfileSpec
     PromoteResult:
       properties:
         failed_utterance:
@@ -3571,34 +3338,6 @@ components:
       - created_at
       - updated_at
       title: SlotReadWithValues
-    SlotSpec:
-      properties:
-        name:
-          type: string
-          maxLength: 100
-          minLength: 1
-          title: Name
-        slot_type:
-          type: string
-          title: Slot Type
-          default: list
-        description:
-          anyOf:
-          - type: string
-            maxLength: 500
-          - type: 'null'
-          title: Description
-        values:
-          items:
-            $ref: '#/components/schemas/SlotValueSpec'
-          type: array
-          title: Values
-          default: []
-      additionalProperties: false
-      type: object
-      required:
-      - name
-      title: SlotSpec
     SlotUpdate:
       properties:
         name:
@@ -3680,24 +3419,6 @@ components:
       - slot_id
       - created_at
       title: SlotValueReadWithAliases
-    SlotValueSpec:
-      properties:
-        value:
-          type: string
-          maxLength: 200
-          minLength: 1
-          title: Value
-        aliases:
-          items:
-            type: string
-          type: array
-          title: Aliases
-          default: []
-      additionalProperties: false
-      type: object
-      required:
-      - value
-      title: SlotValueSpec
     TextTestRequest:
       properties:
         text:
@@ -3762,28 +3483,6 @@ components:
       - created_at
       - updated_at
       title: WakewordRead
-    WakewordSpec:
-      properties:
-        name:
-          type: string
-          maxLength: 100
-          minLength: 1
-          title: Name
-        enabled:
-          type: boolean
-          title: Enabled
-          default: true
-        confidence_threshold:
-          type: number
-          maximum: 1.0
-          minimum: 0.0
-          title: Confidence Threshold
-          default: 0.8
-      additionalProperties: false
-      type: object
-      required:
-      - name
-      title: WakewordSpec
     WakewordUpdate:
       properties:
         name:
