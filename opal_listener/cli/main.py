@@ -12,6 +12,7 @@ from opal_listener.cli.output import CliState
 from opal_listener.cli.review_cmds import failed_app, logs_app, perf_app, regression_app
 from opal_listener.cli.system_cmds import config_app, system_app
 from opal_listener.cli.test_cmds import pipeline_app, test_app
+from opal_listener.cli.tree_cmds import register as register_tree
 
 # REST operation (FastAPI function name) -> CLI command. Checked by the parity test.
 OPERATION_COMMANDS: dict[str, str] = {
@@ -115,6 +116,8 @@ for sub_app, name in (
     (event_app, "event"),
 ):
     listen_app.add_typer(sub_app, name=name)
+
+register_tree(listen_app)
 
 
 @listen_app.callback()

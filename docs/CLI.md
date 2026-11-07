@@ -263,15 +263,20 @@ server logs.
 
 ## 4. Command tree
 
+`opal listen tree` prints the live command tree with each command's parameters (generated
+by introspection, so it always matches the installed CLI): mandatory options print as
+`--option`, optional options as `[--option]`, positional arguments as bare names.
+
 ```
 opal
 └── listen [--api-url] [--xpub] [--xsub] [--json] [--timeout]
+    ├── tree
     ├── wakewords   list | get | add | update | remove
     ├── intents     list | get | add | update | remove | phrases | add-phrase | remove-phrase
     ├── slots       list | get | add | update | remove
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
     ├── profiles    list | get | add | update | activate | remove
-    ├── settings    list | set
+    ├── settings    list | get | set | unset
     ├── test        text | audio | listen | listen-debug | regression
     ├── pipeline    start | stop | status
     ├── failed      list | get | add | update | remove | promote

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,9 @@ def command_paths() -> set[str]:
     listen = root.commands["listen"]  # type: ignore[attr-defined]
     paths: set[str] = set()
     for group_name, group in listen.commands.items():
-        assert hasattr(group, "commands"), f"{group_name} is not a command group"
+        if not hasattr(group, "commands"):  # plain commands mounted directly on listen (e.g. tree)
+            paths.add(group_name)
+            continue
         paths.update(f"{group_name} {name}" for name in group.commands)
     return paths
 
@@ -327,3 +330,33 @@ def test_unreachable_api_gives_friendly_error(monkeypatch: pytest.MonkeyPatch) -
     result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "system", "ping"])
     assert result.exit_code == 1
     assert "cannot reach the opal listener API" in result.output
+
+
+def test_listen_tree_renders_live_command_tree(cli: CliHarness) -> None:
+    result = cli("tree")
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert out.splitlines()[0].startswith("opal listen")
+    # groups and leaf commands are present with ASCII branches
+    assert "+-- wakewords" in out and "+-- list" in out and "`-- " in out
+    # notation: required options bare, optional bracketed, positionals bare names
+    assert "promote fu_id --intent" in out
+    assert "add name [--threshold]" in out
+    # built-in help and shell-completion plumbing are skipped
+    assert "--help" not in out and "--install-completion" not in out
+
+
+def test_listen_tree_tracks_command_changes(cli: CliHarness) -> None:
+    """The tree is introspected at call time: a new command/param appears on the next run."""
+    from opal_listener.cli.main import listen_app
+
+    marker = f"zz{uuid.uuid4().hex[:6]}"
+    try:
+
+        @listen_app.command(marker)
+        def _tmp(newopt: str = typer.Option(...)) -> None:  # required option
+            pass
+
+        assert f"+-- {marker} --newopt" in cli("tree").output
+    finally:
+        listen_app.registered_commands = [c for c in listen_app.registered_commands if c.name != marker]
