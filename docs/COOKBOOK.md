@@ -16,6 +16,11 @@ paste straight into your shell. Multi-step recipes paste as a single unit.
   what your service prints.
 - Most mutations auto-fetch the resource ETag and send `If-Match` for you; if the
   server answers `412`, someone else changed it — rerun to re-fetch.
+- Global flags (`--json`, `--api-url`) go right after `listen`:
+  `opal listen --json logs count`, not `opal listen logs count --json`.
+- Names of intents, slots and profiles must be `snake_case`.
+- Part 1 builds on the seeded catalog (intents `light_turn_on`, `get_time`,
+  `cancel`…, slot `room_name`) — run the recipes in order on a fresh install.
 - Run `opal listen tree` any time for a live map of every command and flag below.
 
 ---
@@ -38,14 +43,19 @@ opal listen test text "computer, please turn on the lights" --expect-intent ligh
 
 Phrases embed `{slot_name}` placeholders (and `[optional]` words). List slots take
 canonical values; aliases map how people actually talk onto those values. The
-result lands in `slot_values` of every test/log row.
+seeded `light_turn_on` intent already uses `{room_name}` — teach it a new
+nickname and the slot comes back canonical.
 
 ```bash
-opal listen slots add room --type list --value kitchen --value bedroom --value living_room
-opal listen slots add-alias room living_room "the lounge"
-opal listen intents add-phrase lights_on "turn on [the] {room} light"
-opal listen test text "computer, turn on the lounge light" --expect-intent lights_on --verbose
+opal listen slots values room_name
+opal listen slots add-alias room_name office "the den"
+opal listen test text "computer, turn on the den light" --expect-intent light_turn_on --verbose
+# -> "slot_values": {"room_name": "office"}
 ```
+
+Before adding a *second* intent with overlapping phrases, run
+`opal listen --json config validate` — it warns when two phrases are ambiguous.
+On a tie the earlier intent wins.
 
 ### 3. Give the assistant more than one wake word
 
@@ -93,16 +103,32 @@ answer "did it even hear me?".
 opal listen test listen-debug --duration 60
 ```
 
-### 7. Soak-test the microphone overnight
+### 7. Run a local script when a phrase matches — no event bus
 
-`test listen` tails the result stream only — with `--count`/`--duration` it
-self-terminates, making it a clean soak harness. Pipe `--json` output into a file
-and diff it in the morning.
+Reactions turn a matched intent into a shell command, inside opal-listen itself:
+no broker, no second service. Commands live only in `reactions.yaml` (the CLI
+edits that file locally; the REST API can never arm one). The script gets the
+full match result as JSON on stdin, and edits hot-reload.
 
 ```bash
-opal listen --json test listen --duration 3600 --verbose > soak-$(date +%F).ndjson
-opal listen logs count
+cat > /opt/opal/lights.sh <<'SH'
+#!/usr/bin/env bash
+room=$(jq -r '.slot_values.room_name // "everywhere"')   # stdin = match JSON
+logger -t opal "lights on: $room"                        # swap in your real actuator
+SH
+chmod +x /opt/opal/lights.sh
+opal listen reactions add lights \
+  --cond "intent_name eq light_turn_on" \
+  --cond "intent_confidence gte 0.8" \
+  --run "/opt/opal/lights.sh" --timeout 10
+opal listen settings set reactions_enabled true   # master switch, off by default
+opal listen test listen --count 1                 # say: "computer, turn on the kitchen light"
+opal listen reactions log --limit 5
 ```
+
+Only live-microphone matches fire. `test text`/`test audio` never do, so
+diagnostics can't trigger side effects. Repeats inside `dedup_window_ms` are
+suppressed as well.
 
 ### 8. Put a regression gate in front of catalog edits
 
@@ -111,10 +137,10 @@ then make `test regression` a hard gate — it exits 1 on any failure, before an
 after every vocabulary change.
 
 ```bash
-opal listen regression add lights_on_kitchen "turn on the kitchen light" \
-  --expect-intent lights_on --slot room=kitchen
-opal listen regression add lights_on_lounge "turn on the lounge light" \
-  --expect-intent lights_on --slot room=living_room
+opal listen regression add lights_kitchen "turn on the kitchen light" \
+  --expect-intent light_turn_on --slot room_name=kitchen
+opal listen regression add lights_den "turn on the den light" \
+  --expect-intent light_turn_on --slot room_name=office
 opal listen test regression
 ```
 
@@ -150,13 +176,14 @@ is undoable.
 ```bash
 opal listen config backup
 opal listen config backups
-opal listen config restore opal_listener_20260614T103000_manual.db --yes
+latest=$(opal listen --json config backups | jq -r '.[0].filename')
+opal listen config restore "$latest" --yes
 ```
 
 ### 12. Keep your whole voice model in git
 
 `config export --out-dir` writes the six YAML files (wakewords, intents, slots,
-profiles, settings, engines) as reviewable source. Validate offline, then import —
+profiles, stt, settings) as reviewable source. Validate offline, then import —
 which auto-validates, takes a pre-import backup, and reports row counts.
 
 ```bash
@@ -173,11 +200,11 @@ intents/slots and model paths. Switching is instant and atomic — only one
 profile is active at a time.
 
 ```bash
-opal listen profiles add noisy-kitchen \
+opal listen profiles add noisy_kitchen \
   --threshold wakeword=0.9 --threshold intent=0.85 --vad silence_end_ms=900
-opal listen profiles add quiet-study \
+opal listen profiles add quiet_study \
   --threshold wakeword=0.7 --vad silence_end_ms=400
-opal listen profiles activate noisy-kitchen
+opal listen profiles activate noisy_kitchen
 opal listen profiles list
 ```
 
@@ -185,13 +212,16 @@ opal listen profiles list
 
 `--intent` narrows a profile to an explicit intent allowlist — after dark, the
 house only answers to two commands. Switch back at dawn by re-activating the
-day profile.
+default profile.
 
 ```bash
-opal listen profiles add night-watch --intent alarm_stop --intent emergency_call
-opal listen profiles activate night-watch
+opal listen intents add alarm_stop --phrase "stop the alarm" --phrase "alarm off"
+opal listen profiles add night_watch --intent alarm_stop --intent cancel
+opal listen profiles activate night_watch
+opal listen test text "computer, turn on the kitchen light"   # NO MATCH after dark
+opal listen test text "computer, stop the alarm"              # MATCH
 # morning:
-opal listen profiles activate day
+opal listen profiles activate default
 ```
 
 ### 15. Turn "it didn't understand me" into training data
@@ -201,10 +231,11 @@ corrected transcript into the right intent *and* creates a regression test —
 so it can never silently break again.
 
 ```bash
-opal listen failed add "light on in the kitchen" --expected-intent lights_on \
+opal listen failed add "light on in the kitchen" --expected-intent light_turn_on \
   --notes "field report: quiet voice at distance"
 opal listen failed list --unreviewed
-opal listen failed promote 7 --intent lights_on --regression
+opal listen failed promote 7 --intent light_turn_on --regression
+# -> promoted as 'light on in the {room_name}' (slot values are generalized)
 opal listen test regression
 ```
 
@@ -217,9 +248,13 @@ or by matched/no-match to find where the model leaks.
 ```bash
 opal listen logs count
 opal listen logs list --no-match --limit 50
-opal listen logs list --intent lights_on --limit 100
+opal listen logs list --intent light_turn_on --limit 100
 opal listen logs get 424
 ```
+
+Long histories are cursor-paginated. When more rows exist the table ends with
+`more results: pass --cursor <token>`; the token is signed to your filters, so it
+can't be replayed against a different query.
 
 ### 17. Audit your wake-to-intent latency budget
 
@@ -233,18 +268,26 @@ opal listen perf summary --limit 200
 opal listen perf history --limit 25
 ```
 
-### 18. Page the entire history with tamper-proof cursors
+### 18. Rehearse a reaction before it can fire
 
-Logs and performance history are cursor-paginated (the server signs the cursor
-to the filters you used — it can't be forged or replayed across queries). The
-CLI prints the `next_cursor` hint whenever more rows exist.
+`reactions test` evaluates every armed reaction against a result without
+running anything, and names the condition that failed. `--text` gets the payload
+from a real recognition, so you test exactly what the live pipeline will
+produce. Add `--execute` only when you want to debug the script itself.
 
 ```bash
-opal listen logs list --limit 25
-# …prints: more results: pass --cursor <token>
-opal listen logs list --limit 25 --cursor "<token from previous run>"
-opal listen perf history --limit 25 --cursor "<token>"
+opal listen reactions list
+opal listen reactions test --text "computer, turn on the den light"   # ✓ lights — would fire
+opal listen reactions test --text "computer, what time is it"         # ✗ (intent_name eq 'light_turn_on')
+opal listen reactions test --payload \
+  '{"intent_name":"light_turn_on","slot_values":{"room_name":"office"},"intent_confidence":0.9}' --execute
+opal listen reactions disable lights                  # park it; keeps conditions and actions
+opal listen settings set reactions_enabled false      # or stop all reactions at once
 ```
+
+Conditions on a field that isn't in the payload never match. Include every field
+your conditions use, such as `intent_confidence` above, or test for presence with
+`--cond "slot_values.room_name exists"`.
 
 ### 19. Hot-swap the recognition engine — no restart
 
@@ -270,7 +313,7 @@ log table, and prune old backups — all without editing a file or restarting.
 opal listen system devices
 opal listen settings patch audio_device="USB" audio_watchdog_timeout_ms=5000 \
   max_recognition_logs=5000 auto_start_listener=true
-opal listen config backups --json | jq -r '.[3:][] | .filename' \
+opal listen --json config backups | jq -r '.[3:][] | .filename' \
   | xargs -r -I{} opal listen config delete-backup {} --yes
 ```
 
@@ -282,6 +325,14 @@ Each module is small on purpose; the interesting behavior lives in the wiring.
 opal-listen hears, opal-event routes (`topic` + `conditions` + `actions`),
 opal-look sees, opal-think reasons (only through registered event actions), and
 opal-talk speaks. `opal-api` holds the contract-of-record for every service.
+
+**Reactions or opal-event?** For "this phrase runs that script on this box",
+listen's built-in reactions (recipes 7 and 18) are enough. Use opal-event when
+you need HTTP or Python actions, rules over events from *other* producers (look,
+think), fan-out to many actions, or a central execution history. The
+two share a condition grammar; listen's `intent_name` becomes `data.intent_name`
+in a bus event. Every recipe below needs
+`opal listen settings set event_publication_enabled true`.
 
 ### 21. "OK" — the closed voice loop
 
@@ -314,7 +365,7 @@ wakeword required. Then audit the action run.
 
 ```bash
 opal listen event publish opal.listen.intent.match \
-  '{"intent_name":"lights_on","slot_values":{"room":"kitchen"},"source":"cli-test"}'
+  '{"intent_name":"light_turn_on","slot_values":{"room_name":"kitchen"},"source":"cli-test"}'
 opal event executions list
 opal event list --topic opal.listen.intent.match --limit 5
 ```
@@ -348,8 +399,9 @@ by construction: the model can *say* things but cannot *do* anything you didn't
 register. Voice prompt goes in; the answer is spoken by opal-talk.
 
 ```bash
+opal listen slots add question --type text        # slot must exist before a phrase uses it
 opal listen intents add ask_brain --phrase "ask the brain {question}"
-opal listen slots add question --type text
+opal listen test text "computer, ask the brain why is the sky blue"   # question = "why is the sky blue"
 opal listen settings set event_publication_enabled true
 cat > /opt/opal/ask_brain.sh <<'SH'
 #!/usr/bin/env bash
@@ -385,7 +437,7 @@ recognition row in listen's logs, the rule firing in event's executions, and the
 speech request in talk — one utterance, one audit trail.
 
 ```bash
-opal listen logs list --intent lights_on --limit 5 --json
+opal listen --json logs list --intent light_turn_on --limit 5
 opal event executions list --limit 10
 opal event get <event-id from the execution>
 opal listen logs get <recognition-log-id>   # exact transcript + slot extraction
@@ -493,7 +545,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint ../opal-api/openapi/opal_listen_v1.5.0.yaml
+spectral lint openapi/opal_listen_v1.5.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs
@@ -540,8 +592,8 @@ Because opal-talk is an HTTP service, a remote-room announcement is just an
 the workshop speaker.
 
 ```bash
-opal listen intents add announce --phrase "announce {message}"
 opal listen slots add message --type text
+opal listen intents add announce --phrase "announce {message}"
 opal event actions create --json \
   '{"id":"workshop_speak","type":"http","method":"POST","url":"http://workshop.local:8001/api/v1/generate","body_mode":"event_json","timeout_seconds":15}'
 opal event rules create --json \
