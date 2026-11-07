@@ -75,6 +75,7 @@ def _provider_fingerprint(config: ProviderConfig) -> tuple[Any, ...]:
         tuple(sorted((k, repr(v)) for k, v in config.options.items())),
     )
 
+
 SourceFactory = Callable[[dict[str, Any]], AudioSource]
 
 

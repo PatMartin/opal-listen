@@ -18,8 +18,8 @@ from opal_listener.models.schemas import (
     OpalValidationReport,
 )
 from opal_listener.service import backup as backup_ops
-from opal_listener.service.config_store import ConfigFileError, config_etag, export_bundle, load_config_dir
 from opal_listener.service.concurrency import require_matching_etag
+from opal_listener.service.config_store import ConfigFileError, config_etag, export_bundle, load_config_dir
 from opal_listener.service.errors import NotFoundError
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.service.nlu.engine import CompileReport
@@ -65,7 +65,13 @@ def opal_backup_download(filename: str = _FILENAME, svc: ListenerService = Depen
 @router.post(
     "/restore/{filename}",
     response_model=OpalImportResult,
-    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_500_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    responses={
+        **OPAL_404_RESPONSE,
+        **OPAL_409_RESPONSE,
+        **OPAL_422_RESPONSE,
+        **OPAL_500_RESPONSE,
+        **OPAL_PRECONDITION_RESPONSES,
+    },
     operation_id="opal_backup_restore",
 )
 def opal_backup_restore(
@@ -158,9 +164,7 @@ def opal_backup_validate_stored(svc: ListenerService = Depends(get_service)) -> 
     responses=OPAL_422_RESPONSE,
     operation_id="opal_backup_validate",
 )
-def opal_backup_validate(
-    bundle: ConfigBundle, svc: ListenerService = Depends(get_service)
-) -> OpalValidationReport:
+def opal_backup_validate(bundle: ConfigBundle, svc: ListenerService = Depends(get_service)) -> OpalValidationReport:
     """Validate a supplied backup/configuration bundle without any side effects."""
     report = svc.validate_bundle(bundle)
     report.sources = {"bundle": report.valid}

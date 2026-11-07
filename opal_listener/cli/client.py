@@ -56,7 +56,12 @@ client_factory: Callable[[str, float], httpx.Client] = _default_factory
 def format_detail(payload: Any) -> str:
     if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
         error = payload["error"]
-        return f"{error.get('code')}: {error.get('message')}" if error.get("code") else str(error.get("message"))
+        head = f"{error.get('code')}: {error.get('message')}" if error.get("code") else str(error.get("message"))
+        details = error.get("details")
+        if isinstance(details, list) and details:
+            lines = [str(item.get("msg", item)) if isinstance(item, dict) else str(item) for item in details]
+            return f"{head}\n" + "\n".join(lines)
+        return head
     detail = payload.get("detail", payload) if isinstance(payload, dict) else payload
     if isinstance(detail, list):
         parts = []

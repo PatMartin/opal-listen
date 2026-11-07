@@ -1,4 +1,4 @@
-"""Pydantic API contracts. Names and fields mirror opal_listen_v1.4.0.yaml; extra models/fields are additive."""
+"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v1.5.0.yaml; extra models/fields are additive."""
 
 from __future__ import annotations
 

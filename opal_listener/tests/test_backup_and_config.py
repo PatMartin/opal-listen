@@ -13,6 +13,11 @@ from opal_listener.service.config_store import load_config_dir
 from opal_listener.tests.conftest import patch_settings
 
 
+def _config_etag(client: TestClient) -> str:
+    """Current whole-configuration ETag (backup export is its If-Match source)."""
+    return client.get("/api/v1/backup/export").headers["etag"]
+
+
 def test_backup_create_list_download_delete(client: TestClient) -> None:
     created = client.post("/api/v1/backup/create")
     assert created.status_code == 201
@@ -30,7 +35,7 @@ def test_restore_returns_previous_state(client: TestClient) -> None:
     filename = client.post("/api/v1/backup/create").json()["filename"]
     client.post("/api/v1/wakewords/", json={"name": "jarvis"})
     assert len(client.get("/api/v1/wakewords/").json()) == 2
-    result = client.post(f"/api/v1/backup/restore/{filename}").json()
+    result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
     assert result["status"] == "restored"
     assert [w["name"] for w in client.get("/api/v1/wakewords/").json()] == ["computer"]
     # the pre-restore safety backup holds the newer state
@@ -40,7 +45,7 @@ def test_restore_returns_previous_state(client: TestClient) -> None:
 
 def test_restore_rejects_corrupt_backup_and_keeps_data(client: TestClient, app_settings) -> None:
     (app_settings.backup_dir / "corrupt.db").write_bytes(b"this is not sqlite" * 100)
-    response = client.post("/api/v1/backup/restore/corrupt.db")
+    response = client.post("/api/v1/backup/restore/corrupt.db", headers={"If-Match": _config_etag(client)})
     assert response.status_code == 422
     assert len(client.get("/api/v1/wakewords/").json()) == 1
 
@@ -54,7 +59,7 @@ def test_restore_with_invalid_config_rolls_back(client: TestClient, app_settings
     conn.commit()
     conn.close()
     client.post("/api/v1/wakewords/", json={"name": "jarvis"})
-    response = client.post(f"/api/v1/backup/restore/{filename}")
+    response = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)})
     assert response.status_code == 422
     assert "invalid configuration" in response.json()["error"]["message"]
     assert {w["name"] for w in client.get("/api/v1/wakewords/").json()} == {"computer", "jarvis"}
@@ -74,7 +79,7 @@ def test_restore_while_listener_running(client: TestClient, fake_provider: type)
     client.post("/api/v1/recognition/start")
     try:
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
-        result = client.post(f"/api/v1/backup/restore/{filename}").json()
+        result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
         assert result["status"] == "restored"
         # the listener is restarted on the restored database and configuration
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
@@ -96,7 +101,7 @@ def test_restore_during_active_recognition(client: TestClient, fake_provider: ty
     client.post("/api/v1/recognition/start")
     try:
         wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
-        result = client.post(f"/api/v1/backup/restore/{filename}").json()
+        result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
         assert result["status"] == "restored"
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
         wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
@@ -152,7 +157,8 @@ def test_db_maintenance_waits_for_active_sessions(tmp_path: Path) -> None:
 def test_backup_filename_traversal_is_rejected(client: TestClient) -> None:
     for name in ("..%2F..%2Fetc%2Fpasswd", "..%2Fopal_listener.db", "x.txt", ".hidden.db"):
         assert client.get(f"/api/v1/backup/download/{name}").status_code in (404, 422), name
-        assert client.post(f"/api/v1/backup/restore/{name}").status_code in (404, 422), name
+        restored = client.post(f"/api/v1/backup/restore/{name}", headers={"If-Match": _config_etag(client)})
+        assert restored.status_code in (404, 422), name
         assert client.delete(f"/api/v1/backup/{name}").status_code in (404, 405, 422), name
 
 
@@ -160,7 +166,7 @@ def test_export_import_roundtrip(client: TestClient) -> None:
     exported = client.get("/api/v1/backup/export").json()
     assert {"wakewords", "stt", "intents", "slots", "profiles", "settings"} <= set(exported)
     client.post("/api/v1/wakewords/", json={"name": "jarvis"})
-    result = client.post("/api/v1/backup/import", json=exported).json()
+    result = client.post("/api/v1/backup/import", json=exported, headers={"If-Match": _config_etag(client)}).json()
     assert result["status"] == "imported" and result["backup_filename"]
     assert [w["name"] for w in client.get("/api/v1/wakewords/").json()] == ["computer"]
     reexported = client.get("/api/v1/backup/export").json()
@@ -171,7 +177,7 @@ def test_export_import_roundtrip(client: TestClient) -> None:
 
 def test_import_from_server_config_dir(client: TestClient) -> None:
     client.post("/api/v1/intents/", json={"name": "extra_intent", "phrases": ["hello there"]})
-    result = client.post("/api/v1/backup/import").json()
+    result = client.post("/api/v1/backup/import", headers={"If-Match": _config_etag(client)}).json()
     assert result["counts"]["intents"] == len(load_config_dir(PACKAGE_DIR / "config").intents)
     assert "extra_intent" not in {i["name"] for i in client.get("/api/v1/intents/").json()}
 
@@ -180,7 +186,7 @@ def test_invalid_import_changes_nothing(client: TestClient) -> None:
     before = client.get("/api/v1/backup/export").json()
     backups_before = len(client.get("/api/v1/backup/list").json())
     bad = {**before, "intents": [{"name": "broken", "phrases": ["turn on {ghost}"]}]}
-    response = client.post("/api/v1/backup/import", json=bad)
+    response = client.post("/api/v1/backup/import", json=bad, headers={"If-Match": _config_etag(client)})
     assert response.status_code == 422
     after = client.get("/api/v1/backup/export").json()
     assert {k: v for k, v in after.items() if k != "exported_at"} == {
@@ -214,4 +220,4 @@ def test_validate_reports_broken_config_dir(tmp_path: Path) -> None:
         report = client.get("/api/v1/backup/validate").json()
         assert report["valid"] is False
         assert report["sources"] == {"config_dir": False, "database": True}
-        assert client.post("/api/v1/backup/import").status_code == 422
+        assert client.post("/api/v1/backup/import", headers={"If-Match": _config_etag(client)}).status_code == 422

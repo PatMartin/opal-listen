@@ -168,7 +168,9 @@ def test_conflicting_alias_rejected(client: TestClient) -> None:
 
 def test_profiles_activate_and_filters(client: TestClient) -> None:
     car = _by_name(client, "/api/v1/profiles/", "car")
-    activated = client.post(f"/api/v1/profiles/{car['id']}/activate").json()
+    activated = client.post(
+        f"/api/v1/profiles/{car['id']}/activate", headers={"If-Match": _etag(client, f"/api/v1/profiles/{car['id']}")}
+    ).json()
     assert activated["is_active"] is True
     active = [p["name"] for p in client.get("/api/v1/profiles/").json() if p["is_active"]]
     assert active == ["car"]
@@ -185,6 +187,7 @@ def test_profiles_activate_and_filters(client: TestClient) -> None:
     created = client.post(
         "/api/v1/profiles/",
         json={"name": "night", "is_active": True, "confidence_thresholds": {"intent": 0.9}},
+        headers={"If-Match": _etag(client, "/api/v1/profiles/")},
     ).json()
     assert created["is_active"] is True
     assert _by_name(client, "/api/v1/profiles/", "car")["is_active"] is False
