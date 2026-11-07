@@ -56,7 +56,7 @@ def test_restore_with_invalid_config_rolls_back(client: TestClient, app_settings
     client.post("/api/v1/wakewords/", json={"name": "jarvis"})
     response = client.post(f"/api/v1/backup/restore/{filename}")
     assert response.status_code == 422
-    assert "invalid configuration" in response.json()["detail"][0]["msg"]
+    assert "invalid configuration" in response.json()["error"]["message"]
     assert {w["name"] for w in client.get("/api/v1/wakewords/").json()} == {"computer", "jarvis"}
     # runtime rolled back to the last-known-good snapshot and stays consistent with the database
     service = client.app.state.listener  # type: ignore[attr-defined]

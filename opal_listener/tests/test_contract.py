@@ -208,6 +208,15 @@ def _variant_ok(want: dict[str, Any], got: dict[str, Any], gen: dict[str, Any]) 
     return True
 
 
+def _constraint_ok(spec: dict[str, Any], got: dict[str, Any], constraint: str) -> bool:
+    """Compare a JSON-Schema constraint (minLength, minimum, ...) between contract and generated
+    prop/param schema. Nullable fields emit the constraint on their same-type anyOf variant."""
+    if got.get(constraint) is not None:
+        return got[constraint] == spec[constraint]
+    want_type = spec.get("type")
+    return any(v.get("type") == want_type and v.get(constraint) == spec[constraint] for v in got.get("anyOf", []))
+
+
 def _operations() -> list[tuple[str, str]]:
     return [(p, m) for p, item in CONTRACT["paths"].items() for m in METHODS if m in item]
 
@@ -230,7 +239,7 @@ def test_operation_matches_contract(generated: dict[str, Any], path: str, method
         assert _compatible(param["schema"], actual["schema"], generated), key
         for constraint in CONSTRAINTS:
             if constraint in param["schema"]:
-                assert actual["schema"].get(constraint) == param["schema"][constraint], (key, constraint)
+                assert _constraint_ok(param["schema"], actual["schema"], constraint), (key, constraint)
     for key, actual in got_params.items():
         if key not in {(p["name"], p["in"]) for p in want.get("parameters", [])}:
             assert not actual.get("required"), f"new parameter {key} must be optional"
@@ -270,7 +279,7 @@ def test_schema_matches_contract(generated: dict[str, Any], name: str) -> None:
         assert _compatible(spec, got_props[prop], generated), f"{name}.{prop} type changed"
         for constraint in CONSTRAINTS:
             if constraint in spec:
-                assert got_props[prop].get(constraint) == spec[constraint], f"{name}.{prop}.{constraint}"
+                assert _constraint_ok(spec, got_props[prop], constraint), f"{name}.{prop}.{constraint}"
     new_props = set(got_props) - set(want_props)
     assert set(want.get("required", [])) == set(got.get("required", [])) - new_props, f"{name}: required differs"
     assert not (set(got.get("required", [])) & new_props), f"{name}: new fields must be optional"

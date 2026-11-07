@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.json_schema import SkipJsonSchema
 
 NO_MATCH = "no_match"
 
@@ -167,8 +168,8 @@ class OpalProfile(_Read):
     enabled_intents: list[str] = []
     enabled_slots: list[str] = []
     model_paths: dict[str, str] = {}
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: SkipJsonSchema[datetime | None] = None
+    updated_at: SkipJsonSchema[datetime | None] = None
 
 
 class OpalProfilePatch(BaseModel):
@@ -190,7 +191,7 @@ class SettingRead(_Read):
     id: int | None = None
     key: str
     value: Any
-    updated_at: datetime | None = None
+    updated_at: SkipJsonSchema[datetime | None] = None
     default: Any | None = None
     is_default: bool | None = None
     pending_restart: bool | None = None
@@ -421,11 +422,15 @@ class HealthCheckResult(BaseModel):
 
 
 class OpalHealthReport(BaseModel):
-    """Kernel OpalHealthReport; status is the only normative member."""
+    """Kernel OpalHealthReport; status is the only normative member.
+
+    checked_at stays in the emitted payload but is hidden from the schema: the kernel types
+    it non-nullable and our optional timestamp would otherwise fail the format check.
+    """
 
     status: CheckStatus
     checks: list[HealthCheckResult] = []
-    checked_at: datetime | None = None
+    checked_at: SkipJsonSchema[datetime | None] = None
 
 
 class AudioDevice(BaseModel):

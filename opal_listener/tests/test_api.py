@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from opal_listener.service.audio.pcm import write_wav_bytes
@@ -109,7 +111,7 @@ def test_invalid_phrase_is_rejected_and_nothing_changes(client: TestClient) -> N
     before = client.get(f"/api/v1/intents/{intent['id']}/phrases").json()
     response = client.post(f"/api/v1/intents/{intent['id']}/phrases", json={"phrase": "turn on {unknown_slot}"})
     assert response.status_code == 422
-    assert "unknown slot" in response.json()["detail"][0]["msg"]
+    assert "unknown slot" in json.dumps(response.json()["error"])
     assert client.get(f"/api/v1/intents/{intent['id']}/phrases").json() == before
 
 
@@ -161,7 +163,7 @@ def test_conflicting_alias_rejected(client: TestClient) -> None:
     bedroom = next(v for v in slot["values"] if v["value"] == "bedroom")
     response = client.post(f"/api/v1/slots/{slot['id']}/values/{bedroom['id']}/aliases", json={"alias": "kitchen"})
     assert response.status_code == 422
-    assert "maps to both" in response.json()["detail"][0]["msg"]
+    assert "maps to both" in json.dumps(response.json()["error"])
 
 
 def test_profiles_activate_and_filters(client: TestClient) -> None:
@@ -272,7 +274,7 @@ def test_model_path_change_is_validated(client: TestClient) -> None:
         "/api/v1/settings/", json={"vosk_model_path": "/does/not/exist"}, headers={"If-Match": etag}
     )
     assert response.status_code == 422
-    assert "model directory not found" in response.json()["detail"][0]["msg"]
+    assert "model directory not found" in json.dumps(response.json()["error"])
     profile = _by_name(client, "/api/v1/profiles/", "default")
     profile_etag = _etag(client, f"/api/v1/profiles/{profile['id']}")
     bad = client.patch(
