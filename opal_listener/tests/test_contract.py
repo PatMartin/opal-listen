@@ -1,14 +1,20 @@
-"""Contract test: the generated OpenAPI must be a compatible superset of opal_listen_v1.4.0.yaml.
+"""Contract test: the generated OpenAPI must be a compatible superset of the service contract.
 
 Every path, method, operationId, parameter, request body, response status and documented response
 header in the contract must exist; every contract schema must exist with the same fields, types,
 constraints and required list. The app's declared info.version must equal the contract's.
 Additive changes (new optional fields, new endpoints, typed responses instead of free-form objects)
 are allowed.
+
+Contracts may mount shared-kernel path items and reference external components through relative
+``$ref``s (``openapi/opal_listen_v*.yaml`` + ``openapi/shared/opal_kernel.yaml``). The loader below
+resolves those into a single in-memory document before any assertion runs.
 """
 
 from __future__ import annotations
 
+import copy
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,9 +24,125 @@ from fastapi.testclient import TestClient
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings
 from opal_listener.main import create_app
 
-CONTRACT = yaml.safe_load((PACKAGE_DIR.parent / "opal_listen_v1.4.0.yaml").read_text(encoding="utf-8"))
+CONTRACT_PATH = PACKAGE_DIR.parent / "opal_listen_v1.4.0.yaml"
 METHODS = ("get", "post", "put", "patch", "delete")
 CONSTRAINTS = ("maxLength", "minLength", "maximum", "minimum", "default", "format", "contentMediaType")
+
+
+def _ref_name(schema: dict[str, Any]) -> str | None:
+    ref = schema.get("$ref")
+    return ref.rsplit("/", 1)[-1] if ref else None
+
+
+def _walk(node: Any) -> Any:
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from _walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _walk(value)
+
+
+def _resolve_contract(path: Path) -> tuple[dict[str, Any], set[str]]:
+    """Load a contract YAML, inlining external ``$ref``s (e.g. the shared OPAL kernel).
+
+    Returns (resolved_contract, kernel_schema_names). A self-contained contract is returned
+    unchanged with an empty kernel set.
+    """
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    external_refs = {
+        node["$ref"] for node in _walk(doc) if isinstance(node.get("$ref"), str) and not node["$ref"].startswith("#")
+    }
+    if not external_refs:
+        return doc, set()
+
+    sources: dict[str, dict[str, Any]] = {}
+    for ref in external_refs:
+        filename = ref.split("#", 1)[0]
+        source_path = (path.parent / filename).resolve()
+        sources[filename] = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+
+    def lookup(ref: str) -> Any:
+        filename, fragment = ref.split("#", 1)
+        node: Any = sources[filename]
+        for part in fragment.strip("/").split("/"):
+            node = node[part]
+        return node
+
+    # Resolve path-level mounts ({"$ref": "...#/components/pathItems/<name>"}).
+    for route, item in doc["paths"].items():
+        if isinstance(item, dict) and "$ref" in item:
+            resolved = copy.deepcopy(lookup(item["$ref"]))
+            resolved.update({k: v for k, v in item.items() if k != "$ref"})
+            doc["paths"][route] = resolved
+
+    # Rewrite remaining external refs to internal ones; components get merged next.
+    for node in _walk(doc):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and not ref.startswith("#"):
+            node["$ref"] = "#" + ref.split("#", 1)[1]
+
+    # Merge every referenced external component into the contract (transitively).
+    kernel_schemas: set[str] = set()
+    pending = True
+    while pending:
+        pending = False
+        refs = {
+            node["$ref"]
+            for node in _walk(doc)
+            if isinstance(node.get("$ref"), str) and node["$ref"].startswith("#/components/")
+        }
+        for ref in refs:
+            section, name = ref.split("/")[2:4]
+            target = doc.setdefault("components", {}).setdefault(section, {})
+            if name in target:
+                continue
+            for source in sources.values():
+                candidate = source.get("components", {}).get(section, {}).get(name)
+                if candidate is not None:
+                    target[name] = copy.deepcopy(candidate)
+                    if section == "schemas":
+                        kernel_schemas.add(name)
+                    pending = True
+                    break
+            else:
+                raise KeyError(f"unresolvable contract reference {ref}")
+
+    def resolve_param(param: Any) -> Any:
+        name = _ref_name(param) if isinstance(param, dict) else None
+        return copy.deepcopy(doc["components"]["parameters"][name]) if name else param
+
+    # Dereference parameter and response entries so op-level assertions see real objects.
+    for item in doc["paths"].values():
+        if not isinstance(item, dict):
+            continue
+        item["parameters"] = [resolve_param(p) for p in item.get("parameters", [])]
+        for method in METHODS:
+            op = item.get(method)
+            if not isinstance(op, dict):
+                continue
+            op["parameters"] = [resolve_param(p) for p in op.get("parameters", [])]
+            for status, response in list(op.get("responses", {}).items()):
+                if isinstance(response, dict) and _ref_name(response):
+                    op["responses"][status] = copy.deepcopy(doc["components"]["responses"][_ref_name(response)])
+
+    # Hoist pathItem-level parameters into each operation (op-level params win).
+    for item in doc["paths"].values():
+        if not isinstance(item, dict):
+            continue
+        shared = item.pop("parameters", [])
+        if not shared:
+            continue
+        for method in METHODS:
+            op = item.get(method)
+            if isinstance(op, dict):
+                own = {(p["name"], p["in"]) for p in op.get("parameters", [])}
+                op["parameters"] = [p for p in shared if (p["name"], p["in"]) not in own] + op.get("parameters", [])
+    return doc, kernel_schemas
+
+
+CONTRACT, KERNEL_SCHEMAS = _resolve_contract(CONTRACT_PATH)
 
 
 def _iter_routes(routes: Any) -> list[Any]:
@@ -36,11 +158,6 @@ def _iter_routes(routes: Any) -> list[Any]:
 def generated(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     settings = AppSettings(data_dir=tmp_path_factory.mktemp("contract"))
     return create_app(settings).openapi()
-
-
-def _ref_name(schema: dict[str, Any]) -> str | None:
-    ref = schema.get("$ref")
-    return ref.rsplit("/", 1)[-1] if ref else None
 
 
 def _variants(schema: dict[str, Any]) -> list[dict[str, Any]]:
@@ -70,10 +187,16 @@ def _variant_ok(want: dict[str, Any], got: dict[str, Any], gen: dict[str, Any]) 
         if want_ref == got_ref:
             return True
         if want_ref and got_ref:  # a subclass with extra fields is compatible
-            want_props = set(CONTRACT["components"]["schemas"][want_ref].get("properties", {}))
+            want_schema = CONTRACT["components"]["schemas"][want_ref]
             got_props = set(gen["components"]["schemas"][got_ref].get("properties", {}))
-            return want_props <= got_props
+            if want_ref in KERNEL_SCHEMAS:
+                # Kernel schemas are open unions: only their required props are normative.
+                return set(want_schema.get("required", [])) <= got_props
+            return set(want_schema.get("properties", {})) <= got_props
         return False
+    if "type" not in want and "anyOf" not in want and "enum" not in want:
+        # Contract prop with no type constraint (e.g. opaque id, native JSON value): anything goes.
+        return True
     if want.get("type") != got.get("type"):
         return False
     if want.get("type") == "array":
@@ -138,8 +261,12 @@ def test_schema_matches_contract(generated: dict[str, Any], name: str) -> None:
     assert name in schemas, f"missing schema {name}"
     got = schemas[name]
     want_props, got_props = want.get("properties", {}), got.get("properties", {})
+    want_required = set(want.get("required", []))
+    open_union = name in KERNEL_SCHEMAS  # kernel schemas declare optional props services may omit
     for prop, spec in want_props.items():
-        assert prop in got_props, f"{name}.{prop} missing"
+        if prop not in got_props:
+            assert open_union and prop not in want_required, f"{name}.{prop} missing"
+            continue
         assert _compatible(spec, got_props[prop], generated), f"{name}.{prop} type changed"
         for constraint in CONSTRAINTS:
             if constraint in spec:
@@ -180,6 +307,22 @@ def test_web_ui_parity_table_matches_api_and_cli(generated: dict[str, Any]) -> N
 def test_info_version_matches_contract(generated: dict[str, Any]) -> None:
     """The FastAPI-declared info.version is the REST contract version; it must track this file."""
     assert generated["info"]["version"] == CONTRACT["info"]["version"]
+
+
+def test_security_metadata_matches_contract(generated: dict[str, Any]) -> None:
+    """When the contract declares global security, the generated spec must declare every contract
+    security scheme and an equivalent requirement — globally or on every contract operation."""
+    want_security = CONTRACT.get("security")
+    if not want_security:
+        return
+    for name in CONTRACT.get("components", {}).get("securitySchemes", {}):
+        assert name in generated.get("components", {}).get("securitySchemes", {}), f"missing security scheme {name}"
+    if generated.get("security") != want_security:
+        for path, method in _operations():
+            op = generated["paths"][path][method]
+            assert op.get("security") == want_security, (
+                f"{method.upper()} {path} lacks the contract security requirement"
+            )
 
 
 # Headers the OPAL standard manages: stamped at runtime and documented on contract responses.
