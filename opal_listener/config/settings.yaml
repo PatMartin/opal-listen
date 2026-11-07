@@ -5,6 +5,7 @@ settings:
   dedup_window_ms: 2000
   auto_capture_failures: true
   event_publication_enabled: false
+  reactions_enabled: false
   filler_words: uh,um,er,please
   slot_fuzzy_min_score: 0.85
   token_fuzzy_min_score: 0.8

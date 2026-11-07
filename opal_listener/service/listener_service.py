@@ -40,6 +40,7 @@ from opal_listener.service.providers.base import (
     Transcript,
 )
 from opal_listener.service.providers.registry import create_provider, create_refiner
+from opal_listener.service.reactions import ReactionRunner
 from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
 from opal_listener.service.settings_registry import SETTINGS, to_storage
@@ -164,6 +165,14 @@ class ListenerService:
         self._refine_worker = RefinementWorker(
             capacity=DEFAULT_QUEUE_CAPACITY, refiner_for=self._refiner_for, finalize=self._finalize_result
         )
+        # File-provisioned intent reactions (config_dir/reactions.yaml). Commands live only in
+        # that file — never in the DB — so the REST API cannot write executable content (RCE
+        # boundary). Executions append to data_dir/reaction_log.jsonl.
+        self._reaction_runner = ReactionRunner(
+            config_path=app_settings.config_dir / "reactions.yaml",
+            log_path=app_settings.data_dir / "reaction_log.jsonl",
+        )
+        self._reaction_runner.start()
         self._results_since_prune = 0
 
     # --- lifecycle ----------------------------------------------------------------------------
@@ -187,6 +196,7 @@ class ListenerService:
             self._shutdown = True
         self.stop()
         self._refine_worker.close()  # drain pending refinements before the publisher closes
+        self._reaction_runner.close()
         self.event_publisher.close()
 
     def _seed_if_empty(self) -> None:
@@ -494,16 +504,18 @@ class ListenerService:
         payload = result.model_dump(mode="json")
 
         self.bus.publish("result", payload)
-        if (
+        actionable = (
             result.matched
             and not result.deduplicated
             and result.source not in DIAGNOSTIC_SOURCES
-            and snapshot.settings["event_publication_enabled"]
-        ):
+        )
+        if actionable and snapshot.settings["event_publication_enabled"]:
             log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
             publish_start = time.monotonic()
             self.event_publisher.publish(INTENT_MATCH_TOPIC, payload)
             self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
+        if actionable and snapshot.settings["reactions_enabled"]:
+            self._reaction_runner.dispatch(payload)
         return result
 
     def test_text(self, text: str, save_log: bool = True) -> s.RecognitionResult:
@@ -629,6 +641,7 @@ class ListenerService:
             "refine_latency_ms": st.refine_latency_ms or 0.0,
             "intent_latency_ms": st.intent_latency_ms or 0.0,
             "publish_latency_ms": st.publish_latency_ms or 0.0,
+            **self._reaction_runner.stats(),
         }
 
     def _publish_status(self) -> None:

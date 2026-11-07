@@ -533,6 +533,9 @@ configuration between machines, it can be exported to and imported from six YAML
 | `settings.yaml` | `settings` | runtime settings |
 
 Every file has `version: 1`. Unknown keys are rejected, and settings must go in the right file.
+A seventh file, `reactions.yaml`, is also read from the config directory but is deliberately **not**
+part of this bundle — it arms shell commands on intent match, stays file-only, and is documented in
+[§4.5](#45-intent-reactions--reactionsyaml).
 
 ```yaml
 # wakewords.yaml
@@ -702,6 +705,55 @@ Configuration is checked for:
 Some issues are **warnings** only, for example `list` slots without values, ambiguous phrases, intents
 without phrases, no enabled wakewords, profiles that reference unknown names, and `text` slots in
 `grammar` mode.
+
+### 4.5 Intent reactions — `reactions.yaml`
+
+`reactions.yaml` arms shell commands that fire when a live recognition matches an intent. Unlike
+every other config file it is **never loaded into the database and never writable through the REST
+API** — commands can only be armed by someone with filesystem access, so API access cannot plant
+shell commands (that would be a remote-code-execution vector). Edits hot-reload on the next match;
+no restart needed.
+
+A reaction fires only when **all** of these hold: the result matched an intent (`no_match` never
+fires), it was not deduplicated (repeat utterances inside `dedup_window_ms` don't re-fire), it came
+from the live microphone (`test text` / `test audio` never fire), and `reactions_enabled` is `true`:
+
+```bash
+opal listen settings set reactions_enabled true
+```
+
+```yaml
+reactions:
+  - name: kitchen_lights
+    enabled: true
+    conditions:                                  # all must pass; empty = any matched intent
+      - {path: intent_name,       operator: eq,  value: light_turn_on}
+      - {path: slot_values.room_name, operator: eq,  value: kitchen}
+      - {path: intent_confidence, operator: gte, value: 0.8}
+    actions:
+      - type: command
+        argv: ["/opt/opal/hue.sh", "kitchen", "on"]   # executed directly — no shell
+        timeout_s: 15                                 # default 15, range 1..3600
+        cwd: "/opt/opal"                              # optional working directory
+        env: {HUE_BRIDGE: "192.168.1.10"}             # optional, overlays process env
+```
+
+- **Condition paths** resolve over the result payload: `intent_name`, `wakeword`, `transcript`,
+  `slot_values.<name>`, `intent_confidence`, `stt_confidence`, `source`, `session_id`, …
+- **Operators**: `eq` `ne` `gt` `gte` `lt` `lte` `in` `not_in` `exists` `contains` (the same grammar
+  opal-event rules use, so reactions port cleanly to bus rules later).
+- **stdin payload**: each command receives the full result as JSON on stdin — the same contract as
+  opal-event's `stdin: event_json`. Read it with `jq -r '.intent_name'` rather than templating slot
+  values into the command line: a `text`-type slot is free-form speech and could otherwise smuggle
+  shell syntax.
+- **Execution** is serial on a background worker — a slow command never blocks recognition. A full
+  queue (64 pending) drops the job and bumps `reactions_dropped`.
+- **Observability**: every execution appends one JSON line to `<data_dir>/reaction_log.jsonl`
+  (`{ts, reactions, argv, exit_code, duration_ms, stderr_tail}`), and `reactions_fired` /
+  `reactions_failed` / `reactions_dropped` / `reaction_queue_depth` appear in
+  `opal listen pipeline status` metrics.
+
+A malformed file logs a warning and yields an empty reaction set — it never stops the service.
 
 ---
 

@@ -63,6 +63,8 @@ SETTINGS: dict[str, SettingDef] = {
         SettingDef("auto_capture_failures", bool, True, "settings", "Store no_match utterances as failures"),
         SettingDef("event_publication_enabled", bool, False, "settings",
                    "Publish matched intents to the external event bus (transport: event_transport)"),
+        SettingDef("reactions_enabled", bool, False, "settings",
+                   "Run file-provisioned intent reactions (config_dir/reactions.yaml) on match"),
         SettingDef("filler_words", str, "uh,um,er,please", "settings", "Comma-separated words dropped"),
         SettingDef("slot_fuzzy_min_score", float, 0.85, "settings", "Minimum fuzzy score for slot values",
                    minimum=0.0, maximum=1.0),
