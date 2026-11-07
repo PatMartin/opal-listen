@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import console, done, print_json, render, render_kv, state
+from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state
 from opal_listener.models.config_schemas import ConfigBundle
 from opal_listener.service.config_store import ConfigFileError, bundle_to_files, load_config_dir
 
@@ -51,9 +51,9 @@ def config_validate(
         print_json(report)
     else:
         for error in report["errors"]:
-            console.print(f"[red]error[/red]   {error}")
+            console.print(f"[red]error[/red]   {escape(error)}")
         for warning in report["warnings"]:
-            console.print(f"[yellow]warning[/yellow] {warning}")
+            console.print(f"[yellow]warning[/yellow] {escape(warning)}")
         console.print(
             "[green]configuration is valid[/green]" if report["valid"] else "[red]configuration is invalid[/red]"
         )
@@ -149,7 +149,7 @@ def config_import(
     done(ctx, f"imported configuration (backup: {result['backup_filename']})")
     render_kv(ctx, result["counts"], "Imported")
     for warning in result["warnings"]:
-        console.print(f"[yellow]warning[/yellow] {warning}")
+        console.print(f"[yellow]warning[/yellow] {escape(warning)}")
 
 
 STATUS_ICON = {"ok": "[green]✓[/green]", "warning": "[yellow]![/yellow]", "error": "[red]✗[/red]"}
@@ -163,7 +163,7 @@ def system_doctor(ctx: typer.Context) -> None:
         print_json(report)
     else:
         for check in report["checks"]:
-            console.print(f"{STATUS_ICON[check['status']]} {check['name']:<16} {check['detail']}")
+            console.print(f"{STATUS_ICON[check['status']]} {escape(check['name']):<16} {escape(str(check['detail']))}")
         console.print(f"overall: {STATUS_ICON[report['status']]} {report['status']}")
     if report["status"] == "error":
         raise CliError("health check failed")

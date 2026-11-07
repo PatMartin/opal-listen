@@ -9,7 +9,9 @@ from typing import Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
+from rich.text import Text
 
 from opal_listener.cli.client import ApiClient
 
@@ -45,14 +47,16 @@ def print_json(data: Any) -> None:
     console.print_json(json.dumps(data, default=str))
 
 
-def _cell(value: Any) -> str:
+def _cell(value: Any) -> Text:
+    """Render a value as plain Text: data must never be parsed as Rich markup
+    (phrase templates like 'turn on [the] {room}' would lose '[the]')."""
     if value is None:
-        return "-"
+        return Text("-")
     if isinstance(value, float):
-        return f"{value:.3f}".rstrip("0").rstrip(".")
+        return Text(f"{value:.3f}".rstrip("0").rstrip("."))
     if isinstance(value, dict | list):
-        return json.dumps(value)
-    return str(value)
+        return Text(json.dumps(value))
+    return Text(str(value))
 
 
 def render(ctx: typer.Context, data: Any, columns: Sequence[str] | None = None, title: str | None = None) -> None:
@@ -78,15 +82,16 @@ def render_kv(ctx: typer.Context, data: dict[str, Any], title: str | None = None
     table.add_column("key", style="bold")
     table.add_column("value")
     for key, value in data.items():
-        table.add_row(key, _cell(value))
+        table.add_row(Text(str(key)), _cell(value))
     console.print(table)
 
 
 def done(ctx: typer.Context, message: str, data: Any = None) -> None:
+    """Success line. `message` is treated as plain text (it usually embeds user data)."""
     if state(ctx).json_output:
         print_json(data if data is not None else {"status": "ok", "message": message})
     else:
-        console.print(f"[green]✓[/green] {message}")
+        console.print(f"[green]✓[/green] {escape(message)}")
 
 
 RESULT_FIELDS = (

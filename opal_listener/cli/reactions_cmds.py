@@ -13,23 +13,24 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
 import typer
 import yaml
 from pydantic import ValidationError
+from rich.text import Text
 
 from opal_listener.app_settings import AppSettings
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import console, done, print_json, render, render_kv, state
+from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state
 from opal_listener.service.reactions import (
     OPERATORS,
     ReactionCondition,
     ReactionsFile,
     check_condition,
+    record_outcome,
+    run_action,
 )
 
 reactions_app = typer.Typer(
@@ -332,66 +333,46 @@ def reactions_test(
         if state(ctx).json_output:
             print_json([])
         else:
-            console.print(f"[dim]no reactions armed in {config_path()}[/dim]")
+            console.print(f"[dim]no reactions armed in {escape(str(config_path()))}[/dim]")
         return
-    if state(ctx).json_output:
-        report = [
-            {"name": r.get("name"), "enabled": r.get("enabled", True),
-             "match": bool(r.get("enabled", True))
-             and all(check_condition(c, result_payload) for c in _conds_of(r)),
-             "failed_conditions": [c.model_dump() for c in _conds_of(r) if not check_condition(c, result_payload)]}
-            for r in reactions
-        ]
-        print_json(report)
-    else:
-        for r in reactions:
-            if not r.get("enabled", True):
-                console.print(f"[dim]-[/dim] {r.get('name')} — disabled")
-                continue
-            failed = [c for c in _conds_of(r) if not check_condition(c, result_payload)]
-            if failed:
-                why = ", ".join(f"{c.path} {c.operator} {c.value!r}" for c in failed)
-                console.print(f"[red]✗[/red] {r.get('name')} — no match ({why})")
-            else:
-                console.print(f"[green]✓[/green] {r.get('name')} — would fire "
-                              f"{len(r.get('actions') or [])} action(s)")
-
+    report = [
+        {"name": r.get("name"), "enabled": r.get("enabled", True),
+         "match": bool(r.get("enabled", True)) and all(check_condition(c, result_payload) for c in _conds_of(r)),
+         "failed_conditions": [c.model_dump() for c in _conds_of(r) if not check_condition(c, result_payload)]}
+        for r in reactions
+    ]
+    executions: list[dict[str, Any]] = []
     if execute:
         for r in reactions:
-            if not r.get("enabled", True):
+            if not next(e["match"] for e in report if e["name"] == r.get("name")):
                 continue
-            if not all(check_condition(c, result_payload) for c in _conds_of(r)):
-                continue
-            for action in r.get("actions") or []:
-                _run_action(r.get("name"), action, result_payload)
+            for action in ReactionsFile.model_validate({"reactions": [r]}).reactions[0].actions:
+                executions.append(run_action(action, result_payload, str(r.get("name")), log_path(), origin="cli"))
+
+    if state(ctx).json_output:
+        print_json({"reactions": report, "executions": executions} if execute else report)
+        return
+    for entry in report:
+        name = escape(str(entry["name"]))
+        if not entry["enabled"]:
+            console.print(f"[dim]-[/dim] {name} — disabled")
+        elif entry["failed_conditions"]:
+            why = ", ".join(f"{c['path']} {c['operator']} {c['value']!r}" for c in entry["failed_conditions"])
+            console.print(f"[red]✗[/red] {name} — no match ({escape(why)})")
+        else:
+            actions = len(_find(reactions, entry["name"]).get("actions") or [])
+            console.print(f"[green]✓[/green] {name} — would fire {actions} action(s)")
+    for record in executions:
+        line = f"  {record['reactions']}: {' '.join(record['argv'])} -> {record_outcome(record)} ({record['duration_ms']} ms)"
+        if record.get("stderr_tail"):
+            line += f"\n    stderr: {record['stderr_tail'].strip()[-300:]}"
+        console.print(Text(line))
+    if executions:
+        console.print(f"[dim]journaled to {escape(str(log_path()))} (origin: cli)[/dim]")
 
 
 def _conds_of(reaction: dict[str, Any]) -> list[ReactionCondition]:
     return [ReactionCondition.model_validate(c) for c in reaction.get("conditions") or []]
-
-
-def _run_action(name: str, action: dict[str, Any], payload: dict[str, Any]) -> None:
-    argv = action.get("argv") or []
-    started = time.monotonic()
-    try:
-        done_proc = subprocess.run(
-            argv,
-            input=json.dumps(payload, default=str),
-            capture_output=True,
-            text=True,
-            timeout=float(action.get("timeout_s") or 15),
-            cwd=action.get("cwd"),
-            env={**os.environ, **(action.get("env") or {})},
-        )
-        elapsed = round((time.monotonic() - started) * 1000)
-        stderr = (done_proc.stderr or "").strip()[-300:]
-        status = "ok" if done_proc.returncode == 0 else f"exit {done_proc.returncode}"
-        console.print(f"  [{name}] {' '.join(argv)} -> {status} ({elapsed} ms)"
-                      + (f"\n    stderr: {stderr}" if stderr else ""))
-    except subprocess.TimeoutExpired:
-        console.print(f"  [{name}] {' '.join(argv)} -> timeout")
-    except OSError as exc:
-        console.print(f"  [{name}] {' '.join(argv)} -> {exc}")
 
 
 @reactions_app.command("log")
@@ -408,7 +389,7 @@ def reactions_log(
         if state(ctx).json_output:
             print_json([])
         else:
-            console.print(f"[dim]no reaction executions recorded yet ({path})[/dim]")
+            console.print(f"[dim]no reaction executions recorded yet ({escape(str(path))})[/dim]")
         return
     records = [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
@@ -417,8 +398,9 @@ def reactions_log(
         print_json(records)
         return
     for r in records:
-        console.print(
-            f"{r.get('ts')}  {r.get('reactions')}  {' '.join(r.get('argv') or [])} -> "
+        console.print(Text(
+            f"{r.get('ts')}  {r.get('origin', 'service'):<7}  {r.get('reactions')}  "
+            f"{' '.join(r.get('argv') or [])} -> "
             f"{r.get('error') or 'exit ' + str(r.get('exit_code'))}  ({r.get('duration_ms')} ms)"
-        )
-    console.print(f"[dim]{len(records)} execution(s) — full log: {path}[/dim]")
+        ))
+    console.print(f"[dim]{len(records)} execution(s) — full log: {escape(str(path))}[/dim]")

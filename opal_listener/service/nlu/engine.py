@@ -149,6 +149,31 @@ def compile_slots(slots: Iterable[SlotDef], report: CompileReport) -> dict[str, 
     return compiled
 
 
+def _slots_overlap(a: str, b: str, slots: dict[str, _CompiledSlot]) -> bool:
+    """True if some utterance could fill both slot positions: same slot, same open type
+    (number/text), or list slots sharing at least one value/alias surface."""
+    if a == b:
+        return True
+    sa, sb = slots.get(a), slots.get(b)
+    if sa is None or sb is None or sa.slot_type != sb.slot_type:
+        return False
+    if sa.slot_type != "list":
+        return True
+    return bool({s for s, _ in sa.surfaces} & {s for s, _ in sb.surfaces})
+
+
+def _overlaps(x: Variant, y: Variant, slots: dict[str, _CompiledSlot]) -> bool:
+    """Two same-length variants can match the same transcript (exact-token check; the
+    fuzzy matcher can still tie on near-misses, so this is a lower bound)."""
+    for tx, ty in zip(x, y, strict=True):
+        if isinstance(tx, SlotRef) and isinstance(ty, SlotRef):
+            if not _slots_overlap(tx.name, ty.name, slots):
+                return False
+        elif tx != ty:
+            return False
+    return True
+
+
 def _regex_for(variant: Variant, slots: dict[str, _CompiledSlot]) -> re.Pattern[str]:
     parts: list[str] = []
     for token in variant:
@@ -193,7 +218,7 @@ class IntentEngine:
         compiled_slots = compile_slots(slots, report)
         templates: list[_Template] = []
         thresholds: dict[str, float] = {}
-        seen_variants: dict[Variant, str] = {}
+        seen_variants: dict[int, list[tuple[Variant, str]]] = {}  # by length -> (variant, intent)
         for intent in intents:
             where = f"intent '{intent.name}'"
             if not NAME_PATTERN.match(intent.name):
@@ -213,18 +238,24 @@ class IntentEngine:
                 except TemplateError as exc:
                     report.errors.append(f"{where} phrase '{phrase}': {exc}")
                     continue
+                clashes: list[str] = []  # one warning per (phrase, other intent), not per variant
                 for variant in variants:
                     names = tuple(t.name for t in variant if isinstance(t, SlotRef))
                     problem = cls._check_variant(names, compiled_slots)
                     if problem:
                         report.errors.append(f"{where} phrase '{phrase}': {problem}")
                         break
-                    owner = seen_variants.setdefault(variant, intent.name)
-                    if owner != intent.name:
-                        report.warnings.append(f"{where} phrase '{phrase}' is ambiguous with intent '{owner}'")
+                    bucket = seen_variants.setdefault(len(variant), [])
+                    for other, owner in bucket:
+                        if owner != intent.name and owner not in clashes and _overlaps(
+                            variant, other, compiled_slots
+                        ):
+                            clashes.append(owner)
+                    bucket.append((variant, intent.name))
                     has_text = any(compiled_slots[n].slot_type == "text" for n in names)
                     regex = _regex_for(variant, compiled_slots) if has_text else None
                     templates.append(_Template(intent.name, phrase, variant, names, regex))
+                report.warnings.extend(f"{where} phrase '{phrase}' is ambiguous with intent '{o}'" for o in clashes)
         return cls(templates, compiled_slots, thresholds, options or EngineOptions()), report
 
     @staticmethod

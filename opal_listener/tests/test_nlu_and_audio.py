@@ -148,6 +148,40 @@ def test_compile_errors(intents: list, slots: list, error: str) -> None:
     assert any(error in e for e in report.errors), report.errors
 
 
+def _ambiguity(intents: list[IntentDef], slots: list[SlotDef]) -> list[str]:
+    _, report = IntentEngine.compile(intents, slots)
+    return [w for w in report.warnings if "ambiguous" in w]
+
+
+def test_ambiguity_warned_once_per_phrase_not_per_variant() -> None:
+    """Regression: '[the]' expands to two variants, each used to emit its own copy."""
+    warnings = _ambiguity(INTENTS + [IntentDef("lights_on", ["turn on [the] {room_name} light"])], SLOTS)
+    assert warnings == ["intent 'lights_on' phrase 'turn on [the] {room_name} light' is ambiguous with intent "
+                        "'light_turn_on'"]
+
+
+def test_ambiguity_detected_across_list_slots_with_shared_values() -> None:
+    """Regression: '{room}' vs '{room_name}' collide when the slots share a surface ('lounge')."""
+    room = SlotDef("room", "list", [("living_room", ["lounge"]), ("garage", [])])
+    warnings = _ambiguity(INTENTS + [IntentDef("lights_on", ["turn on [the] {room} light"])], SLOTS + [room])
+    assert len(warnings) == 1 and "'lights_on'" in warnings[0] and "'light_turn_on'" in warnings[0]
+
+
+def test_disjoint_list_slots_are_not_ambiguous() -> None:
+    garage = SlotDef("door", "list", [("garage", []), ("front", [])])
+    assert _ambiguity(INTENTS + [IntentDef("door_open", ["turn on [the] {door} light"])], SLOTS + [garage]) == []
+
+
+def test_seeded_catalog_compiles_without_warnings() -> None:
+    from opal_listener.app_settings import PACKAGE_DIR
+    from opal_listener.service.config_store import load_config_dir
+    from opal_listener.service.runtime_config import compile_bundle
+
+    report, _ = compile_bundle(load_config_dir(PACKAGE_DIR / "config"))
+    assert (report.errors, report.warnings) == ([], [])
+
+
+
 def test_grammar_keeps_literal_runs_together(engine: IntentEngine) -> None:
     phrases = engine.grammar_phrases()
     assert "set the temperature to" in phrases

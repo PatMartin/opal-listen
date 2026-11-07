@@ -666,7 +666,7 @@ def _test_listen_debug(t: CliRestTest) -> str:
 
 @step("logs list", "list_logs", requires=("test text",))
 def _logs_list(t: CliRestTest) -> str:
-    logs = t.ok("logs", "list", "--limit", "5")
+    logs = t.ok("logs", "list", "--limit", "5")["items"]
     expect(len(logs) >= 1, "no recognition logs")
     t.state["log_id"] = logs[0]["id"]
     return f"latest log id {logs[0]['id']}: {logs[0]['normalized_transcript']!r}"
@@ -702,7 +702,7 @@ def _perf_summary(t: CliRestTest) -> str:
 
 @step("perf history", "get_performance_history", requires=("test text",))
 def _perf_history(t: CliRestTest) -> str:
-    history = t.ok("perf", "history", "--limit", "5")
+    history = t.ok("perf", "history", "--limit", "5")["items"]
     expect(len(history) >= 1, "empty history")
     return f"{len(history)} row(s)"
 

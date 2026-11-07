@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import errno
+import os
+import sys
+
 import typer
 
 from opal_listener.cli.catalog_cmds import intents_app, profiles_app, settings_app, slots_app, wakewords_app
@@ -139,5 +143,27 @@ def listen_callback(
     )
 
 
+def _is_closed_pipe(exc: OSError) -> bool:
+    """The reader of our stdout went away (`opal ... | head`). POSIX reports EPIPE; Windows
+    reports EINVAL on the flush to a closed pipe. Only count it when stdout is not a TTY so a
+    genuine EINVAL elsewhere still surfaces."""
+    if isinstance(exc, BrokenPipeError) or exc.errno == errno.EPIPE:
+        return True
+    return exc.errno == errno.EINVAL and not sys.stdout.isatty()
+
+
+def run() -> None:
+    """Console-script entry point: `app()` plus quiet exit when piped into `head` & co."""
+    try:
+        app(prog_name="opal")
+    except OSError as exc:
+        if not _is_closed_pipe(exc):
+            raise
+        # Point stdout at devnull so the interpreter's final flush doesn't raise again.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    app()
+    run()

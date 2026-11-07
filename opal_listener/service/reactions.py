@@ -214,43 +214,60 @@ class ReactionRunner:
                 self._execute(action, payload, names)
 
     def _execute(self, action: ReactionAction, payload: dict[str, Any], names: str) -> None:
-        started = time.monotonic()
-        record: dict[str, Any] = {
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "reactions": names,
-            "argv": action.argv,
-        }
-        try:
-            completed = subprocess.run(
-                action.argv,
-                input=json.dumps(payload, default=str),
-                capture_output=True,
-                text=True,
-                timeout=action.timeout_s,
-                cwd=action.cwd,
-                env={**os.environ, **(action.env or {})},
-            )
-            record.update(exit_code=completed.returncode, stderr_tail=(completed.stderr or "")[-500:])
-            failed = completed.returncode != 0
-        except subprocess.TimeoutExpired:
-            record.update(exit_code=None, error=f"timeout after {action.timeout_s}s")
-            failed = True
-        except OSError as exc:
-            record.update(exit_code=None, error=str(exc))
-            failed = True
-        record["duration_ms"] = round((time.monotonic() - started) * 1000, 2)
-        try:
-            self._log_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._log_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, default=str) + "\n")
-        except OSError:
-            log.warning("cannot write reaction log %s", self._log_path, exc_info=True)
+        record = run_action(action, payload, names, self._log_path, origin="service")
         with self._stat_lock:
-            if failed:
+            if record["failed"]:
                 self._stats.failed += 1
-                detail = record.get("error") or f"exit {record['exit_code']}"
-                self._stats.last_error = f"{action.argv[0]}: {detail}"
+                self._stats.last_error = f"{action.argv[0]}: {record_outcome(record)}"
             else:
                 self._stats.fired += 1
-        log.info("reaction executed %s -> %s", names, record.get("error") or f"exit {record['exit_code']}")
+        log.info("reaction executed %s -> %s", names, record_outcome(record))
+
+
+def record_outcome(record: dict[str, Any]) -> str:
+    return record.get("error") or f"exit {record['exit_code']}"
+
+
+def run_action(
+    action: ReactionAction, payload: dict[str, Any], names: str, log_path: Path, origin: str
+) -> dict[str, Any]:
+    """Run one command action with the payload as JSON on stdin and journal the outcome.
+
+    Shared by the service worker (origin="service") and `opal listen reactions test
+    --execute` (origin="cli"), so both paths execute identically and land in the
+    same journal; `origin` tells them apart."""
+    started = time.monotonic()
+    record: dict[str, Any] = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "origin": origin,
+        "reactions": names,
+        "argv": action.argv,
+    }
+    try:
+        completed = subprocess.run(
+            action.argv,
+            input=json.dumps(payload, default=str),
+            capture_output=True,
+            text=True,
+            timeout=action.timeout_s,
+            cwd=action.cwd,
+            env={**os.environ, **(action.env or {})},
+        )
+        record.update(exit_code=completed.returncode, stderr_tail=(completed.stderr or "")[-500:])
+        failed = completed.returncode != 0
+    except subprocess.TimeoutExpired:
+        record.update(exit_code=None, error=f"timeout after {action.timeout_s}s")
+        failed = True
+    except OSError as exc:
+        record.update(exit_code=None, error=str(exc))
+        failed = True
+    record["duration_ms"] = round((time.monotonic() - started) * 1000, 2)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+    except OSError:
+        log.warning("cannot write reaction log %s", log_path, exc_info=True)
+    record["failed"] = failed
+    return record
 

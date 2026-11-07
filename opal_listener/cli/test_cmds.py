@@ -9,7 +9,7 @@ from typing import Any
 import typer
 
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import console, done, print_json, render, render_kv, state, summarize_result
+from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state, summarize_result
 
 RECOGNITION = "/api/v1/recognition"
 
@@ -101,11 +101,11 @@ def _stream(ctx: typer.Context, debug: bool, count: int, duration: float, start:
             elif event == "audio_level":
                 console.print(f"[dim]{data['state']:>9} {_level_bar(data['dbfs'])} {data['dbfs']:6.1f} dBFS[/dim]")
             elif event == "partial":
-                console.print(f"[cyan]… {data['text']}[/cyan]")
+                console.print(f"[cyan]… {escape(str(data['text']))}[/cyan]")
             elif event == "status":
-                console.print(f"[magenta]status: {data.get('state')} {data.get('last_error') or ''}[/magenta]")
+                console.print(f"[magenta]status: {escape(str(data.get('state')))} {escape(str(data.get('last_error') or ''))}[/magenta]")
             else:
-                console.print(f"[bold]{event}[/bold] {data}")
+                console.print(f"[bold]{escape(str(event))}[/bold] {escape(str(data))}")
     except KeyboardInterrupt:
         pass
     finally:

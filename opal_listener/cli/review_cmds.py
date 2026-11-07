@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from opal_listener.cli.catalog_cmds import _changes, parse_pairs
-from opal_listener.cli.output import console, done, render, render_kv, state
+from opal_listener.cli.output import console, done, print_json, render, render_kv, state
 
 FAILED = "/api/v1/failed_utterances/"
 REGRESSION = "/api/v1/regression/"
@@ -175,6 +177,18 @@ def regression_remove(ctx: typer.Context, test_id: int) -> None:
     done(ctx, f"regression test {test_id} removed")
 
 
+def _render_page(ctx: typer.Context, page: dict[str, Any], columns: tuple[str, ...], title: str) -> None:
+    """Cursor page: --json prints the REST envelope (items, next_cursor, has_more) so scripts
+    can paginate; humans get the table plus an unwrapped, copy-pasteable cursor hint."""
+    if state(ctx).json_output:
+        print_json(page)
+        return
+    render(ctx, page["items"], columns, title)
+    if page["has_more"]:
+        console.print("[dim]more results: pass --cursor[/dim]")
+        console.print(page["next_cursor"], soft_wrap=True, markup=False, highlight=False)
+
+
 # --- logs ------------------------------------------------------------------------------------
 
 
@@ -189,9 +203,7 @@ def logs_list(
     """Recent recognition logs (newest first)."""
     params = {"limit": limit, "cursor": cursor, "intent_name": intent, "matched": matched}
     page = state(ctx).api.get(LOGS, params={k: v for k, v in params.items() if v is not None})
-    render(ctx, page["items"], LOG_COLUMNS, "Recognition logs")
-    if page["has_more"] and not state(ctx).json_output:
-        console.print(f"[dim]more results: pass --cursor {page['next_cursor']}[/dim]")
+    _render_page(ctx, page, LOG_COLUMNS, "Recognition logs")
 
 
 @logs_app.command("get")
@@ -241,6 +253,4 @@ def perf_history(
     """Per-recognition performance rows (newest first)."""
     params = {"limit": limit, "cursor": cursor}
     page = state(ctx).api.get(f"{PERF}/history", params={k: v for k, v in params.items() if v is not None})
-    render(ctx, page["items"], PERF_COLUMNS, "Performance history")
-    if page["has_more"] and not state(ctx).json_output:
-        console.print(f"[dim]more results: pass --cursor {page['next_cursor']}[/dim]")
+    _render_page(ctx, page, PERF_COLUMNS, "Performance history")

@@ -1,3 +1,3 @@
-from opal_listener.cli.main import app
+from opal_listener.cli.main import run
 
-app(prog_name="opal")
+run()

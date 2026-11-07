@@ -205,13 +205,40 @@ def test_logs_and_perf_commands(cli: CliHarness) -> None:
     cli("test", "text", "what time is it")
     cli("test", "text", "open the door")
     assert cli.json("logs", "count") == {"total": 2, "matched": 1, "no_match": 1}
-    logs = cli.json("logs", "list", "--no-match")
+    page = cli.json("logs", "list", "--no-match")
+    assert set(page) == {"items", "next_cursor", "has_more"}  # --json mirrors the REST page envelope
+    logs = page["items"]
     assert logs[0]["normalized_transcript"] == "open the door"
     assert cli.json("logs", "get", str(logs[0]["id"]))["matched"] is False
     assert cli.json("perf", "last")["matched"] is False
     assert cli.json("perf", "summary")["count"] == 2
     assert "Latency" in cli("perf", "summary").output
-    assert len(cli.json("perf", "history")) == 2
+    assert len(cli.json("perf", "history")["items"]) == 2
+
+
+def test_json_pagination_lets_scripts_walk_every_page(cli: CliHarness) -> None:
+    """Regression: --json used to print only `items`, dropping next_cursor/has_more."""
+    for i in range(5):
+        cli("test", "text", f"what time is it {i}")
+    seen: list[int] = []
+    args = ["logs", "list", "--limit", "2"]
+    while True:
+        page = cli.json(*args)
+        seen += [row["id"] for row in page["items"]]
+        if not page["has_more"]:
+            break
+        args = ["logs", "list", "--limit", "2", "--cursor", page["next_cursor"]]
+    assert len(seen) == 5 and len(set(seen)) == 5
+    history = cli.json("perf", "history", "--limit", "2")
+    assert history["has_more"] is True and history["next_cursor"]
+
+
+def test_cursor_hint_is_one_unwrapped_line(cli: CliHarness) -> None:
+    for i in range(3):
+        cli("test", "text", f"what time is it {i}")
+    page = cli.json("logs", "list", "--limit", "1")
+    out = cli("logs", "list", "--limit", "1").output
+    assert page["next_cursor"] in out.splitlines()  # whole token on its own line -> copy-pasteable
 
 
 def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
