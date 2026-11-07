@@ -167,8 +167,12 @@ def test_log_reads_execution_records(cli: CliHarness, cfg: tuple[Path, Path]) ->
     assert out1[0]["reactions"] == "r2"
 
 
-def test_log_missing_file_errors(cli: CliHarness, cfg: tuple[Path, Path]) -> None:
-    assert cli("reactions", "log").exit_code != 0
+def test_log_missing_file_is_graceful(cli: CliHarness, cfg: tuple[Path, Path]) -> None:
+    """An absent journal is a normal state (nothing fired yet), not an error."""
+    result = cli("reactions", "log")
+    assert result.exit_code == 0
+    assert "no reaction executions" in result.output
+    assert cli.json("reactions", "log") == []
 
 
 def test_path_shows_managed_files(cli: CliHarness, cfg: tuple[Path, Path]) -> None:

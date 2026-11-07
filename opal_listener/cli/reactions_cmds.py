@@ -328,6 +328,12 @@ def reactions_test(
         raise CliError("payload must be a JSON/YAML object with result fields (intent_name, slot_values, ...)")
 
     _, reactions = _load_raw()
+    if not reactions:
+        if state(ctx).json_output:
+            print_json([])
+        else:
+            console.print(f"[dim]no reactions armed in {config_path()}[/dim]")
+        return
     if state(ctx).json_output:
         report = [
             {"name": r.get("name"), "enabled": r.get("enabled", True),
@@ -393,10 +399,17 @@ def reactions_log(
     ctx: typer.Context,
     limit: int = typer.Option(20, "--limit", min=1, help="Show the last N executions"),
 ) -> None:
-    """Show recent executions from <data_dir>/reaction_log.jsonl."""
+    """Show recent executions from <data_dir>/reaction_log.jsonl.
+
+    An absent journal is a normal state (nothing has fired yet), not an error —
+    matches how `logs list` renders an empty table."""
     path = log_path()
     if not path.is_file():
-        raise CliError(f"no reaction executions recorded yet ({path} does not exist)")
+        if state(ctx).json_output:
+            print_json([])
+        else:
+            console.print(f"[dim]no reaction executions recorded yet ({path})[/dim]")
+        return
     records = [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ][-limit:]

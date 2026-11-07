@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Sequence
 from typing import Any
 
@@ -11,6 +12,14 @@ from rich.console import Console
 from rich.table import Table
 
 from opal_listener.cli.client import ApiClient
+
+# Windows consoles default to a narrow code page (e.g. cp1252): printing glyphs like ✓/✗
+# raised UnicodeEncodeError inside Rich's legacy renderer. UTF-8 + replace keeps the
+# glyphs where the terminal supports them and degrades to '?' instead of crashing.
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
 
 console = Console()
 err_console = Console(stderr=True)

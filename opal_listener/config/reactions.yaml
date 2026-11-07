@@ -1,50 +1,5 @@
-# Intent reactions — shell commands fired when a live recognition matches.
-#
-# Reactions run ONLY when all of these hold:
-#   * the result matched an intent (no_match never fires),
-#   * it was not deduplicated (repeat utterances inside dedup_window_ms don't re-fire),
-#   * it came from the live microphone (test text / test audio never fire),
-#   * the `reactions_enabled` setting is true (`opal listen settings set reactions_enabled true`).
-#
-# This file is the ONLY place commands can be armed — it is never loaded into the
-# database and never writable through the REST API, so API access cannot plant shell
-# commands. Edits hot-reload on the next match (no restart needed).
-#
-# Every condition must pass (empty conditions = any matched intent). Operators:
-#   eq ne gt gte lt lte in not_in exists contains
-# Paths resolve over the recognition result: intent_name, wakeword, transcript,
-# slot_values.<name>, intent_confidence, stt_confidence, source, session_id ...
-#
-# Each action receives the full result JSON on stdin (same contract as opal-event's
-# `stdin: event_json`), e.g. `jq -r '.intent_name'`. argv is executed directly —
-# no shell is involved, so transcript text can't inject shell syntax.
-#
-# Executions append one JSON line to <data_dir>/reaction_log.jsonl and bump the
-# reactions_* counters in `opal listen pipeline status`.
-#
-# Example (all commented out — safe to ship):
-#
-# reactions:
-#   - name: say_the_time
-#     enabled: true
-#     conditions:
-#       - {path: intent_name, operator: eq, value: get_time}
-#     actions:
-#       - type: command
-#         argv: ["sh", "/opt/opal/speak_time.sh"]   # script reads stdin JSON
-#         timeout_s: 10
-#
-#   - name: kitchen_lights
-#     enabled: true
-#     conditions:
-#       - {path: intent_name, operator: eq, value: lights_on}
-#       - {path: slot_values.room, operator: eq, value: kitchen}
-#       - {path: intent_confidence, operator: gte, value: 0.8}
-#     actions:
-#       - type: command
-#         argv: ["/opt/opal/hue.sh", "kitchen", "on"]
-#         timeout_s: 15
-#         cwd: "/opt/opal"                 # optional
-#         env: {HUE_BRIDGE: "192.168.1.10"} # optional, overlays process env
-
+# Managed by `opal listen reactions` — edits are safe but comments are not preserved.
+# Reactions fire only on live-mic matches while `reactions_enabled` is true:
+#   opal listen settings set reactions_enabled true
+# Schema: docs/USER_GUIDE.md section 4.5 (intent reactions).
 reactions: []
