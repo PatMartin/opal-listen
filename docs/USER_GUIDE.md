@@ -714,6 +714,10 @@ API** — commands can only be armed by someone with filesystem access, so API a
 shell commands (that would be a remote-code-execution vector). Edits hot-reload on the next match;
 no restart needed.
 
+You can edit the file by hand or manage it with `opal listen reactions` (`list`, `add`, `update`,
+`remove`, `enable`, `disable`, `test`, `log`, `path` — see the CLI reference §19), which edits the
+same file locally and never goes through the API.
+
 A reaction fires only when **all** of these hold: the result matched an intent (`no_match` never
 fires), it was not deduplicated (repeat utterances inside `dedup_window_ms` don't re-fire), it came
 from the live microphone (`test text` / `test audio` never fire), and `reactions_enabled` is `true`:

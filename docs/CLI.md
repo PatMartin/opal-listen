@@ -31,10 +31,11 @@ The server must therefore be running, either locally or on another machine.
 16. [`config`: validation, backup, export and import](#16-config--validation-backup-export-and-import)
 17. [`system`: health and diagnostics](#17-system--health-and-diagnostics)
 18. [`event`: publish ZeroMQ events](#18-event--publish-zeromq-events)
-19. [Walkthroughs](#19-walkthroughs)
-20. [Scripting and automation](#20-scripting-and-automation)
-21. [Troubleshooting](#21-troubleshooting)
-22. [Appendix: CLI ↔ REST mapping](#22-appendix-cli--rest-mapping)
+19. [`reactions`: intent-triggered shell commands](#19-reactions--intent-triggered-shell-commands)
+20. [Walkthroughs](#20-walkthroughs)
+21. [Scripting and automation](#21-scripting-and-automation)
+22. [Troubleshooting](#22-troubleshooting)
+23. [Appendix: CLI ↔ REST mapping](#23-appendix-cli--rest-mapping)
 
 ---
 
@@ -276,7 +277,7 @@ opal
     ├── slots       list | get | add | update | remove
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
     ├── profiles    list | get | add | update | activate | remove
-    ├── settings    list | get | set | unset
+    ├── settings    list | get | set | patch | unset
     ├── test        text | audio | listen | listen-debug | regression
     ├── pipeline    start | stop | status
     ├── failed      list | get | add | update | remove | promote
@@ -285,7 +286,8 @@ opal
     ├── perf        last | summary | history
     ├── config      validate | backup | backups | download | restore | delete-backup | export | import
     ├── system      doctor | devices | live | ready | info | ping
-    └── event       publish
+    ├── event       publish
+    └── reactions   list | get | add | update | remove | enable | disable | test | log | path
 ```
 
 ---
@@ -1324,7 +1326,81 @@ message has been handed to the socket, not once a subscriber has received it.
 
 ---
 
-## 19. Walkthroughs
+## 19. `reactions`: intent-triggered shell commands
+
+Reactions run shell commands when a live-mic recognition matches an intent (see the User Guide §4.5
+for the full model: gating, condition grammar, stdin contract).
+
+Unlike every other group, `reactions` does **not** talk to the REST API — arming shell commands
+through the API would be a remote-code-execution vector, so commands live only in
+`<config_dir>/reactions.yaml`. These commands manage that file on the local filesystem (honoring
+`OPAL_LISTENER_CONFIG_DIR` / `OPAL_LISTENER_DATA_DIR`); the running service picks up edits
+automatically on the next match. Use `reactions path` to see which files are managed.
+
+```bash
+# Where are the managed files?
+opal listen reactions path
+
+# List armed reactions (name, enabled, #conditions, action summary)
+opal listen reactions list
+
+# Arm a reaction: fire hue.sh when "turn on the kitchen light" matches confidently
+opal listen reactions add kitchen_lights \
+    --cond "intent_name eq light_turn_on" \
+    --cond "slot_values.room_name eq kitchen" \
+    --cond "intent_confidence gte 0.8" \
+    --run "sh /opt/opal/hue.sh kitchen on" \
+    --timeout 15 --env HUE_BRIDGE=192.168.1.10
+
+# Show the full reaction
+opal listen reactions get kitchen_lights
+
+# Rename it, retime every action, replace conditions wholesale
+opal listen reactions update kitchen_lights --name lights_kitchen --timeout 30
+opal listen reactions update lights_kitchen --cond "intent_name eq light_turn_on"
+# Fire on ANY matched intent:
+opal listen reactions update lights_kitchen --clear-conditions
+
+# Disable without deleting, re-enable, disarm entirely
+opal listen reactions disable lights_kitchen
+opal listen reactions enable lights_kitchen
+opal listen reactions remove lights_kitchen
+```
+
+`--cond` takes `"path operator value"` (operators: `eq ne gt gte lt lte in not_in exists contains`;
+`exists` takes no value; values are YAML scalars, so `[a, b]` gives a list). `--run` is repeatable —
+each becomes one `command` action receiving the match JSON on stdin. `--env KEY=VALUE` is repeatable.
+
+`reactions test` dry-runs a payload against the armed reactions and shows which would fire and why
+not — nothing executes unless `--execute` is passed:
+
+```bash
+# With a literal result payload
+opal listen reactions test --payload '{"intent_name":"light_turn_on","intent_confidence":0.9}'
+
+# With a real utterance through the live pipeline (needs the service running)
+opal listen reactions test --text "turn on the kitchen light"
+
+# Actually run the matching commands (debugging your scripts)
+opal listen reactions test --payload '{"intent_name":"light_turn_on"}' --execute
+```
+
+`reactions log` tails the execution journal `<data_dir>/reaction_log.jsonl` (one JSON record per run:
+timestamp, argv, exit code, duration, stderr tail). `--limit N` controls how many rows print; the
+`reactions_fired` / `reactions_failed` / `reactions_dropped` counters also appear in
+`pipeline status` metrics.
+
+```bash
+opal listen reactions log --limit 5
+```
+
+Remember: armed reactions only fire when the feature is switched on — `opal listen settings set
+reactions_enabled true`. The switch is a setting so it can be flipped at runtime without editing
+files.
+
+---
+
+## 20. Walkthroughs
 
 ### 18.1 Full CRUD tour (based on `scripts/test-cli.sh`)
 
@@ -1479,7 +1555,7 @@ opal listen test regression
 
 ---
 
-## 20. Scripting and automation
+## 21. Scripting and automation
 
 ### JSON output with `jq`
 
@@ -1550,7 +1626,7 @@ opal listen --json regression list \
 
 ---
 
-## 21. Troubleshooting
+## 22. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -1571,7 +1647,7 @@ opal listen --json regression list \
 
 ---
 
-## 22. Appendix: CLI ↔ REST mapping
+## 23. Appendix: CLI ↔ REST mapping
 
 All paths are relative to the API base URL. Commands that take a name or id first resolve it with a
 `GET` on the collection. Per the OPAL v1.2 standard, every `PATCH`/`DELETE` below on wakewords, intents,

@@ -9,6 +9,7 @@ from opal_listener.cli.catalog_cmds import intents_app, profiles_app, settings_a
 from opal_listener.cli.client import ApiClient, api_url_from_env, xpub_url_from_env, xsub_url_from_env
 from opal_listener.cli.event_cmds import event_app
 from opal_listener.cli.output import CliState
+from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, logs_app, perf_app, regression_app
 from opal_listener.cli.system_cmds import config_app, system_app
 from opal_listener.cli.test_cmds import pipeline_app, test_app
@@ -111,6 +112,7 @@ for sub_app, name in (
     (regression_app, "regression"),
     (logs_app, "logs"),
     (perf_app, "perf"),
+    (reactions_app, "reactions"),
     (config_app, "config"),
     (system_app, "system"),
     (event_app, "event"),

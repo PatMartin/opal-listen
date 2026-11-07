@@ -22,18 +22,21 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 log = logging.getLogger(__name__)
 
 Operator = Literal["eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "exists", "contains"]
+OPERATORS = frozenset(get_args(Operator))
 
 
 class ReactionCondition(BaseModel):
     """One predicate over the recognition-result payload; opal-event condition grammar."""
+
+    model_config = ConfigDict(extra="forbid")
 
     path: str  # dotted, e.g. "intent_name" or "slot_values.room"
     operator: Operator
@@ -43,6 +46,8 @@ class ReactionCondition(BaseModel):
 class ReactionAction(BaseModel):
     """A subprocess invocation. argv form only — no shell, so payloads can't inject."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["command"] = "command"
     argv: list[str] = Field(min_length=1)
     timeout_s: float = Field(default=15.0, ge=1.0, le=3600.0)
@@ -51,6 +56,8 @@ class ReactionAction(BaseModel):
 
 
 class Reaction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     enabled: bool = True
     conditions: list[ReactionCondition] = Field(default_factory=list)
@@ -58,6 +65,8 @@ class Reaction(BaseModel):
 
 
 class ReactionsFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     reactions: list[Reaction] = Field(default_factory=list)
 
 

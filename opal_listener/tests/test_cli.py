@@ -39,6 +39,8 @@ REQUIRED_COMMANDS = {
     "perf last", "perf summary",
     "config validate", "config backup", "config restore", "config export", "config import",
     "system doctor",
+    "reactions list", "reactions get", "reactions add", "reactions update", "reactions remove",
+    "reactions enable", "reactions disable", "reactions test", "reactions log", "reactions path",
 }  # fmt: skip
 
 
