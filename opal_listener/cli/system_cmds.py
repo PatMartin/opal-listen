@@ -82,7 +82,7 @@ def config_restore(
 ) -> None:
     """Restore a backup (a safety backup is taken first; rolls back automatically on failure)."""
     _confirm(ctx, yes, f"Replace the current database with {filename}?")
-    result = state(ctx).api.post(f"{BACKUP}/restore/{filename}")
+    result = state(ctx).api.post_with_etag(f"{BACKUP}/restore/{filename}", etag_path=f"{BACKUP}/export")
     done(ctx, f"restored {filename} (previous state saved as {result.get('rollback_backup')})", result)
 
 
@@ -142,7 +142,7 @@ def config_import(
     """Replace configuration from YAML (validated first; automatic pre-import backup)."""
     body = _local_bundle(from_dir).model_dump(mode="json") if from_dir else None
     _confirm(ctx, yes, "Replace wakewords, intents, slots, profiles and settings?")
-    result = state(ctx).api.post(f"{BACKUP}/import", json=body)
+    result = state(ctx).api.post_with_etag(f"{BACKUP}/import", etag_path=f"{BACKUP}/export", json=body)
     if state(ctx).json_output:
         print_json(result)
         return

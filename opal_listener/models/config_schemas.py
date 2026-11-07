@@ -100,7 +100,7 @@ class ConfigBundle(_Spec):
 
     version: int = CONFIG_VERSION
     # OPAL kernel OpalConfigExport members; `version` above remains the per-file format marker.
-    format_version: str = "1.0.0"
+    format_version: str | int = "1.0.0"
     exported_at: datetime | None = None
     wakewords: list[WakewordSpec] = []
     stt: dict[str, SettingScalar] = {}

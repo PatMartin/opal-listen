@@ -153,6 +153,11 @@ class ApiClient:
         headers = {**kw.pop("headers", {}), "If-Match": self.etag(etag_path or path)}
         return self.put(path, headers=headers, **kw)
 
+    def post_with_etag(self, path: str, *, etag_path: str | None = None, **kw: Any) -> Any:
+        """POST after fetching the current ETag, for the mandatory strong If-Match contract."""
+        headers = {**kw.pop("headers", {}), "If-Match": self.etag(etag_path or path)}
+        return self.post(path, headers=headers, **kw)
+
     def stream_events(
         self, path: str, params: dict[str, Any] | None = None, idle_timeout: float | None = None
     ) -> Iterator[tuple[str, Any]]:

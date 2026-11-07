@@ -446,7 +446,7 @@ def profiles_add(
         for k, v in _profile_body(description, wakeword, threshold, vad, intent, slot, model).items()
         if v is not None
     }
-    created = state(ctx).api.post(PROFILES, json={"name": name, "is_active": activate, **body})
+    created = state(ctx).api.post_with_etag(PROFILES, json={"name": name, "is_active": activate, **body})
     done(ctx, f"profile '{created['name']}' added (id {created['id']})", created)
 
 
@@ -476,7 +476,7 @@ def profiles_activate(ctx: typer.Context, profile: str = typer.Argument(..., hel
     """Activate a profile (deactivates all others)."""
     api = state(ctx).api
     item = api.resolve(PROFILES, profile)
-    updated = api.post(f"{PROFILES}{item['id']}/activate")
+    updated = api.post_with_etag(f"{PROFILES}{item['id']}/activate", etag_path=f"{PROFILES}{item['id']}")
     done(ctx, f"profile '{updated['name']}' is now active", updated)
 
 
