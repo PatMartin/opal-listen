@@ -113,7 +113,7 @@ This installs two commands:
 
 | Command | Purpose |
 |---|---|
-| `opal-listener-server` | Runs the API server (same as `python -m opal_listener`) |
+| `opal-listen-svc` | Runs the API server (same as `python -m opal_listener`) |
 | `opal` | The CLI (`opal listen ...`); also `python -m opal_listener.cli` |
 
 ### 2.3 Download a model
@@ -164,7 +164,7 @@ OPAL_LISTENER_CORS_ORIGINS=["http://192.168.1.20:3000"]
 ### 2.5 First start
 
 ```bash
-opal-listener-server                 # or: python -m opal_listener
+opal-listen-svc                 # or: python -m opal_listener
 ```
 
 On first start the server:
@@ -223,7 +223,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp
 
 ### 2.8 Run as a systemd service (example)
 
-`/etc/systemd/system/opal-listener.service`:
+`/etc/systemd/system/opal-listen-svc.service`:
 
 ```ini
 [Unit]
@@ -237,7 +237,7 @@ Group=audio
 WorkingDirectory=/home/pi/opal-listen
 Environment=OPAL_LISTENER_VOSK_MODEL_PATH=/home/pi/models/vosk-model-small-en-us-0.15
 Environment=OPAL_LISTENER_DATA_DIR=/home/pi/opal-data
-ExecStart=/home/pi/opal-listen/.venv/bin/opal-listener-server
+ExecStart=/home/pi/opal-listen/.venv/bin/opal-listen-svc
 Restart=on-failure
 RestartSec=3
 
@@ -247,8 +247,8 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now opal-listener
-journalctl -u opal-listener -f
+sudo systemctl enable --now opal-listen-svc
+journalctl -u opal-listen-svc -f
 opal listen settings set auto_start_listener true   # start the microphone on every boot
 ```
 
@@ -287,7 +287,7 @@ docker compose exec listener opal listen system doctor
 git pull
 pip install -e ".[dev]"
 opal listen config backup            # optional safety copy
-sudo systemctl restart opal-listener # migrations run automatically on startup
+sudo systemctl restart opal-listen-svc # migrations run automatically on startup
 opal listen system doctor            # the "migrations" check shows the current revision
 ```
 

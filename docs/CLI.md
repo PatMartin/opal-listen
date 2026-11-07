@@ -59,7 +59,7 @@ python -m opal_listener.cli listen --help   # same CLI, run as a module
 Start the server before you run any command:
 
 ```bash
-opal-listener-server               # or: python -m opal_listener
+opal-listen-svc               # or: python -m opal_listener
 ```
 
 ### Getting help
@@ -1537,7 +1537,7 @@ opal listen --json regression list \
 
 | Symptom | Cause / fix |
 |---|---|
-| `Error: cannot reach the opal listener API at ...` | The server isn't running, or the URL is wrong. Start `opal-listener-server`, or set `OPAL_LISTEN_API_URL` / `--api-url`. |
+| `Error: cannot reach the opal listener API at ...` | The server isn't running, or the URL is wrong. Start `opal-listen-svc`, or set `OPAL_LISTEN_API_URL` / `--api-url`. |
 | `No such option: --json` | Global options must come right after `listen`: `opal listen --json intents list`. |
 | `Error: 'xyz' not found in /api/v1/...` | No resource with that name or id exists. Check with `list`. Names are normalized, so try lowercase. |
 | `Error: nothing to update (pass at least one option)` | `update` was called without any change option. |

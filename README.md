@@ -79,7 +79,7 @@ The install provides two entry points:
 | Command | Purpose |
 | --- | --- |
 | `opal listen ...` | Typer CLI for recognition, catalogs, troubleshooting, and configuration |
-| `opal-listener-server` | FastAPI service and live listening engine |
+| `opal-listen-svc` | FastAPI service and live listening engine |
 
 You can also run the service with `python -m opal_listener`. The optional Whisper refiner needs the extra dependency:
 
@@ -87,7 +87,7 @@ You can also run the service with `python -m opal_listener`. The optional Whispe
 pip install -e ".[dev,whisper]"
 ~~~
 
-**Note:** The Python package name is `opal-listener`, the GitHub project is `opal-listen`, and its CLI namespace is `opal listen`.
+**Note:** The Python package name is `opal-listener`, the GitHub project is `opal-listen`, its CLI namespace is `opal listen`, and the installed service binary is `opal-listen-svc`.
 
 ### 2. Download a Vosk speech model
 
@@ -109,7 +109,7 @@ The default model path in the code is machine-specific, so **set this variable**
 ~~~bash
 # Local-only is safest for your first run.
 export OPAL_LISTENER_HOST=127.0.0.1
-opal-listener-server
+opal-listen-svc
 ~~~
 
 Keep it running. In another terminal, from the repository directory:
@@ -730,7 +730,7 @@ export OPAL_EVENT_API_URL=http://127.0.0.1:8080
 # If OPAL Event uses bearer auth:
 # export OPAL_EVENT_API_TOKEN='your-token'
 
-opal-listener-server
+opal-listen-svc
 ~~~
 
 In another shell, enable external publication:
@@ -755,7 +755,7 @@ To use the ZeroMQ publisher instead, set **before launching the listener service
 ~~~bash
 export OPAL_EVENT_TRANSPORT=zmq
 export OPAL_EVENT_XPUB_URL=tcp://127.0.0.1:5555
-opal-listener-server
+opal-listen-svc
 ~~~
 
 Despite its legacy name, `OPAL_EVENT_XPUB_URL` in the listener points at **OPAL Event's inbound XSUB producer endpoint**, normally port 5555. Do not set `OPAL_EVENT_TRANSPORT=both`: the listener rejects that mode because duplicate deliveries could trigger duplicate actions.

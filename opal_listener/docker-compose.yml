@@ -1,15 +1,15 @@
 # Run from this directory:  docker compose up -d --build
 # Vosk models are mounted read-only from VOSK_MODELS_DIR; SQLite data and backups live in the volume.
-name: opal-listener
+name: opal-listen-svc
 
 services:
-  listener:
+  opal-listen-svc:
     build:
       context: ..
       dockerfile: Dockerfile
       args:
         EXTRAS: ${OPAL_LISTENER_EXTRAS:-}   # set to "whisper" to include faster-whisper
-    image: opal-listener:0.1.0
+    image: opal-listen-svc:0.1.0
     restart: unless-stopped
     ports:
       - "${OPAL_LISTENER_PORT:-8000}:8000"

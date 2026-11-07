@@ -17,7 +17,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"            # add ",whisper" for the optional faster-whisper refiner
 ```
 
-This installs two commands: `opal` (CLI) and `opal-listener-server` (API server).
+This installs two commands: `opal` (CLI) and `opal-listen-svc` (API server).
 
 ## 3. Configure
 
@@ -42,7 +42,7 @@ export OPAL_LISTENER_VOSK_MODEL_PATH=/path/to/vosk-model-small-en-us-0.15
 ## 4. Start the server
 
 ```bash
-opal-listener-server               # or: python -m opal_listener
+opal-listen-svc               # or: python -m opal_listener
 ```
 
 On first start the database is migrated and seeded from `opal_listener/config/*.yaml`
