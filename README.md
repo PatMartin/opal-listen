@@ -941,6 +941,7 @@ opal-listen/
 ### More to read
 
 - [Quickstart](docs/QUICKSTART.md) — installation, setup, model, microphone, first commands.
+- [Cookbook](docs/COOKBOOK.md) — 40 copy-paste recipes: 20 with opal-listen alone, 20 across the OPAL suite.
 - [CLI reference](docs/CLI.md) — all flags, resource commands, outputs, and scripts.
 - [User guide](docs/USER_GUIDE.md) — extensive guidance for running and tuning the listener.
 - [Design](docs/design.md) — internal architecture and tradeoffs.

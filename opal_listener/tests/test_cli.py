@@ -403,7 +403,14 @@ def test_logs_count_sends_contract_params(
         return original(method, url, **kw)
 
     monkeypatch.setattr(client, "request", spy)
-    result = cli("logs", "count", "--limit", "10", "--cursor", "opaque-cursor")
+    result = cli("logs", "count", "--limit", "10")
     assert result.exit_code == 0, result.output
     gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/logs/count")]
-    assert gets and gets[0][2]["params"] == {"limit": 10, "cursor": "opaque-cursor"}
+    assert gets and gets[0][2]["params"] == {"limit": 10}
+    # a foreign-scope cursor is transmitted and the server rejects it with a user-visible 422
+    page = client.get("/api/v1/logs/?limit=1").json()
+    calls.clear()
+    result = cli("logs", "count", "--cursor", page["next_cursor"] or "opaque")
+    assert result.exit_code != 0
+    gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/logs/count")]
+    assert gets and gets[0][2]["params"]["cursor"]
