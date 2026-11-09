@@ -279,15 +279,10 @@ def _stop_tracked() -> int | None:
     return pid
 
 
-@service_app.command("start")
-def service_start(
-    ctx: typer.Context,
-    host: str = typer.Option("127.0.0.1", "--host"),
-    port: int = typer.Option(8000, "--port", min=1, max=65535),
-    data_dir: Path | None = typer.Option(None, "--data-dir", help="OPAL_LISTENER_DATA_DIR for the server"),
-) -> None:
-    """Start the server in the background (replaces a running one), logging to logs/opal_listen.log."""
-    replaced = _stop_tracked()
+def launch_server(host: str, port: int, data_dir: Path | None, replace: bool = True) -> tuple[int, int | None]:
+    """Spawn `python -m opal_listener` detached, logging to LOG_FILE (truncated). The server writes
+    its real pid to PID_FILE (see OPAL_LISTENER_PID_FILE). Returns (launcher pid, replaced pid)."""
+    replaced = _stop_tracked() if replace else None
     LOG_DIR.mkdir(exist_ok=True)
     env = {**os.environ, "OPAL_LISTENER_HOST": host, "OPAL_LISTENER_PORT": str(port)}
     if data_dir is not None:
@@ -306,8 +301,20 @@ def service_start(
         env={**env, "OPAL_LISTENER_PID_FILE": str(PID_FILE.resolve())},
         **kwargs,
     )
+    return proc.pid, replaced
+
+
+@service_app.command("start")
+def service_start(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port", min=1, max=65535),
+    data_dir: Path | None = typer.Option(None, "--data-dir", help="OPAL_LISTENER_DATA_DIR for the server"),
+) -> None:
+    """Start the server in the background (replaces a running one), logging to logs/opal_listen.log."""
+    pid, replaced = launch_server(host, port, data_dir)
     note = f" (replaced pid {replaced})" if replaced else ""
-    done(ctx, f"server started (pid {proc.pid}){note} — log: {LOG_FILE}", {"pid": proc.pid})
+    done(ctx, f"server started (pid {pid}){note} — log: {LOG_FILE}", {"pid": pid})
 
 
 @service_app.command("stop")

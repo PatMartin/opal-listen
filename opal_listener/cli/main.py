@@ -6,6 +6,7 @@ from __future__ import annotations
 import errno
 import os
 import sys
+import time
 import webbrowser
 
 import typer
@@ -147,8 +148,27 @@ def listen_gui(
     ctx: typer.Context,
     print_only: bool = typer.Option(False, "--print", help="Print the URL instead of opening a browser"),
 ) -> None:
-    """Open the web console (SPA) in a browser."""
-    url = f"{state(ctx).api.base_url}/ui/opal-listen.html"
+    """Open the web console (SPA) in a browser; starts the local server if it is not running."""
+    import urllib.parse
+
+    from opal_listener.cli.service_cmds import launch_server
+
+    api = state(ctx).api
+    url = f"{api.base_url}/ui/opal-listen.html"
+    try:
+        api.get("/api/v1/info/ping")
+    except Exception:
+        parsed = urllib.parse.urlparse(api.base_url)
+        launch_server(parsed.hostname or "127.0.0.1", parsed.port or 8000, None)
+        for _ in range(100):  # ~10s for the server to come up
+            try:
+                api.get("/api/v1/info/ping")
+                break
+            except Exception:
+                time.sleep(0.1)
+        else:
+            done(ctx, "server did not come up — see logs/opal_listen.log", {"url": url})
+            return
     if print_only or not webbrowser.open(url):
         done(ctx, url, {"url": url})
         return
