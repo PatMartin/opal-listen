@@ -42,7 +42,7 @@ REQUIRED_COMMANDS = {
     "failed list", "failed promote",
     "service perf last", "service perf summary",
     "config validate", "config backup", "config restore", "config export", "config import",
-    "service doctor", "service start", "service stop", "service log",
+    "service doctor", "service start", "service stop", "service log", "gui",
     "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
     "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
 }  # fmt: skip

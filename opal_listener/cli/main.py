@@ -6,6 +6,7 @@ from __future__ import annotations
 import errno
 import os
 import sys
+import webbrowser
 
 import typer
 
@@ -19,7 +20,7 @@ from opal_listener.cli.catalog_cmds import (
 )
 from opal_listener.cli.client import ApiClient, api_url_from_env, xpub_url_from_env, xsub_url_from_env
 from opal_listener.cli.event_cmds import event_app
-from opal_listener.cli.output import CliState
+from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, logs_app, perf_app, regression_app
 from opal_listener.cli.service_cmds import config_app, service_app
@@ -139,6 +140,19 @@ for sub_app, name in (
     listen_app.add_typer(sub_app, name=name)
 
 register_tree(listen_app)
+
+
+@listen_app.command("gui")
+def listen_gui(
+    ctx: typer.Context,
+    print_only: bool = typer.Option(False, "--print", help="Print the URL instead of opening a browser"),
+) -> None:
+    """Open the web console (SPA) in a browser."""
+    url = f"{state(ctx).api.base_url}/ui/opal-listen.html"
+    if print_only or not webbrowser.open(url):
+        done(ctx, url, {"url": url})
+        return
+    done(ctx, f"opened {url}", {"url": url})
 
 
 @listen_app.callback()

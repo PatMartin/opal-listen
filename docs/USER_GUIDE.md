@@ -2474,6 +2474,8 @@ confirmation, so `publish` reports success once the message is handed to the soc
 
 ## 8. Web GUI guide
 
+Open it with `opal listen gui` (or browse to `http://localhost:8000/ui/opal-listen.html`).
+
 Open `http://<host>:8000/ui/opal-listen.html`. The GUI is a single HTML file served by the API and needs
 no build step. Every action calls exactly one REST operation, which is shown on each card as
 `METHOD /path · opal listen <command>`. This makes the GUI a good way to learn the API and the CLI.
