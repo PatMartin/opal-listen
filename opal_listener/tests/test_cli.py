@@ -20,11 +20,15 @@ def command_paths() -> set[str]:
     root = typer.main.get_command(cli_app)
     listen = root.commands["listen"]  # type: ignore[attr-defined]
     paths: set[str] = set()
-    for group_name, group in listen.commands.items():
-        if not hasattr(group, "commands"):  # plain commands mounted directly on listen (e.g. tree)
-            paths.add(group_name)
-            continue
-        paths.update(f"{group_name} {name}" for name in group.commands)
+
+    def walk(commands: dict, prefix: str) -> None:
+        for name, command in commands.items():
+            if hasattr(command, "commands"):  # nested group (e.g. service perf)
+                walk(command.commands, f"{prefix} {name}")
+            else:
+                paths.add(f"{prefix} {name}".strip())
+
+    walk(listen.commands, "")
     return paths
 
 
@@ -36,9 +40,9 @@ REQUIRED_COMMANDS = {
     "setting list", "setting get", "setting set", "setting patch", "setting unset",
     "test text", "test audio", "test listen", "test listen-debug", "test regression",
     "failed list", "failed promote",
-    "perf last", "perf summary",
+    "service perf last", "service perf summary",
     "config validate", "config backup", "config restore", "config export", "config import",
-    "system doctor",
+    "service doctor", "service start", "service stop", "service log",
     "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
     "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
 }  # fmt: skip
@@ -201,7 +205,7 @@ def test_regression_and_failed_commands(cli: CliHarness) -> None:
 
 
 def test_logs_and_perf_commands(cli: CliHarness) -> None:
-    assert "no recognitions yet" in cli("perf", "last").output
+    assert "no recognitions yet" in cli("service", "perf", "last").output
     cli("test", "text", "what time is it")
     cli("test", "text", "open the door")
     assert cli.json("log", "count") == {"total": 2, "matched": 1, "no_match": 1}
@@ -210,10 +214,10 @@ def test_logs_and_perf_commands(cli: CliHarness) -> None:
     logs = page["items"]
     assert logs[0]["normalized_transcript"] == "open the door"
     assert cli.json("log", "get", str(logs[0]["id"]))["matched"] is False
-    assert cli.json("perf", "last")["matched"] is False
-    assert cli.json("perf", "summary")["count"] == 2
-    assert "Latency" in cli("perf", "summary").output
-    assert len(cli.json("perf", "history")["items"]) == 2
+    assert cli.json("service", "perf", "last")["matched"] is False
+    assert cli.json("service", "perf", "summary")["count"] == 2
+    assert "Latency" in cli("service", "perf", "summary").output
+    assert len(cli.json("service", "perf", "history")["items"]) == 2
 
 
 def test_json_pagination_lets_scripts_walk_every_page(cli: CliHarness) -> None:
@@ -229,7 +233,7 @@ def test_json_pagination_lets_scripts_walk_every_page(cli: CliHarness) -> None:
             break
         args = ["log", "list", "--limit", "2", "--cursor", page["next_cursor"]]
     assert len(seen) == 5 and len(set(seen)) == 5
-    history = cli.json("perf", "history", "--limit", "2")
+    history = cli.json("service", "perf", "history", "--limit", "2")
     assert history["has_more"] is True and history["next_cursor"]
 
 
@@ -272,12 +276,24 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
     assert cli("config", "delete-backup", backup, "--yes").exit_code == 0
 
 
-def test_system_commands(cli: CliHarness) -> None:
-    doctor = cli("system", "doctor")
+def test_service_commands(cli: CliHarness) -> None:
+    doctor = cli("service", "doctor")
     assert "sqlite" in doctor.output and "overall" in doctor.output
-    assert isinstance(cli.json("system", "devices"), list)
-    assert cli.json("system", "info")["name"] == "opal-listen-svc"
-    assert "is up" in cli("system", "ping").output
+    assert isinstance(cli.json("service", "devices"), list)
+    assert cli.json("service", "info")["name"] == "opal-listen-svc"
+    assert "is up" in cli("service", "ping").output
+
+
+def test_service_stop_and_log_without_server(cli: CliHarness, tmp_path: Path, monkeypatch) -> None:
+    """service stop/log are local commands: no managed server -> clean no-op output."""
+    monkeypatch.chdir(tmp_path)
+    assert "no managed server" in cli("service", "stop").output
+    assert "no log file" in cli("service", "log").output
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "opal_listen.log").write_text("\n".join(f"line {i}" for i in range(15)))
+    out = cli("service", "log").output
+    assert "line 14" in out and "line 5" in out and "line 4" not in out
 
 
 def test_event_publish_command(cli: CliHarness) -> None:
@@ -358,7 +374,7 @@ def test_event_publish_rejects_invalid_topic(cli: CliHarness) -> None:
 def test_unreachable_api_gives_friendly_error(monkeypatch: pytest.MonkeyPatch) -> None:
     from typer.testing import CliRunner
 
-    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "system", "ping"])
+    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "service", "ping"])
     assert result.exit_code == 1
     assert "cannot reach the opal listener API" in result.output
 

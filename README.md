@@ -117,9 +117,9 @@ Keep it running. In another terminal, from the repository directory:
 ~~~bash
 source .venv/bin/activate
 
-opal listen system ping
-opal listen system doctor
-opal listen system devices
+opal listen service ping
+opal listen service doctor
+opal listen service devices
 ~~~
 
 On first start, the service migrates its SQLite database (by default `var/opal_listener.db`) and seeds the supplied YAML catalogs. You'll have a `computer` wakeword, lights/timer/temperature/time/cancel intents, room and numeric slots, and four sample profiles.
@@ -417,7 +417,7 @@ opal listen regression add cozy_kitchen \
   --slot color=warm_white
 
 opal listen test regression
-opal listen system doctor
+opal listen service doctor
 ~~~
 
 The doctor checks that the loaded speech model knows the new vocabulary. **A text test can pass even when audio recognition struggles with an unknown word.** A larger Vosk model or different phrasing may help.
@@ -527,7 +527,7 @@ Useful VAD settings include `energy_threshold_dbfs` (minimum speech energy), `no
 When recognition fails, it's easy to blame the AI. Usually the first question is simpler: **Did the microphone hear you?**
 
 ~~~bash
-opal listen system devices
+opal listen service devices
 opal listen setting list
 
 # Select an input device by index or a substring of its name.
@@ -667,10 +667,10 @@ opal listen test text "computer, turn on the kitchen light" \
 ### Use case 10: Measure latency and match rate, not just "it feels fast"
 
 ~~~bash
-opal listen perf last
-opal listen perf summary
-opal listen perf summary --limit 500
-opal listen perf history --limit 30
+opal listen service perf last
+opal listen service perf summary
+opal listen service perf summary --limit 500
+opal listen service perf history --limit 30
 
 opal listen log count
 opal listen log list --intent light_turn_on --limit 20
@@ -687,7 +687,7 @@ opal listen setting set whisper_model tiny.en
 opal listen setting set whisper_compute_type int8
 
 # Compare your saved audio examples and performance.
-opal listen perf summary
+opal listen service perf summary
 opal listen test regression
 
 # Go back to the default Vosk-only path:
@@ -810,8 +810,8 @@ The import requires confirmation and makes a safety backup. It **replaces** the 
 
 | What you want | Command |
 | --- | --- |
-| "Is it running?" | `opal listen system doctor` |
-| "Which microphone?" | `opal listen system devices` |
+| "Is it running?" | `opal listen service doctor` |
+| "Which microphone?" | `opal listen service devices` |
 | "Why didn't that wake me?" | `opal listen test listen-debug` |
 | "Understand this sentence?" | `opal listen test text "..."` |
 | "Re-run recorded speech?" | `opal listen test audio recording.wav --require-wakeword` |
@@ -820,7 +820,7 @@ The import requires confirmation and makes a safety backup. It **replaces** the 
 | "What failed?" | `opal listen failed list --unreviewed` |
 | "Train on a useful mistake?" | `opal listen failed promote ID --intent NAME` |
 | "Did I break anything?" | `opal listen test regression` |
-| "How fast?" | `opal listen perf summary` |
+| "How fast?" | `opal listen service perf summary` |
 | "Change one setting?" | `opal listen setting set KEY VALUE` |
 | "Switch environments?" | `opal listen profile activate noisy_room` |
 | "Save what works?" | `opal listen config backup` |

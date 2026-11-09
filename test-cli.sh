@@ -112,18 +112,18 @@ echo
 # --- system ---------------------------------------------------------------------------------------
 
 # liveness probe
-t "system ping" "GET /api/v1/info/ping" '"status": "ok"' system ping
+t "service ping" "GET /api/v1/info/ping" '"status": "ok"' service ping
 # service name and version
-t "system info" "GET /api/v1/info/" '"name": "opal-listen-svc"' system info
+t "service info" "GET /api/v1/info/" '"name": "opal-listen-svc"' service info
 # startup health checks; exit code is 1 when a check reports an error, so only the report is checked
-ANY_EXIT=1 t "system doctor" "GET /api/v1/health/" '"checks"' system doctor
+ANY_EXIT=1 t "service doctor" "GET /api/v1/health/" '"checks"' service doctor
 MODEL_OK=0; grep -qF '"name": "vosk_model", "status": "ok"' <<<"$OUT" && MODEL_OK=1
 # audio input devices visible to the server
-t "system devices" "GET /api/v1/health/audio_devices" '' system devices
+t "service devices" "GET /api/v1/health/audio_devices" '' service devices
 # OPAL liveness probe: always ok while the process is up
-t "system live" "GET /api/v1/health/live" '"ready": true' system live
+t "service live" "GET /api/v1/health/live" '"ready": true' service live
 # OPAL readiness probe: exits 1 with the probe body when the server is not ready (e.g. no Vosk model)
-ANY_EXIT=1 t "system ready" "GET /api/v1/health/ready" "ready" system ready
+ANY_EXIT=1 t "service ready" "GET /api/v1/health/ready" "ready" service ready
 
 # --- backups (taken first so the run can be undone) --------------------------------------------------
 
@@ -269,11 +269,11 @@ t "log get" "GET /api/v1/log/{log_id}" "\"id\": $LOG_ID" log get "$LOG_ID"
 # counts of matched / no_match
 t "log count" "GET /api/v1/log/count" '"total"' log count
 # performance of the latest recognition
-t "perf last" "GET /api/v1/performance/last" '"total_latency_ms"' perf last
+t "service service perf last" "GET /api/v1/performance/last" '"total_latency_ms"' service perf last
 # averages, percentiles and match rate
-t "perf summary" "GET /api/v1/performance/summary" '"match_rate"' perf summary
+t "service service perf summary" "GET /api/v1/performance/summary" '"match_rate"' service perf summary
 # per-recognition performance rows
-t "perf history" "GET /api/v1/performance/history" '"recognition_log_id"' perf history --limit 5
+t "service service perf history" "GET /api/v1/performance/history" '"recognition_log_id"' service perf history --limit 5
 
 # --- failed utterances ----------------------------------------------------------------------------
 

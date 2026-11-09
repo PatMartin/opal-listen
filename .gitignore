@@ -15,3 +15,4 @@ var/
 node_modules/
 resources/models/
 resources/vosk/
+logs/

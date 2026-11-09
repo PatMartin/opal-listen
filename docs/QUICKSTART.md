@@ -57,7 +57,7 @@ The server listens on all interfaces by default. Find the Pi's address with `hos
 ```bash
 # browser: http://<pi-ip>:8000/ui/opal-listen.html  and  http://<pi-ip>:8000/docs
 export OPAL_LISTEN_API_URL=http://<pi-ip>:8000
-opal listen system doctor
+opal listen service doctor
 ```
 
 If a firewall is active, open the port for your subnet only, e.g. `sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp`.
@@ -66,7 +66,7 @@ The API has no authentication: keep it on a trusted network, or set `OPAL_LISTEN
 ## 5. Check health
 
 ```bash
-opal listen system doctor
+opal listen service doctor
 ```
 
 Every line should be `✓`. Microphone problems are warnings (text and audio-file tests still work);
@@ -126,7 +126,7 @@ Invalid changes (unknown slot, bad syntax, conflicting alias) are rejected with 
 opal listen failed list                                  # no_match utterances captured from mic/audio
 opal listen failed promote 3 --intent light_turn_on      # adds a phrase + regression test
 opal listen test regression                              # exit code 1 if anything broke
-opal listen perf summary                                 # latency, confidence, match rate
+opal listen service perf summary                                 # latency, confidence, match rate
 opal listen profile activate noisy_room                 # switch thresholds/VAD for the environment
 opal listen setting set cooldown_ms 1000
 ```
@@ -147,7 +147,7 @@ opal listen config import --from-dir ./my-config --yes   # pre-import backup is 
 ```bash
 cd opal_listener
 VOSK_MODELS_DIR=/path/to/models docker compose up -d --build
-opal listen system doctor
+opal listen service doctor
 ```
 
 The container reads `opal_listener/config` as its seed, mounts models read-only at `/models`, stores
@@ -168,7 +168,7 @@ python scripts/cli_rest_test.py      # every REST operation through the real CLI
 |---|---|
 | `cannot reach the opal listener API` | Start the server, or set `OPAL_LISTEN_API_URL` / `--api-url` |
 | `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH` (or a profile's `model_paths.vosk_model`) at a directory containing `am/` and `conf/` |
-| Wakeword never triggers | Run `test listen-debug`; if levels stay near -90 dBFS pick another device with `opal listen system devices` and `opal listen setting set audio_device <index or name>` |
+| Wakeword never triggers | Run `test listen-debug`; if levels stay near -90 dBFS pick another device with `opal listen service devices` and `opal listen setting set audio_device <index or name>` |
 | Triggers on similar words | Add them to `opal listen setting set wakeword_distractors "commuter,compute,..."` or raise the wakeword threshold |
 | Command cut off or ends too late | Tune the active profile's `vad_settings`, e.g. `opal listen profile update default --vad silence_end_ms=900` |
 | `vocabulary` warning in doctor | A phrase or alias uses a word the model does not know; rephrase it or use a larger model |

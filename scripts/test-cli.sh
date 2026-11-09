@@ -154,10 +154,10 @@ echo "Testing LOGS..."
 #opal listen log count --help
 
 echo "Testing PERF..."
-#opal listen perf --help
-#opal listen perf last --help
-#opal listen perf summary --help
-#opal listen perf history --help
+#opal listen service perf --help
+#opal listen service service perf last --help
+#opal listen service service perf summary --help
+#opal listen service service perf history --help
 
 echo "Testing CONFIG..."
 #opal listen config --help
@@ -170,8 +170,8 @@ echo "Testing CONFIG..."
 #opal listen config import --help
 
 echo "Testing SYSTEM..."
-opal listen system --help
-opal listen system doctor
-opal listen system devices
-opal listen system info
-opal listen system ping
+opal listen service --help
+opal listen service doctor
+opal listen service devices
+opal listen service info
+opal listen service ping

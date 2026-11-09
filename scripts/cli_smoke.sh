@@ -9,9 +9,9 @@ cd "$(dirname "$0")/.."
 source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate
 
 # --- Health and identity ---
-opal listen system ping
-opal listen system info
-opal listen system doctor
+opal listen service ping
+opal listen service info
+opal listen service doctor
 
 # --- Catalog reads ---
 opal listen wakeword list

@@ -42,7 +42,7 @@ WHAT IS VERIFIED (per group)
                 re-activate the original profile, remove
     recognition test audio (WAV through wakeword + STT + intent; skipped without a Vosk model),
                 pipeline status/start/stop, SSE stream via `test listen` and `test listen-debug`
-    logs/perf   logs list/get/count, perf last/summary/history
+    logs/perf   logs list/get/count, service perf last/summary/history
     failures    add, list, get, update, promote (phrase is delexicalized and then matches), remove
     regression  add, list, get, update, run (only this run's tests are judged), remove
     cleanup     remove alias/value/intent/slot/wakeword created above (the DELETE operations)
@@ -297,21 +297,21 @@ def expect(condition: bool, message: str) -> None:
 # Steps run top to bottom. Each returns a short description of what it verified.
 
 
-@step("system ping", "/api/v1/info/ping")
+@step("service ping", "/api/v1/info/ping")
 def _ping(t: CliRestTest) -> str:
     result = t.ok("system", "ping")
     expect(result == {"status": "ok"}, f"unexpected /api/v1/info/ping response {result}")
     return f"{t.api_url} is up"
 
 
-@step("system info", "/api/v1/info/")
+@step("service info", "/api/v1/info/")
 def _info(t: CliRestTest) -> str:
     info = t.ok("system", "info")
     expect(info.get("name") == "opal-listen-svc", f"unexpected /api/v1/info/ response {info}")
     return f"version {info.get('version')}"
 
 
-@step("system doctor", "opal_health_get")
+@step("service doctor", "opal_health_get")
 def _doctor(t: CliRestTest) -> str:
     call = t.run("system", "doctor")
     report = parse_json(call)
@@ -323,21 +323,21 @@ def _doctor(t: CliRestTest) -> str:
     return f"overall {report['status']}" + (f" ({', '.join(problems)})" if problems else "")
 
 
-@step("system devices", "get_audio_devices")
+@step("service devices", "get_audio_devices")
 def _devices(t: CliRestTest) -> str:
     devices = t.ok("system", "devices")
     expect(isinstance(devices, list), "expected a list of devices")
     return f"{len(devices)} input device(s)"
 
 
-@step("system live", "opal_health_live_get")
+@step("service live", "opal_health_live_get")
 def _live(t: CliRestTest) -> str:
     probe = t.ok("system", "live")
     expect(probe.get("status") == "ok" and probe.get("ready") is True, f"unexpected probe {probe}")
     return f"status {probe['status']}"
 
 
-@step("system ready", "opal_health_ready_get")
+@step("service ready", "opal_health_ready_get")
 def _ready(t: CliRestTest) -> str:
     call = t.run("system", "ready")
     if call.exit_code == 0:
@@ -616,7 +616,7 @@ def _test_audio(t: CliRestTest) -> str:
     if not t.wav.exists():
         raise Skip(f"WAV fixture not found: {t.wav}")
     if not t.state.get("model_ok"):
-        raise Skip("server reports no usable Vosk model (see 'system doctor')")
+        raise Skip("server reports no usable Vosk model (see 'service doctor')")
     result = t.ok("test", "audio", str(t.wav), "--require-wakeword", timeout=180)
     expect({"wakeword", "transcript", "intent_name", "total_latency_ms"} <= set(result), f"incomplete {result}")
     if t.isolated and t.wav == DEFAULT_WAV:
@@ -686,21 +686,21 @@ def _logs_count(t: CliRestTest) -> str:
     return f"{counts}"
 
 
-@step("perf last", "get_last_performance", requires=("test text",))
+@step("service service perf last", "get_last_performance", requires=("test text",))
 def _perf_last(t: CliRestTest) -> str:
     last = t.ok("perf", "last")
     expect(last and "total_latency_ms" in last, f"no performance result: {last}")
     return f"total_latency_ms {last['total_latency_ms']}"
 
 
-@step("perf summary", "get_performance_summary", requires=("test text",))
+@step("service service perf summary", "get_performance_summary", requires=("test text",))
 def _perf_summary(t: CliRestTest) -> str:
     summary = t.ok("perf", "summary", "--limit", "50")
     expect(summary["count"] >= 1, f"empty summary {summary}")
     return f"{summary['count']} results, match rate {summary['match_rate']}"
 
 
-@step("perf history", "get_performance_history", requires=("test text",))
+@step("service service perf history", "get_performance_history", requires=("test text",))
 def _perf_history(t: CliRestTest) -> str:
     history = t.ok("perf", "history", "--limit", "5")["items"]
     expect(len(history) >= 1, "empty history")

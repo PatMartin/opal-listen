@@ -151,8 +151,8 @@ Four probe shapes for four depths of "is it healthy": `ping` (TCP/HTTP up),
 (every startup check, human-readable). All exit non-zero on failure.
 
 ```bash
-opal listen system ping && opal listen system live && opal listen system ready
-opal listen system doctor   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
+opal listen service ping && opal listen service live && opal listen service ready
+opal listen service doctor   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
 ```
 
 ### 10. Atomically retune several settings
@@ -258,14 +258,14 @@ can't be replayed against a different query.
 
 ### 17. Audit your wake-to-intent latency budget
 
-`perf` rows break each recognition into wakeword / STT / intent-stage
+`service perf` rows break each recognition into wakeword / STT / intent-stage
 milliseconds. `summary` gives avg/p50/p95/max so you can tell whether "it feels
 slow" is the wakeword stage or the STT stage.
 
 ```bash
-opal listen perf last
-opal listen perf summary --limit 200
-opal listen perf history --limit 25
+opal listen service perf last
+opal listen service perf summary --limit 200
+opal listen service perf history --limit 25
 ```
 
 ### 18. Rehearse a reaction before it can fire
@@ -310,7 +310,7 @@ Pick the right mic by name, let the watchdog recover dead captures, bound the
 log table, and prune old backups — all without editing a file or restarting.
 
 ```bash
-opal listen system devices
+opal listen service devices
 opal listen setting patch audio_device="USB" audio_watchdog_timeout_ms=5000 \
   max_recognition_logs=5000 auto_start_listener=true
 opal listen --json config backups | jq -r '.[3:][] | .filename' \
@@ -497,7 +497,7 @@ opal event topics
 ### 30. Spoken morning briefing, built from real telemetry
 
 A cron job composes last night's recognition stats into a sentence and hands it
-to opal-talk. `log count` and `perf summary` are `--json`-friendly, so the
+to opal-talk. `log count` and `service perf summary` are `--json`-friendly, so the
 briefing writes itself.
 
 ```bash
@@ -558,7 +558,7 @@ illness.
 cat > /opt/opal/health_sweep.sh <<'SH'
 #!/usr/bin/env bash
 fail=""
-opal listen system live   >/dev/null 2>&1 || fail="$fail listen"
+opal listen service live   >/dev/null 2>&1 || fail="$fail listen"
 opal talk health          >/dev/null 2>&1 || fail="$fail talk"
 opal event health         >/dev/null 2>&1 || fail="$fail event"
 opal think health         >/dev/null 2>&1 || fail="$fail think"

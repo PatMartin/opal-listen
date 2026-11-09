@@ -28,9 +28,9 @@ The server must therefore be running, either locally or on another machine.
 13. [`failed`: failed utterance review](#13-failed--failed-utterance-review)
 14. [`regression`: regression test management](#14-regression--regression-test-management)
 15. [`log`: recognition logs](#15-log--recognition-logs)
-16. [`perf`: performance metrics](#16-perf--performance-metrics)
+16. [`service perf`: performance metrics](#16-service-perf--performance-metrics)
 17. [`config`: validation, backup, export and import](#17-config--validation-backup-export-and-import)
-18. [`system`: health and diagnostics](#18-system--health-and-diagnostics)
+18. [`service`: health and diagnostics](#18-service--health-and-diagnostics)
 19. [`event`: publish ZeroMQ events](#19-event--publish-zeromq-events)
 20. [`reaction`: intent-triggered shell commands](#20-reaction--intent-triggered-shell-commands)
 21. [Walkthroughs](#21-walkthroughs)
@@ -127,7 +127,7 @@ variable has no `ER` in it, unlike the server's `OPAL_LISTENER_*` variables. `OP
 
 ```bash
 export OPAL_LISTEN_API_URL=http://192.168.1.50:8000
-opal listen system ping            # talks to 192.168.1.50
+opal listen service ping            # talks to 192.168.1.50
 
 # One-off override for a single command
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
@@ -139,8 +139,8 @@ opal listen --api-url http://localhost:8000 system info
 ### Checking the connection
 
 ```bash
-opal listen system ping            # ✓ http://localhost:8000 is up
-opal listen system info            # service name and version
+opal listen service ping            # ✓ http://localhost:8000 is up
+opal listen service info            # service name and version
 ```
 
 If the server cannot be reached, the CLI prints a hint and exits with code `1`:
@@ -258,7 +258,7 @@ server logs.
 | Exit code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | API error (4xx/5xx), server unreachable, resource not found, failed regression run, invalid configuration, `system doctor` errors, `--expect-intent` mismatch, or declined confirmation |
+| `1` | API error (4xx/5xx), server unreachable, resource not found, failed regression run, invalid configuration, `service doctor` errors, `--expect-intent` mismatch, or declined confirmation |
 | `2` | Invalid CLI usage: unknown option, missing argument, or an out-of-range value such as `--threshold 1.5` |
 
 ---
@@ -285,9 +285,9 @@ opal
     ├── failed      list | get | add | update | remove | promote
     ├── regression  list | get | add | update | remove
     ├── log         list | get | count
-    ├── perf        last | summary | history
+    ├── service     start | stop | log | doctor | devices | live | ready | info | ping
+    │               └── perf  last | summary | history
     ├── config      validate | backup | backups | download | restore | delete-backup | export | import
-    ├── system      doctor | devices | live | ready | info | ping
     ├── event       publish
     └── reaction    list | get | add | update | remove | enable | disable | test | log | path
 ```
@@ -540,7 +540,7 @@ opal listen slot add-alias room_name living_room martin_hall
 opal listen slot remove-alias room_name living_room martin_hall
 ```
 
-> After you add a value or alias, run `opal listen system doctor`. The `vocabulary` check warns if a
+> After you add a value or alias, run `opal listen service doctor`. The `vocabulary` check warns if a
 > word is unknown to the speech model and therefore can't be recognized from audio.
 
 ---
@@ -1138,7 +1138,7 @@ opal listen log count
 
 ---
 
-## 16. `perf`: performance metrics
+## 16. `service perf`: performance metrics
 
 | Command | Description |
 |---|---|
@@ -1148,16 +1148,16 @@ opal listen log count
 
 ```bash
 # The last recognition (prints "no recognitions yet" if there are none)
-opal listen perf last
+opal listen service perf last
 
 # Match rate, average confidences, and a latency table (avg/p50/p95/max)
 # for the wakeword, STT, intent and total stages
-opal listen perf summary
-opal listen perf summary --limit 1000
+opal listen service perf summary
+opal listen service perf summary --limit 1000
 
 # Per-recognition rows (the CLI prints the --cursor to pass when has_more is true)
-opal listen perf history --limit 50
-opal listen perf history --limit 50 --cursor <token-from-previous-page>
+opal listen service perf history --limit 50
+opal listen service perf history --limit 50 --cursor <token-from-previous-page>
 ```
 
 Example `summary` output (abbreviated):
@@ -1264,33 +1264,43 @@ After an import, the CLI prints the backup filename, a count of imported items, 
 
 ---
 
-## 18. `system`: health and diagnostics
+## 18. `service`: process lifecycle, health and diagnostics
 
 | Command | Description |
 |---|---|
+| `start [--host H] [--port P] [--data-dir DIR]` | Start the server in the background, logging to `logs/opal_listen.log` (truncated on each start). Replaces a previously started server. Returns immediately. |
+| `stop` | Stop the server started by `service start`, if it is running |
+| `log [--lines N]` | Show the last N lines of `logs/opal_listen.log` (default 10) |
 | `ping` | Liveness probe (`GET /api/v1/info/ping`) |
 | `info` | Service name, package version and contract version (`GET /api/v1/info/`) |
 | `doctor` | Run all health checks. Exits `1` if any check is an error. |
 | `devices` | List audio input devices visible to the **server** |
 | `live` | OPAL v1.2 liveness probe: process + database reachability (`GET /api/v1/health/live`) |
 | `ready` | OPAL v1.2 readiness probe: configuration compiles, provider loads, etc. (`GET /api/v1/health/ready`) |
+| `perf last\|summary\|history` | Performance metrics sub-group (see [§16](#16-service-perf--performance-metrics)) |
 
 ```bash
+# Run the server in the background, check it, stop it
+opal listen service start --port 8000
+opal listen service ping
+opal listen service log
+opal listen service stop
+
 # Is the server up?
-opal listen system ping
+opal listen service ping
 
 # Which version is running?
-opal listen system info
+opal listen service info
 
 # Full health check
-opal listen system doctor
+opal listen service doctor
 
 # Standard OPAL liveness/readiness probes (status: ok | degraded | unavailable; 503 when unavailable)
-opal listen system live
-opal listen system ready
+opal listen service live
+opal listen service ready
 
 # Find the microphone index or name to use for the audio_device setting
-opal listen system devices
+opal listen service devices
 opal listen setting set audio_device 2
 ```
 
@@ -1438,8 +1448,8 @@ This tour exercises every catalog group and cleans up after itself. You can run 
 
 ```bash
 # --- sanity -------------------------------------------------------------------------------
-opal listen system ping
-opal listen system doctor
+opal listen service ping
+opal listen service doctor
 
 # --- wakewords ----------------------------------------------------------------------------
 opal listen wakeword list
@@ -1527,7 +1537,7 @@ opal listen regression add kitchen_cozy "set the kitchen lights to cozy" \
 opal listen test regression
 
 # 5. Check that the speech model knows the new words
-opal listen system doctor
+opal listen service doctor
 ```
 
 ### 18.3 The review and tuning loop
@@ -1550,7 +1560,7 @@ opal listen failed update 13 --reviewed --notes "background TV"
 opal listen test regression
 
 # 6. Check latency and match rate
-opal listen perf summary
+opal listen service perf summary
 ```
 
 ### 18.4 Tune for a noisy room
@@ -1616,7 +1626,7 @@ opal listen --json test listen | jq -c '{intent_name, slot_values}'
 #!/usr/bin/env bash
 set -euo pipefail
 
-opal listen system ping
+opal listen service ping
 opal listen test text "computer, turn on the kitchen light" --no-save --expect-intent light_turn_on
 opal listen test text "order a pizza"                       --no-save --expect-intent no_match
 opal listen test audio resources/cmds/cmd-cancel.wav        --no-save --expect-intent cancel
@@ -1669,7 +1679,7 @@ opal listen --json regression list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `system devices`, `setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
+| `test listen` shows nothing | Check `service devices`, `setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1748,9 +1758,9 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `log list` | `GET /api/v1/log/` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
 | `log count` | `GET /api/v1/log/count` |
 | `log get` | `GET /api/v1/log/{id}` |
-| `perf last` | `GET /api/v1/performance/last` |
-| `perf summary` | `GET /api/v1/performance/summary` |
-| `perf history` | `GET /api/v1/performance/history` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
+| `service perf last` | `GET /api/v1/performance/last` |
+| `service perf summary` | `GET /api/v1/performance/summary` |
+| `service perf history` | `GET /api/v1/performance/history` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
 | `config validate` | `GET /api/v1/backup/validate` (or `POST` with `--from-dir`) |
 | `config backup` | `POST /api/v1/backup/create` |
 | `config backups` | `GET /api/v1/backup/list` |
@@ -1759,11 +1769,11 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config delete-backup` | `DELETE /api/v1/backup/{filename}` |
 | `config export` | `GET /api/v1/backup/export` |
 | `config import` | `POST /api/v1/backup/import` |
-| `system doctor` | `GET /api/v1/health/` |
-| `system devices` | `GET /api/v1/health/audio_devices` |
-| `system live` | `GET /api/v1/health/live` (liveness probe) |
-| `system ready` | `GET /api/v1/health/ready` (readiness probe) |
-| `system info` | `GET /api/v1/info/` |
-| `system ping` | `GET /api/v1/info/ping` |
+| `service doctor` | `GET /api/v1/health/` |
+| `service devices` | `GET /api/v1/health/audio_devices` |
+| `service live` | `GET /api/v1/health/live` (liveness probe) |
+| `service ready` | `GET /api/v1/health/ready` (readiness probe) |
+| `service info` | `GET /api/v1/info/` |
+| `service ping` | `GET /api/v1/info/ping` |
 
 See the [User Guide](USER_GUIDE.md) for the REST API, configuration files and architecture.

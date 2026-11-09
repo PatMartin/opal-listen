@@ -14,7 +14,7 @@ Each step ends with a verification milestone. Steps 1–9 are implemented; step 
 | 8 | REST API | routers for all contract tags, error mapping, backups/restore with rollback, health | `test_api.py`, `test_backup_and_config.py` | done |
 | 9 | CLI | `opal listen …` over REST, parity map, rich/JSON output, exit codes | `test_cli.py` (every command), `test_e2e_server.py` (uvicorn + SSE) | done |
 | 10 | Web GUI | React/TS/Vite/Tailwind/shadcn app in `opal_listener/view/web`, types generated from OpenAPI, `web` compose service | Vitest component tests, Playwright flows mirroring `test_cli.py`, parity check against `OPERATION_COMMANDS` | next |
-| 11 | Pi hardening | tune VAD/thresholds per profile with real voices, record real-voice fixtures, systemd/compose autostart | `opal listen perf summary` targets: total_latency p95 < 300 ms, match rate on golden real-voice set ≥ 95 %, 0 wakeword FPs in 1 h of TV audio | next |
+| 11 | Pi hardening | tune VAD/thresholds per profile with real voices, record real-voice fixtures, systemd/compose autostart | `opal listen service perf summary` targets: total_latency p95 < 300 ms, match rate on golden real-voice set ≥ 95 %, 0 wakeword FPs in 1 h of TV audio | next |
 | 12 | OPAL SUITE STANDARD v1.2 | `opal_listen.yaml` pinned to `opal_listen.1.2.0.yaml`; correlation-header middleware, strong ETag/If-Match on mutable config, atomic settings PATCH (per-key routes removed), cursor pagination for logs/performance history, `/api/v1/health/live`+`/ready` probes, `OpalError`/`OpalHealthProbe`/`OpalCursorPageMetadata` schemas; CLI and web UI updated in lockstep | `test_contract.py` (full suite incl. CLI/UI parity), `test_api.py`, `test_cli.py` | done |
 | 13 | ZeroMQ event bus | `opal listen event publish TOPIC MESSAGE` (CLI, bypasses REST); `--xpub`/`--xsub` global flags (env `OPAL_EVENT_XPUB_URL`/`OPAL_EVENT_XSUB_URL`); server-side `ZmqEventPublisher` connects eagerly at startup and publishes every matched recognition under `opal.listen.intent.match` | `test_cli.py::test_event_publish_command`, `test_zmq_events.py`, `test_api.py::test_intent_match_is_published_to_the_event_bus` | done |
 
@@ -34,5 +34,5 @@ cd opal_listener && docker compose up -d --build
 1. `opal listen test listen-debug` — check ambient dBFS and VAD; adjust profile `vad_settings`.
 2. `opal listen failed list` — review no_match utterances captured from the mic.
 3. `opal listen failed promote <id> --intent <name>` — adds a delexicalized phrase + regression test.
-4. `opal listen test regression` — confirm nothing else broke; `opal listen perf summary` for latency/confidence.
+4. `opal listen test regression` — confirm nothing else broke; `opal listen service perf summary` for latency/confidence.
 5. `opal listen config export --out-dir opal_listener/config` — commit the tuned YAML.

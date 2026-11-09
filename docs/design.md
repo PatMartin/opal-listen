@@ -258,9 +258,9 @@ mismatches (CI friendly).
 | `failed` | list, get, add, update, remove, promote |
 | `regression` | list, get, add, update, remove |
 | `log` | list, get, count |
-| `perf` | last, summary, history |
+| `service perf` | last, summary, history |
 | `config` | validate (`--from-dir`), backup, backups, restore, download, delete-backup, export (`--out-dir`), import (`--from-dir`) |
-| `system` | doctor, devices, live, ready, info, ping |
+| `service` | doctor, devices, live, ready, info, ping |
 | `event` | publish (`TOPIC MESSAGE`) — bypasses the REST API, publishes directly onto the ZeroMQ `--xpub` event bus |
 
 ## 7. Intent / slot schema
@@ -330,7 +330,7 @@ Vosk-dependent tests are marked `vosk` and skipped when the model is missing; no
   safety backup automatically if anything fails.
 - **Backups:** SQLite online backup API; filenames validated against a strict pattern and resolved inside
   the backup dir (path traversal protection).
-- **Startup health checks** (`/api/v1/health/`, `opal listen system doctor`): SQLite, migration head,
+- **Startup health checks** (`/api/v1/health/`, `opal listen service doctor`): SQLite, migration head,
   slots/intents compile, provider/model path, model load, vocabulary coverage, microphone, listener, disk.
   An invalid seed or stored config is reported but never crashes the API.
 - **Watchdog/recovery:** the runtime thread restarts capture when no frames arrive within

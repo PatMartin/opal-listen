@@ -22,7 +22,7 @@ from opal_listener.cli.event_cmds import event_app
 from opal_listener.cli.output import CliState
 from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, logs_app, perf_app, regression_app
-from opal_listener.cli.system_cmds import config_app, system_app
+from opal_listener.cli.service_cmds import config_app, service_app
 from opal_listener.cli.test_cmds import pipeline_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
 
@@ -90,11 +90,11 @@ OPERATION_COMMANDS: dict[str, str] = {
     "update_regression_test": "regression update",
     "delete_regression_test": "regression remove",
     "run_regression_tests": "test regression",
-    "get_last_performance": "perf last",
-    "get_performance_summary": "perf summary",
-    "get_performance_history": "perf history",
-    "opal_health_get": "system doctor",
-    "get_audio_devices": "system devices",
+    "get_last_performance": "service perf last",
+    "get_performance_summary": "service perf summary",
+    "get_performance_history": "service perf history",
+    "opal_health_get": "service doctor",
+    "get_audio_devices": "service devices",
     "opal_backup_list": "config backups",
     "opal_backup_create": "config backup",
     "opal_backup_download": "config download",
@@ -104,10 +104,10 @@ OPERATION_COMMANDS: dict[str, str] = {
     "opal_backup_import": "config import",
     "opal_backup_validate_stored": "config validate",
     "opal_backup_validate": "config validate",
-    "opal_info_get": "system info",
-    "opal_info_ping": "system ping",
-    "opal_health_live_get": "system live",
-    "opal_health_ready_get": "system ready",
+    "opal_info_get": "service info",
+    "opal_info_ping": "service ping",
+    "opal_health_live_get": "service live",
+    "opal_health_ready_get": "service ready",
 }
 
 app = typer.Typer(help="Opal command line.", no_args_is_help=True, pretty_exceptions_enable=False)
@@ -116,6 +116,8 @@ listen_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(listen_app, name="listen")
+
+service_app.add_typer(perf_app, name="perf")
 
 for sub_app, name in (
     (wakewords_app, "wakeword"),
@@ -129,10 +131,9 @@ for sub_app, name in (
     (failed_app, "failed"),
     (regression_app, "regression"),
     (logs_app, "log"),
-    (perf_app, "perf"),
     (reactions_app, "reaction"),
     (config_app, "config"),
-    (system_app, "system"),
+    (service_app, "service"),
     (event_app, "event"),
 ):
     listen_app.add_typer(sub_app, name=name)

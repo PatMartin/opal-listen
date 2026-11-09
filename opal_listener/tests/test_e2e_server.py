@@ -72,5 +72,5 @@ def test_cli_listen_streams_live_result(live_server: tuple[str, ListenerService]
     # the CLI started the pipeline, so it stops it again
     assert service.running is False
 
-    summary = runner.invoke(cli_app, ["listen", "--api-url", url, "--json", "perf", "summary"])
+    summary = runner.invoke(cli_app, ["listen", "--api-url", url, "--json", "service", "perf", "summary"])
     assert '"matched_count": 1' in summary.output
