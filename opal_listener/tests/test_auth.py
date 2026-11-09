@@ -28,12 +28,12 @@ def authed_client(tmp_path) -> Iterator[TestClient]:
 
 
 def test_auth_disabled_without_token(client: TestClient) -> None:
-    assert client.get("/healthz").status_code == 200
-    assert client.get("/api/v1/settings/").status_code == 200
+    assert client.get("/api/v1/info/ping").status_code == 200
+    assert client.get("/api/v1/setting/").status_code == 200
 
 
 def test_auth_enforced_on_every_route(authed_client: TestClient) -> None:
-    for path in ("/", "/healthz", "/api/v1/health/", "/api/v1/settings/", "/api/v1/wakewords/"):
+    for path in ("/api/v1/info/", "/api/v1/info/ping", "/api/v1/health/", "/api/v1/setting/", "/api/v1/wakeword/"):
         response = authed_client.get(path)
         assert response.status_code == 401, path
         assert response.json()["error"]["code"] == "unauthorized", path
@@ -43,11 +43,11 @@ def test_auth_enforced_on_every_route(authed_client: TestClient) -> None:
 
 
 def test_auth_accepts_valid_bearer(authed_client: TestClient) -> None:
-    good = authed_client.get("/api/v1/settings/", headers={"Authorization": f"Bearer {TOKEN}"})
+    good = authed_client.get("/api/v1/setting/", headers={"Authorization": f"Bearer {TOKEN}"})
     assert good.status_code == 200
-    wrong = authed_client.get("/healthz", headers={"Authorization": "Bearer nope"})
+    wrong = authed_client.get("/api/v1/info/ping", headers={"Authorization": "Bearer nope"})
     assert wrong.status_code == 401
-    wrong_scheme = authed_client.get("/healthz", headers={"Authorization": f"Basic {TOKEN}"})
+    wrong_scheme = authed_client.get("/api/v1/info/ping", headers={"Authorization": f"Basic {TOKEN}"})
     assert wrong_scheme.status_code == 401
 
 
@@ -59,7 +59,7 @@ def test_docs_and_ui_surfaces_stay_open(authed_client: TestClient) -> None:
 
 
 def test_query_token_only_honored_on_sse_stream(authed_client: TestClient) -> None:
-    rejected = authed_client.get(f"/api/v1/settings/?token={TOKEN}")
+    rejected = authed_client.get(f"/api/v1/setting/?token={TOKEN}")
     assert rejected.status_code == 401
     bad = authed_client.get("/api/v1/recognition/stream?token=nope")
     assert bad.status_code == 401
@@ -76,7 +76,7 @@ def test_unhandled_error_returns_opal_error_envelope(
     service: ListenerService = authed_client.app.state.listener
     monkeypatch.setattr(service.db, "session", boom)
     raw = TestClient(authed_client.app, raise_server_exceptions=False)
-    response = raw.get("/api/v1/settings/", headers={"Authorization": f"Bearer {TOKEN}"})
+    response = raw.get("/api/v1/setting/", headers={"Authorization": f"Bearer {TOKEN}"})
     assert response.status_code == 500
     error = response.json()["error"]
     assert error["code"] == "internal_error"
@@ -104,6 +104,6 @@ def test_cli_sends_bearer_token_from_env(authed_client: TestClient, monkeypatch:
     monkeypatch.delenv(cli_client.API_TOKEN_ENV, raising=False)
     api = cli_client.ApiClient()
     with pytest.raises(cli_client.CliError, match="401"):
-        api.get("/healthz")
+        api.get("/api/v1/info/ping")
     monkeypatch.setenv(cli_client.API_TOKEN_ENV, TOKEN)
-    assert api.get("/healthz") == {"status": "ok"}
+    assert api.get("/api/v1/info/ping") == {"status": "ok"}

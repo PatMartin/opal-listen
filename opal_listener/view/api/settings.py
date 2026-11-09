@@ -27,7 +27,7 @@ from opal_listener.service.settings_registry import (
 )
 from opal_listener.view.api.deps import get_service
 
-router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+router = APIRouter(prefix="/api/v1/setting", tags=["settings"])
 
 
 def _all_settings(session: Any) -> dict[str, str]:
@@ -72,8 +72,8 @@ def _known_key(key: str) -> str:
     return key
 
 
-@router.get("/", response_model=OpalSettingsMap, responses=OPAL_422_RESPONSE, operation_id="opal_settings_get")
-def opal_settings_get(response: Response, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
+@router.get("/", response_model=OpalSettingsMap, responses=OPAL_422_RESPONSE, operation_id="opal_setting_list")
+def opal_setting_list(response: Response, svc: ListenerService = Depends(get_service)) -> dict[str, str]:
     with svc.db.session() as session:
         data = _all_settings(session)
     response.headers["ETag"] = compute_etag(data)
@@ -84,12 +84,12 @@ def opal_settings_get(response: Response, svc: ListenerService = Depends(get_ser
     "/",
     response_model=OpalSettingsMap,
     responses={**OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="opal_settings_patch",
+    operation_id="opal_setting_patch",
 )
-def opal_settings_patch(
+def opal_setting_patch(
     changes: OpalSettingsMap,
     response: Response,
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> dict[str, str]:
     """Atomically patch one or more settings. Requires a strong If-Match (missing 428, stale 412)."""
@@ -136,7 +136,7 @@ def opal_setting_get(key: str = Path(min_length=1), svc: ListenerService = Depen
 def opal_setting_put(
     update: SettingUpdate,
     key: str = Path(min_length=1),
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> SettingRead:
     """Create or replace one setting value. Requires the settings-map If-Match (428/412)."""
@@ -165,7 +165,7 @@ def opal_setting_put(
 )
 def opal_setting_delete(
     key: str = Path(min_length=1),
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     """Revert one setting to its registry default. Requires the settings-map If-Match."""

@@ -26,7 +26,7 @@ services:
     group_add:
       - "${AUDIO_GID:-29}"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/info/ping"]
       interval: 30s
       timeout: 5s
       retries: 3

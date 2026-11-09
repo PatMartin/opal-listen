@@ -9,7 +9,14 @@ import sys
 
 import typer
 
-from opal_listener.cli.catalog_cmds import intents_app, profiles_app, settings_app, slots_app, wakewords_app
+from opal_listener.cli.catalog_cmds import (
+    intents_app,
+    personas_app,
+    profiles_app,
+    settings_app,
+    slots_app,
+    wakewords_app,
+)
 from opal_listener.cli.client import ApiClient, api_url_from_env, xpub_url_from_env, xsub_url_from_env
 from opal_listener.cli.event_cmds import event_app
 from opal_listener.cli.output import CliState
@@ -45,14 +52,20 @@ OPERATION_COMMANDS: dict[str, str] = {
     "list_aliases": "slots aliases",
     "add_alias": "slots add-alias",
     "delete_alias": "slots remove-alias",
-    "opal_profiles_list": "profiles list",
-    "opal_profiles_create": "profiles add",
+    "opal_profile_list": "profiles list",
+    "opal_profile_create": "profiles add",
     "opal_profile_get": "profiles get",
     "opal_profile_patch": "profiles update",
     "opal_profile_delete": "profiles remove",
     "opal_profile_activate": "profiles activate",
-    "opal_settings_get": "settings list",
-    "opal_settings_patch": "settings patch",
+    "opal_persona_list": "personas list",
+    "opal_persona_create": "personas add",
+    "opal_persona_get": "personas get",
+    "opal_persona_patch": "personas update",
+    "opal_persona_delete": "personas remove",
+    "opal_persona_validate": "personas validate",
+    "opal_setting_list": "settings list",
+    "opal_setting_patch": "settings patch",
     "opal_setting_get": "settings get",
     "opal_setting_put": "settings set",
     "opal_setting_delete": "settings unset",
@@ -91,8 +104,8 @@ OPERATION_COMMANDS: dict[str, str] = {
     "opal_backup_import": "config import",
     "opal_backup_validate_stored": "config validate",
     "opal_backup_validate": "config validate",
-    "root": "system info",
-    "healthz": "system ping",
+    "opal_info_get": "system info",
+    "opal_info_ping": "system ping",
     "opal_health_live_get": "system live",
     "opal_health_ready_get": "system ready",
 }
@@ -110,6 +123,7 @@ for sub_app, name in (
     (slots_app, "slots"),
     (profiles_app, "profiles"),
     (settings_app, "settings"),
+    (personas_app, "personas"),
     (test_app, "test"),
     (pipeline_app, "pipeline"),
     (failed_app, "failed"),

@@ -15,13 +15,13 @@ from opal_listener.service.concurrency import collection_etag, item_etag, requir
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.view.api.deps import get_service
 
-router = APIRouter(prefix="/api/v1/profiles", tags=["profiles"])
+router = APIRouter(prefix="/api/v1/profile", tags=["profiles"])
 
 _ITEM_ERRORS = {**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
 
 
-@router.get("/", response_model=list[OpalProfile], responses=OPAL_422_RESPONSE, operation_id="opal_profiles_list")
-def opal_profiles_list(response: Response, svc: ListenerService = Depends(get_service)) -> list[OpalProfile]:
+@router.get("/", response_model=list[OpalProfile], responses=OPAL_422_RESPONSE, operation_id="opal_profile_list")
+def opal_profile_list(response: Response, svc: ListenerService = Depends(get_service)) -> list[OpalProfile]:
     with svc.db.session() as session:
         items = [OpalProfile.model_validate(p) for p in catalog.list_profiles(session)]
     response.headers["ETag"] = collection_etag(items)
@@ -33,19 +33,19 @@ def opal_profiles_list(response: Response, svc: ListenerService = Depends(get_se
     response_model=OpalProfile,
     status_code=201,
     responses=_ITEM_ERRORS,
-    operation_id="opal_profiles_create",
+    operation_id="opal_profile_create",
 )
-def opal_profiles_create(
+def opal_profile_create(
     data: OpalProfileCreate,
     response: Response,
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.config_change() as session:
         current = [OpalProfile.model_validate(p) for p in catalog.list_profiles(session)]
         require_matching_etag(if_match, collection_etag(current), "profiles")
         result = OpalProfile.model_validate(catalog.create_profile(session, data))
-    response.headers["Location"] = f"/api/v1/profiles/{result.id}"
+    response.headers["Location"] = f"/api/v1/profile/{result.id}"
     return result
 
 
@@ -76,7 +76,7 @@ def opal_profile_patch(
     response: Response,
     profile_id: int = Path(ge=1),
     data: OpalProfilePatch = ...,
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.config_change() as session:
@@ -90,7 +90,7 @@ def opal_profile_patch(
 @router.delete("/{profile_id}", status_code=204, responses=_ITEM_ERRORS, operation_id="opal_profile_delete")
 def opal_profile_delete(
     profile_id: int = Path(ge=1),
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
@@ -108,7 +108,7 @@ def opal_profile_delete(
 )
 def opal_profile_activate(
     profile_id: int = Path(ge=1),
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     """Set this profile as active, deactivating all others."""

@@ -275,7 +275,7 @@ The container:
 - gets `/dev/snd` for the microphone
 - stores SQLite and backups in the `listener_data` volume (`/data`)
 - reads `opal_listener/config` as its seed (`/config`, read-only)
-- has a health check on `/healthz`
+- has a health check on `/api/v1/info/ping`
 
 ```bash
 docker compose logs -f listener
@@ -449,7 +449,7 @@ For every enabled phrase variant, the engine:
    `[unk]` and filler words (`filler_words`).
 2. **Strips the wakeword.** Everything before and including the first wakeword is removed. Longer
    wakewords win over shorter ones that share a prefix.
-3. **Delexicalizes** slot surfaces (exact, then fuzzy values/aliases, then numbers).
+3. **Delexicalizes** slot surfaces (exact, then fuzzy values/alias, then numbers).
 4. **Aligns** the transcript with the variant using a weighted LCS (stopwords 0.4, words 1.0, slots 1.5,
    fuzzy token equality ≥ `token_fuzzy_min_score`) and scores it with a weighted Jaccard.
 5. Computes `intent_confidence = alignment × mean slot score`.
@@ -463,7 +463,7 @@ The best candidate wins. Up to a few runners-up are returned in `alternatives`.
 |---|---|---|
 | `empty_transcript` | Nothing left after normalization and wakeword stripping | Speak after the wakeword; check levels |
 | `no_candidate` | No phrase is similar enough | Add a phrase or promote the failure |
-| `missing_slot` | A phrase matched but a required slot could not be extracted | Add values/aliases |
+| `missing_slot` | A phrase matched but a required slot could not be extracted | Add values/alias |
 | `below_threshold` | Best score is below the effective threshold | Add phrases, or lower the threshold |
 | `low_stt_confidence` | STT confidence is below the profile's `stt` floor | Improve the mic/room, or lower the floor |
 | `no_speech` | Session ended with no speech (VAD timeout) | Tune VAD or mic gain |
@@ -518,7 +518,7 @@ Backups are SQLite online backups in `var/backups/`, named `opal_listener_<UTC t
 ## 4. Configuration reference
 
 Configuration lives in SQLite and is edited through the API, CLI or GUI. For version control and moving
-configuration between machines, it can be exported to and imported from six YAML files (see
+configuration between machines, it can be exported to and imported from seven YAML files (see
 [Recipes](#95-back-up-move-and-version-your-configuration)).
 
 ### 4.1 YAML files
@@ -529,11 +529,12 @@ configuration between machines, it can be exported to and imported from six YAML
 | `intents.yaml` | `intents` | list of intents with `phrases` |
 | `slots.yaml` | `slots` | list of slots with `values` and `aliases` |
 | `profiles.yaml` | `profiles` | list of profiles |
+| `personas.yaml` | `personas` | list of personas |
 | `stt.yaml` | `stt` | speech/audio settings |
 | `settings.yaml` | `settings` | runtime settings |
 
 Every file has `version: 1`. Unknown keys are rejected, and settings must go in the right file.
-A seventh file, `reactions.yaml`, is also read from the config directory but is deliberately **not**
+An eighth file, `reactions.yaml`, is also read from the config directory but is deliberately **not**
 part of this bundle — it arms shell commands on intent match, stays file-only, and is documented in
 [§4.5](#45-intent-reactions--reactionsyaml).
 
@@ -766,7 +767,7 @@ A malformed file logs a warning and yields an empty reaction set — it never st
 ### 5.1 Conventions
 
 - **Base URL:** `http://<host>:8000`. All resources are under `/api/v1`.
-- **Trailing slashes:** collection endpoints end with `/` (for example `/api/v1/intents/`). Calling them
+- **Trailing slashes:** collection endpoints end with `/` (for example `/api/v1/intent/`). Calling them
   without the slash triggers a redirect.
 - **IDs:** resources are addressed by integer id in the API. (The CLI also accepts names.)
 - **Content type:** JSON (`Content-Type: application/json`), except `test_audio` (multipart form) and
@@ -780,7 +781,7 @@ A malformed file logs a warning and yields an empty reaction set — it never st
   credentials; they only propagate context (e.g. into server logs).
 - **Optimistic concurrency:** mutable catalog resources (wakewords, intents, phrases, slots, slot values,
   aliases, profiles, settings) return a strong `ETag`; `PATCH`/`DELETE` require a matching `If-Match`
-  (missing/empty → `428`, stale → `412`). See [5.8 Settings](#58-settings--apiv1settings) for a worked
+  (missing/empty → `428`, stale → `412`). See [5.8 Settings](#59-settings--apiv1settings) for a worked
   example.
 
 The examples below use:
@@ -793,7 +794,7 @@ API=http://localhost:8000
 
 Authentication is **off by default** — with no `OPAL_LISTENER_API_TOKEN` set, every route is open (the
 loopback-deployment case the OPAL standard allows). Set `OPAL_LISTENER_API_TOKEN` to enable Bearer auth on
-every API route (`/` and `/healthz` included):
+every API route:
 
 ```bash
 curl -s $API/api/v1/health/ -H "Authorization: Bearer $TOKEN"
@@ -803,7 +804,7 @@ Missing/wrong credentials → `401` `OpalError` (`code: unauthorized`) with `WWW
 `/docs`, `/redoc`, `/openapi.json` and `/ui` stay open so the console and API browser keep working. The
 browser `EventSource` used by `/api/v1/recognition/stream` cannot set headers, so that one route also
 accepts `?token=`. The CLI reads the same `OPAL_LISTENER_API_TOKEN` env var; the UI stores a token typed
-into the header form in `localStorage`. The token is env-only — it never appears in `GET /settings`,
+into the header form in `localStorage`. The token is env-only — it never appears in `GET /api/v1/setting/`,
 config exports, or responses.
 
 ### 5.2 Errors
@@ -835,23 +836,24 @@ locations).
 
 ### 5.3 Service
 
-#### `GET /` — service info
+#### `GET /api/v1/info/` — service info
 
-Returns name, version and useful links.
+Kernel `ServiceInfo`: service name, package version and API contract version.
 
 ```bash
-curl -s $API/
+curl -s $API/api/v1/info/
 ```
 ```json
-{"name": "opal_listener", "version": "0.1.0", "docs": "/docs", "ui": "/ui/opal-listen.html"}
+{"name": "opal-listen-svc", "version": "0.1.0", "api_version": "v1",
+ "description": "Wakeword, STT, intent recognition, and slot extraction engine"}
 ```
 
-#### `GET /healthz` — liveness probe
+#### `GET /api/v1/info/ping` — liveness probe
 
 Cheap check that the process is up. Used by Docker. For real checks use `/api/v1/health/`.
 
 ```bash
-curl -s $API/healthz
+curl -s $API/api/v1/info/ping
 ```
 ```json
 {"status": "ok"}
@@ -859,7 +861,7 @@ curl -s $API/healthz
 
 ---
 
-### 5.4 Wakewords — `/api/v1/wakewords`
+### 5.4 Wakewords — `/api/v1/wakeword`
 
 Wakeword object:
 
@@ -871,10 +873,10 @@ Wakeword object:
 | `confidence_threshold` | float 0–1 | default `0.8`. A detection below it is rejected. |
 | `created_at`, `updated_at` | datetime | read-only |
 
-#### `GET /api/v1/wakewords/` — list wakewords
+#### `GET /api/v1/wakeword/` — list wakewords
 
 ```bash
-curl -s $API/api/v1/wakewords/
+curl -s $API/api/v1/wakeword/
 ```
 ```json
 [
@@ -883,12 +885,12 @@ curl -s $API/api/v1/wakewords/
 ]
 ```
 
-#### `POST /api/v1/wakewords/` — create a wakeword
+#### `POST /api/v1/wakeword/` — create a wakeword
 
 Returns `201`. Returns `409` if the name exists, and `422` if the name is empty after normalization.
 
 ```bash
-curl -s -X POST $API/api/v1/wakewords/ \
+curl -s -X POST $API/api/v1/wakeword/ \
   -H 'Content-Type: application/json' \
   -d '{"name": "Hey Opal", "confidence_threshold": 0.85}'
 ```
@@ -899,36 +901,36 @@ curl -s -X POST $API/api/v1/wakewords/ \
 > Choose wakewords that are in the model vocabulary. `system doctor` warns about unknown words.
 > Two or three syllables work best.
 
-#### `GET /api/v1/wakewords/{wakeword_id}` — get one wakeword
+#### `GET /api/v1/wakeword/{wakeword_id}` — get one wakeword
 
 ```bash
-curl -s $API/api/v1/wakewords/2
+curl -s $API/api/v1/wakeword/2
 ```
 
-#### `PATCH /api/v1/wakewords/{wakeword_id}` — update a wakeword
+#### `PATCH /api/v1/wakeword/{wakeword_id}` — update a wakeword
 
 Send only the fields you want to change. Requires a strong `If-Match` (fetch it from a `GET` first;
-missing → `428`, stale → `412`; see [5.8 Settings](#58-settings--apiv1settings) for the full pattern).
+missing → `428`, stale → `412`; see [5.8 Settings](#59-settings--apiv1settings) for the full pattern).
 
 ```bash
-ETAG=$(curl -si $API/api/v1/wakewords/2 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X PATCH $API/api/v1/wakewords/2 \
+ETAG=$(curl -si $API/api/v1/wakeword/2 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X PATCH $API/api/v1/wakeword/2 \
   -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
   -d '{"enabled": false}'
 ```
 
-#### `DELETE /api/v1/wakewords/{wakeword_id}` — delete a wakeword
+#### `DELETE /api/v1/wakeword/{wakeword_id}` — delete a wakeword
 
 Returns `204` with no body. Also requires `If-Match`.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/wakewords/2 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/wakewords/2 -H "If-Match: $ETAG" -w '%{http_code}\n'
+ETAG=$(curl -si $API/api/v1/wakeword/2 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/wakeword/2 -H "If-Match: $ETAG" -w '%{http_code}\n'
 ```
 
 ---
 
-### 5.5 Intents — `/api/v1/intents`
+### 5.5 Intents — `/api/v1/intent`
 
 Intent object:
 
@@ -943,10 +945,10 @@ Intent object:
 
 Phrase object: `{id, intent_id, phrase, created_at}`.
 
-#### `GET /api/v1/intents/` — list intents with phrases
+#### `GET /api/v1/intent/` — list intents with phrases
 
 ```bash
-curl -s $API/api/v1/intents/ | jq '.[] | {name, n: (.phrases | length)}'
+curl -s $API/api/v1/intent/ | jq '.[] | {name, n: (.phrases | length)}'
 ```
 ```json
 {"name": "light_turn_on", "n": 4}
@@ -954,12 +956,12 @@ curl -s $API/api/v1/intents/ | jq '.[] | {name, n: (.phrases | length)}'
 {"name": "set_temperature", "n": 2}
 ```
 
-#### `POST /api/v1/intents/` — create an intent (optionally with phrases)
+#### `POST /api/v1/intent/` — create an intent (optionally with phrases)
 
 The intent and its phrases are validated together and created atomically. Returns `201`.
 
 ```bash
-curl -s -X POST $API/api/v1/intents/ -H 'Content-Type: application/json' -d '{
+curl -s -X POST $API/api/v1/intent/ -H 'Content-Type: application/json' -d '{
   "name": "play_music",
   "description": "Start music playback",
   "confidence_threshold": 0.75,
@@ -980,40 +982,40 @@ curl -s -X POST $API/api/v1/intents/ -H 'Content-Type: application/json' -d '{
 Example of a rejected phrase (unknown slot). The response is `422` and nothing is saved:
 
 ```bash
-curl -s -X POST $API/api/v1/intents/ -H 'Content-Type: application/json' \
+curl -s -X POST $API/api/v1/intent/ -H 'Content-Type: application/json' \
   -d '{"name": "bad_one", "phrases": ["play {genre}"]}'
 ```
 
-#### `GET /api/v1/intents/{intent_id}` — get an intent with phrases
+#### `GET /api/v1/intent/{intent_id}` — get an intent with phrases
 
 ```bash
-curl -s $API/api/v1/intents/1
+curl -s $API/api/v1/intent/1
 ```
 
-#### `PATCH /api/v1/intents/{intent_id}` — update an intent
+#### `PATCH /api/v1/intent/{intent_id}` — update an intent
 
 Updates `name`, `description`, `enabled` or `confidence_threshold`. The response does not include
 phrases. Requires `If-Match` (fetch from a `GET` on this intent first).
 
 ```bash
-ETAG=$(curl -si $API/api/v1/intents/7 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X PATCH $API/api/v1/intents/7 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
+ETAG=$(curl -si $API/api/v1/intent/7 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X PATCH $API/api/v1/intent/7 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
   -d '{"confidence_threshold": 0.8, "enabled": true}'
 ```
 
-#### `DELETE /api/v1/intents/{intent_id}` — delete an intent and its phrases
+#### `DELETE /api/v1/intent/{intent_id}` — delete an intent and its phrases
 
 Requires `If-Match`.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/intents/7 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/intents/7 -H "If-Match: $ETAG"
+ETAG=$(curl -si $API/api/v1/intent/7 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/intent/7 -H "If-Match: $ETAG"
 ```
 
-#### `GET /api/v1/intents/{intent_id}/phrases` — list phrases
+#### `GET /api/v1/intent/{intent_id}/phrase` — list phrases
 
 ```bash
-curl -s $API/api/v1/intents/1/phrases
+curl -s $API/api/v1/intent/1/phrase
 ```
 ```json
 [
@@ -1022,36 +1024,36 @@ curl -s $API/api/v1/intents/1/phrases
 ]
 ```
 
-#### `POST /api/v1/intents/{intent_id}/phrases` — add a phrase
+#### `POST /api/v1/intent/{intent_id}/phrase` — add a phrase
 
 Returns `201`. Returns `409` for a duplicate phrase and `422` for an invalid template.
 
 ```bash
-curl -s -X POST $API/api/v1/intents/1/phrases -H 'Content-Type: application/json' \
+curl -s -X POST $API/api/v1/intent/1/phrase -H 'Content-Type: application/json' \
   -d '{"phrase": "illuminate [the] {room_name}"}'
 ```
 
-#### `DELETE /api/v1/intents/{intent_id}/phrases/{phrase_id}` — delete a phrase
+#### `DELETE /api/v1/intent/{intent_id}/phrase/{phrase_id}` — delete a phrase
 
 Phrases have no `GET` of their own; fetch the `If-Match` from the parent phrases list (the ETag covers
 the whole list, so it's scoped to "this intent's phrases haven't changed since you listed them").
 
 ```bash
-ETAG=$(curl -si $API/api/v1/intents/1/phrases | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/intents/1/phrases/35 -H "If-Match: $ETAG"
+ETAG=$(curl -si $API/api/v1/intent/1/phrase | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/intent/1/phrase/35 -H "If-Match: $ETAG"
 ```
 
 ---
 
-### 5.6 Slots — `/api/v1/slots`
+### 5.6 Slots — `/api/v1/slot`
 
 Slot object: `{id, name, slot_type, description, created_at, updated_at}`. List and get responses also
 include `values`, and each value includes its `aliases`.
 
-#### `GET /api/v1/slots/` — list slots with values and aliases
+#### `GET /api/v1/slot/` — list slots with values and aliases
 
 ```bash
-curl -s $API/api/v1/slots/ | jq '.[0]'
+curl -s $API/api/v1/slot/ | jq '.[0]'
 ```
 ```json
 {
@@ -1067,48 +1069,48 @@ curl -s $API/api/v1/slots/ | jq '.[0]'
 }
 ```
 
-#### `POST /api/v1/slots/` — create a slot
+#### `POST /api/v1/slot/` — create a slot
 
 `slot_type` must be `list`, `number` or `text`. The response does not include values. A `list` slot
 without values only produces a warning, but phrases that use it cannot match until you add values.
 
 ```bash
-curl -s -X POST $API/api/v1/slots/ -H 'Content-Type: application/json' \
+curl -s -X POST $API/api/v1/slot/ -H 'Content-Type: application/json' \
   -d '{"name": "color", "slot_type": "list", "description": "Light colors"}'
 ```
 ```json
 {"name": "color", "slot_type": "list", "description": "Light colors", "id": 4, "created_at": "...", "updated_at": "..."}
 ```
 
-#### `GET /api/v1/slots/{slot_id}` — get a slot with values and aliases
+#### `GET /api/v1/slot/{slot_id}` — get a slot with values and aliases
 
 ```bash
-curl -s $API/api/v1/slots/4
+curl -s $API/api/v1/slot/4
 ```
 
-#### `PATCH /api/v1/slots/{slot_id}` — update a slot
+#### `PATCH /api/v1/slot/{slot_id}` — update a slot
 
 Requires `If-Match`.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/slots/4 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X PATCH $API/api/v1/slots/4 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
+ETAG=$(curl -si $API/api/v1/slot/4 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X PATCH $API/api/v1/slot/4 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
   -d '{"description": "Supported bulb colors"}'
 ```
 
-#### `DELETE /api/v1/slots/{slot_id}` — delete a slot
+#### `DELETE /api/v1/slot/{slot_id}` — delete a slot
 
 Fails with `422` while any phrase still uses `{slot}`. Requires `If-Match`.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/slots/4 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/slots/4 -H "If-Match: $ETAG"
+ETAG=$(curl -si $API/api/v1/slot/4 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/slot/4 -H "If-Match: $ETAG"
 ```
 
-#### `GET /api/v1/slots/{slot_id}/values` — list values with aliases
+#### `GET /api/v1/slot/{slot_id}/value` — list values with aliases
 
 ```bash
-curl -s $API/api/v1/slots/1/values | jq -r '.[] | "\(.value): \([.aliases[].alias] | join(", "))"'
+curl -s $API/api/v1/slot/1/value | jq -r '.[] | "\(.value): \([.aliases[].alias] | join(", "))"'
 ```
 ```
 kitchen: cooking area
@@ -1116,67 +1118,67 @@ living_room: lounge, family room
 bedroom: master bedroom
 ```
 
-#### `POST /api/v1/slots/{slot_id}/values` — add a value
+#### `POST /api/v1/slot/{slot_id}/value` — add a value
 
 ```bash
-curl -s -X POST $API/api/v1/slots/4/values -H 'Content-Type: application/json' -d '{"value": "red"}'
-curl -s -X POST $API/api/v1/slots/4/values -H 'Content-Type: application/json' -d '{"value": "warm_white"}'
+curl -s -X POST $API/api/v1/slot/4/value -H 'Content-Type: application/json' -d '{"value": "red"}'
+curl -s -X POST $API/api/v1/slot/4/value -H 'Content-Type: application/json' -d '{"value": "warm_white"}'
 ```
 ```json
 {"value": "red", "id": 20, "slot_id": 4, "created_at": "..."}
 ```
 
-#### `DELETE /api/v1/slots/{slot_id}/values/{value_id}` — delete a value (and its aliases)
+#### `DELETE /api/v1/slot/{slot_id}/value/{value_id}` — delete a value (and its aliases)
 
 Values have no `GET` of their own; fetch `If-Match` from the parent values list.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/slots/4/values | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/slots/4/values/21 -H "If-Match: $ETAG"
+ETAG=$(curl -si $API/api/v1/slot/4/value | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/slot/4/value/21 -H "If-Match: $ETAG"
 ```
 
-#### `GET /api/v1/slots/{slot_id}/values/{value_id}/aliases` — list aliases
+#### `GET /api/v1/slot/{slot_id}/value/{value_id}/alias` — list aliases
 
 ```bash
-curl -s $API/api/v1/slots/1/values/2/aliases
+curl -s $API/api/v1/slot/1/value/2/alias
 ```
 
-#### `POST /api/v1/slots/{slot_id}/values/{value_id}/aliases` — add an alias
+#### `POST /api/v1/slot/{slot_id}/value/{value_id}/alias` — add an alias
 
 An alias that already maps to another value of the same slot is rejected.
 
 ```bash
-curl -s -X POST $API/api/v1/slots/4/values/20/aliases -H 'Content-Type: application/json' \
+curl -s -X POST $API/api/v1/slot/4/value/20/alias -H 'Content-Type: application/json' \
   -d '{"alias": "crimson"}'
 ```
 
-#### `DELETE /api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}` — delete an alias
+#### `DELETE /api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` — delete an alias
 
 Aliases have no `GET` of their own; fetch `If-Match` from the parent aliases list.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/slots/4/values/20/aliases | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/slots/4/values/20/aliases/15 -H "If-Match: $ETAG"
+ETAG=$(curl -si $API/api/v1/slot/4/value/20/alias | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/slot/4/value/20/alias/15 -H "If-Match: $ETAG"
 ```
 
 ---
 
-### 5.7 Profiles — `/api/v1/profiles`
+### 5.7 Profiles — `/api/v1/profile`
 
 See [4.3 Profiles](#43-profiles) for the fields.
 
-#### `GET /api/v1/profiles/` — list profiles
+#### `GET /api/v1/profile/` — list profiles
 
 ```bash
-curl -s $API/api/v1/profiles/ | jq '.[] | {name, is_active}'
+curl -s $API/api/v1/profile/ | jq '.[] | {name, is_active}'
 ```
 
-#### `POST /api/v1/profiles/` — create a profile
+#### `POST /api/v1/profile/` — create a profile
 
 If `is_active` is `true`, all other profiles are deactivated.
 
 ```bash
-curl -s -X POST $API/api/v1/profiles/ -H 'Content-Type: application/json' -d '{
+curl -s -X POST $API/api/v1/profile/ -H 'Content-Type: application/json' -d '{
   "name": "late_night",
   "description": "Quiet, only lights and time",
   "wakeword_names": ["computer"],
@@ -1188,40 +1190,40 @@ curl -s -X POST $API/api/v1/profiles/ -H 'Content-Type: application/json' -d '{
 }'
 ```
 
-#### `GET /api/v1/profiles/{profile_id}` — get a profile
+#### `GET /api/v1/profile/{profile_id}` — get a profile
 
 ```bash
-curl -s $API/api/v1/profiles/1
+curl -s $API/api/v1/profile/1
 ```
 
-#### `PATCH /api/v1/profiles/{profile_id}` — update a profile
+#### `PATCH /api/v1/profile/{profile_id}` — update a profile
 
 Lists and maps **replace** the stored value. They are not merged. To add one VAD key, send the full map.
 Requires `If-Match`.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/profiles/1 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X PATCH $API/api/v1/profiles/1 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
+ETAG=$(curl -si $API/api/v1/profile/1 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X PATCH $API/api/v1/profile/1 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
   -d '{"vad_settings": {"silence_end_ms": 900, "no_speech_timeout_ms": 5000}}'
 ```
 
 Invalid VAD keys or out-of-range values are rejected with `422`.
 
-#### `DELETE /api/v1/profiles/{profile_id}` — delete a profile
+#### `DELETE /api/v1/profile/{profile_id}` — delete a profile
 
 Requires `If-Match`.
 
 ```bash
-ETAG=$(curl -si $API/api/v1/profiles/5 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
-curl -s -X DELETE $API/api/v1/profiles/5 -H "If-Match: $ETAG"
+ETAG=$(curl -si $API/api/v1/profile/5 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+curl -s -X DELETE $API/api/v1/profile/5 -H "If-Match: $ETAG"
 ```
 
-#### `POST /api/v1/profiles/{profile_id}/activate` — activate a profile
+#### `POST /api/v1/profile/{profile_id}/activate` — activate a profile
 
 Makes this profile active and deactivates all others. The running pipeline switches when it is idle.
 
 ```bash
-curl -s -X POST $API/api/v1/profiles/2/activate | jq '{name, is_active}'
+curl -s -X POST $API/api/v1/profile/2/activate | jq '{name, is_active}'
 ```
 ```json
 {"name": "noisy_room", "is_active": true}
@@ -1229,17 +1231,55 @@ curl -s -X POST $API/api/v1/profiles/2/activate | jq '{name, is_active}'
 
 ---
 
-### 5.8 Settings — `/api/v1/settings`
+### 5.8 Personas — `/api/v1/persona`
 
-See [4.2 Settings](#42-settings) for all keys. The collection (`GET`/`PATCH /api/v1/settings/`) carries a
-strong `ETag` covering the whole settings map — every settings mutation (collection `PATCH` and per-key
-`PUT`/`DELETE`) requires it as `If-Match`, and any successful change rotates it. Per-key routes
-`GET`/`PUT`/`DELETE /api/v1/settings/{key}` read, replace, or reset a single setting.
+Personas are named speaker identities, each optionally bound to an OPAL Say `voice_id`. The
+collection carries a strong `ETag`; creates and per-item mutations require `If-Match`
+(missing → `428`, stale → `412`). `persona_id` is client-supplied, must match
+`^[A-Za-z0-9][A-Za-z0-9._-]*$` and is immutable after creation.
 
-#### `GET /api/v1/settings/` — all settings as a key → string map
+#### `GET /api/v1/persona/` — list personas
+
+Optional `?enabled=true|false` filter. Returns a collection `ETag`.
+
+#### `POST /api/v1/persona/` — register a persona
 
 ```bash
-curl -si $API/api/v1/settings/
+curl -s -X POST $API/api/v1/persona/ -H 'Content-Type: application/json'   -H "If-Match: $ETAG"   -d '{"persona_id": "amy", "name": "Amy", "voice_id": "en-gb-alan-low"}'
+```
+`201` + `Location`; `409` if the `persona_id` is already registered. `voice_id` names an OPAL Say
+voice — this service records the binding but does not check that the voice exists.
+
+#### `GET /api/v1/persona/{persona_id}` — get a persona
+
+Returns the persona and an item `ETag`.
+
+#### `PATCH /api/v1/persona/{persona_id}` — update a persona
+
+Requires `If-Match` on the item ETag. `name`, `description`, `voice_id` and `enabled` are
+modifiable; `persona_id` is not.
+
+#### `DELETE /api/v1/persona/{persona_id}` — remove a persona
+
+Requires `If-Match` on the item ETag. `204` on success.
+
+#### `POST /api/v1/persona/{persona_id}/validate` — validate a persona
+
+Local checks only: the persona exists, is enabled, and declared bindings (e.g. `voice_id`) are
+well-formed. Returns an `OpalValidationReport` (`valid`, `errors`, `warnings`); `404` when the
+persona does not exist.
+
+### 5.9 Settings — `/api/v1/setting`
+
+See [4.2 Settings](#42-settings) for all keys. The collection (`GET`/`PATCH /api/v1/setting/`) carries a
+strong `ETag` covering the whole settings map — every settings mutation (collection `PATCH` and per-key
+`PUT`/`DELETE`) requires it as `If-Match`, and any successful change rotates it. Per-key routes
+`GET`/`PUT`/`DELETE /api/v1/setting/{key}` read, replace, or reset a single setting.
+
+#### `GET /api/v1/setting/` — all settings as a key → string map
+
+```bash
+curl -si $API/api/v1/setting/
 ```
 ```json
 {
@@ -1254,10 +1294,10 @@ The response includes an `ETag` header (a strong, content-derived revision of th
 Fetch it first, then send it back as `If-Match` on `PATCH`:
 
 ```bash
-ETAG=$(curl -si $API/api/v1/settings/ | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
+ETAG=$(curl -si $API/api/v1/setting/ | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
 ```
 
-#### `PATCH /api/v1/settings/` — atomically set one or more settings
+#### `PATCH /api/v1/setting/` — atomically set one or more settings
 
 The body is `{"<key>": <value>, ...}` with at least one entry (any JSON scalar — the value is parsed and
 validated server-side per key). All keys are applied in a single transaction: if any value is invalid,
@@ -1265,21 +1305,21 @@ none of them are changed. `If-Match` is required: missing/empty → `428`, stale
 settings since you fetched the ETag) → `412`.
 
 ```bash
-curl -s -X PATCH $API/api/v1/settings/ -H "If-Match: $ETAG" \
+curl -s -X PATCH $API/api/v1/setting/ -H "If-Match: $ETAG" \
   -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000, "stt_mode": "open"}'
 ```
 
 Examples of rejected requests:
 
 ```bash
-curl -s -X PATCH $API/api/v1/settings/ -H "If-Match: $ETAG" \
+curl -s -X PATCH $API/api/v1/setting/ -H "If-Match: $ETAG" \
   -H 'Content-Type: application/json' -d '{"stt_mode": "fast"}'
 # 422: {"detail": [{"loc": ["body"], "msg": "setting 'stt_mode' must be one of grammar, open", ...}]}
 
-curl -s -X PATCH $API/api/v1/settings/ -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
+curl -s -X PATCH $API/api/v1/setting/ -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
 # 428: {"error": {"code": "precondition_required", "message": "missing or empty If-Match header", ...}}
 
-curl -s -X PATCH $API/api/v1/settings/ -H 'If-Match: "stale"' \
+curl -s -X PATCH $API/api/v1/setting/ -H 'If-Match: "stale"' \
   -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
 # 412: {"error": {"code": "precondition_failed", "message": "settings has changed ... (stale If-Match)", ...}}
 ```
@@ -1287,10 +1327,10 @@ curl -s -X PATCH $API/api/v1/settings/ -H 'If-Match: "stale"' \
 All 422 responses use the standard `OpalError` envelope — `{"error": {"code": "invalid_request",
 "message": "...", "details": "...", "request_id": ..., ...}}`.
 
-#### `GET /api/v1/settings/{key}` — one setting with lifecycle metadata
+#### `GET /api/v1/setting/{key}` — one setting with lifecycle metadata
 
 ```bash
-curl -s $API/api/v1/settings/cooldown_ms
+curl -s $API/api/v1/setting/cooldown_ms
 ```
 ```json
 {"key": "cooldown_ms", "value": 1500, "default": 1500, "is_default": true, "pending_restart": false}
@@ -1299,24 +1339,24 @@ curl -s $API/api/v1/settings/cooldown_ms
 `value` is returned in the setting's native JSON type. `default`/`is_default` come from the settings
 registry; `pending_restart` is always `false` — every setting hot-applies. Unknown key → `404`.
 
-#### `PUT /api/v1/settings/{key}` — replace one setting
+#### `PUT /api/v1/setting/{key}` — replace one setting
 
 Body is a strict `{"value": <v>}` object (unknown fields → `422`). Requires the settings-map `If-Match`
-(fetch it with `GET /api/v1/settings/` — the per-key `GET` does not carry an item ETag). The same
+(fetch it with `GET /api/v1/setting/` — the per-key `GET` does not carry an item ETag). The same
 validation as `PATCH` applies; returns the `SettingRead` above.
 
 ```bash
-curl -s -X PUT $API/api/v1/settings/cooldown_ms -H "If-Match: $ETAG" \
+curl -s -X PUT $API/api/v1/setting/cooldown_ms -H "If-Match: $ETAG" \
   -H 'Content-Type: application/json' -d '{"value": 1000}'
 ```
 
-#### `DELETE /api/v1/settings/{key}` — reset to the registry default
+#### `DELETE /api/v1/setting/{key}` — reset to the registry default
 
 Removes any override and writes the registry default back into the row; returns `204`. Requires the
 settings-map `If-Match`.
 
 ```bash
-curl -s -X DELETE $API/api/v1/settings/cooldown_ms -H "If-Match: $ETAG" -w '%{http_code}\n'
+curl -s -X DELETE $API/api/v1/setting/cooldown_ms -H "If-Match: $ETAG" -w '%{http_code}\n'
 ```
 
 CLI equivalents: `opal listen settings get <key>`, `opal listen settings set <key> <value>` (per-key PUT),
@@ -1324,7 +1364,7 @@ CLI equivalents: `opal listen settings get <key>`, `opal listen settings set <ke
 
 ---
 
-### 5.9 Recognition — `/api/v1/recognition`
+### 5.10 Recognition — `/api/v1/recognition`
 
 `RecognitionResult` is returned by `test_text`, `test_audio` and SSE `result` events:
 
@@ -1473,9 +1513,9 @@ See [section 6](#6-live-results-server-sent-events).
 
 ---
 
-### 5.10 Recognition logs — `/api/v1/logs`
+### 5.11 Recognition logs — `/api/v1/log`
 
-#### `GET /api/v1/logs/` — list logs (newest first, cursor-paginated)
+#### `GET /api/v1/log/` — list logs (newest first, cursor-paginated)
 
 | Query | Default | Meaning |
 |---|---|---|
@@ -1489,34 +1529,34 @@ descending `(created_at, id)`. Cursors are scoped to the exact filter set used t
 one with different `intent_name`/`matched` filters, or an otherwise invalid cursor, returns `422`.
 
 ```bash
-curl -s "$API/api/v1/logs/?limit=5&matched=false" | jq '.items[] | {id, source, normalized_transcript, no_match_reason}'
-curl -s "$API/api/v1/logs/?intent_name=light_turn_on&limit=20" | jq -r .next_cursor
-curl -s "$API/api/v1/logs/?intent_name=light_turn_on&limit=20&cursor=<next_cursor-from-previous-call>"
+curl -s "$API/api/v1/log/?limit=5&matched=false" | jq '.items[] | {id, source, normalized_transcript, no_match_reason}'
+curl -s "$API/api/v1/log/?intent_name=light_turn_on&limit=20" | jq -r .next_cursor
+curl -s "$API/api/v1/log/?intent_name=light_turn_on&limit=20&cursor=<next_cursor-from-previous-call>"
 ```
 
-#### `GET /api/v1/logs/count` — totals
+#### `GET /api/v1/log/count` — totals
 
 ```bash
-curl -s $API/api/v1/logs/count
+curl -s $API/api/v1/log/count
 ```
 ```json
 {"total": 1284, "matched": 1190, "no_match": 94}
 ```
 
-#### `GET /api/v1/logs/{log_id}` — one log
+#### `GET /api/v1/log/{log_id}` — one log
 
 ```bash
-curl -s $API/api/v1/logs/42
+curl -s $API/api/v1/log/42
 ```
 
 ---
 
-### 5.11 Failed utterances — `/api/v1/failed_utterances`
+### 5.12 Failed utterances — `/api/v1/failed_utterance`
 
 Failed utterance object: `{id, transcript, expected_intent, notes, recognition_log_id, reviewed,
 promoted_to_phrase, created_at}`.
 
-#### `GET /api/v1/failed_utterances/` — list (newest first)
+#### `GET /api/v1/failed_utterance/` — list (newest first)
 
 | Query | Default | Meaning |
 |---|---|---|
@@ -1526,13 +1566,13 @@ promoted_to_phrase, created_at}`.
 | `offset` | `0` | |
 
 ```bash
-curl -s "$API/api/v1/failed_utterances/?reviewed=false&limit=20"
+curl -s "$API/api/v1/failed_utterance/?reviewed=false&limit=20"
 ```
 
-#### `POST /api/v1/failed_utterances/` — record a failure manually
+#### `POST /api/v1/failed_utterance/` — record a failure manually
 
 ```bash
-curl -s -X POST $API/api/v1/failed_utterances/ -H 'Content-Type: application/json' -d '{
+curl -s -X POST $API/api/v1/failed_utterance/ -H 'Content-Type: application/json' -d '{
   "transcript": "lights up in the kitchen",
   "expected_intent": "light_turn_on",
   "notes": "reported by user",
@@ -1540,28 +1580,28 @@ curl -s -X POST $API/api/v1/failed_utterances/ -H 'Content-Type: application/jso
 }'
 ```
 
-#### `GET /api/v1/failed_utterances/{fu_id}` — get one
+#### `GET /api/v1/failed_utterance/{fu_id}` — get one
 
 ```bash
-curl -s $API/api/v1/failed_utterances/3
+curl -s $API/api/v1/failed_utterance/3
 ```
 
-#### `PATCH /api/v1/failed_utterances/{fu_id}` — annotate
+#### `PATCH /api/v1/failed_utterance/{fu_id}` — annotate
 
 Fields: `expected_intent`, `notes`, `reviewed`, `promoted_to_phrase`.
 
 ```bash
-curl -s -X PATCH $API/api/v1/failed_utterances/3 -H 'Content-Type: application/json' \
+curl -s -X PATCH $API/api/v1/failed_utterance/3 -H 'Content-Type: application/json' \
   -d '{"reviewed": true, "notes": "background TV, ignore"}'
 ```
 
-#### `DELETE /api/v1/failed_utterances/{fu_id}` — delete
+#### `DELETE /api/v1/failed_utterance/{fu_id}` — delete
 
 ```bash
-curl -s -X DELETE $API/api/v1/failed_utterances/3
+curl -s -X DELETE $API/api/v1/failed_utterance/3
 ```
 
-#### `POST /api/v1/failed_utterances/{fu_id}/promote` — turn a failure into a training phrase
+#### `POST /api/v1/failed_utterance/{fu_id}/promote` — turn a failure into a training phrase
 
 This is the core of the tuning loop. It:
 
@@ -1579,7 +1619,7 @@ The change is validated like any other configuration change.
 | `create_regression` | no (default `true`) | Also create a regression test |
 
 ```bash
-curl -s -X POST "$API/api/v1/failed_utterances/3/promote?intent_name=light_turn_on"
+curl -s -X POST "$API/api/v1/failed_utterance/3/promote?intent_name=light_turn_on"
 ```
 ```json
 {
@@ -1594,7 +1634,7 @@ curl -s -X POST "$API/api/v1/failed_utterances/3/promote?intent_name=light_turn_
 
 ---
 
-### 5.12 Regression tests — `/api/v1/regression`
+### 5.13 Regression tests — `/api/v1/regression`
 
 Regression test object: `{id, name, phrase, expected_intent, expected_slots, enabled, last_result,
 last_run_at, created_at}`. Use `expected_intent: "no_match"` for negative tests.
@@ -1668,7 +1708,7 @@ curl -s -X DELETE $API/api/v1/regression/7
 
 ---
 
-### 5.13 Performance — `/api/v1/performance`
+### 5.14 Performance — `/api/v1/performance`
 
 #### `GET /api/v1/performance/last` — the most recent recognition
 
@@ -1719,7 +1759,7 @@ curl -s "$API/api/v1/performance/history?limit=10" | jq -r '.items[] | "\(.id)\t
 
 ---
 
-### 5.14 Health — `/api/v1/health`
+### 5.15 Health — `/api/v1/health`
 
 #### `GET /api/v1/health/` — run all health checks
 
@@ -1789,7 +1829,7 @@ curl -si $API/api/v1/health/ready   # -i to see the 503 on failure
 
 ---
 
-### 5.15 Backup and configuration — `/api/v1/backup`
+### 5.16 Backup and configuration — `/api/v1/backup`
 
 #### `GET /api/v1/backup/list` — list backups (newest first)
 
@@ -2057,9 +2097,9 @@ OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
 
 | Command | REST | Description |
 |---|---|---|
-| `list` | `GET /wakewords/` | List wakewords |
-| `get NAME\|ID` | `GET /wakewords/{id}` | Show one |
-| `add NAME [--threshold F] [--enabled/--disabled]` | `POST /wakewords/` | Add (default threshold 0.8) |
+| `list` | `GET /api/v1/wakeword/` | List wakewords |
+| `get NAME\|ID` | `GET /api/v1/wakeword/{id}` | Show one |
+| `add NAME [--threshold F] [--enabled/--disabled]` | `POST /api/v1/wakeword/` | Add (default threshold 0.8) |
 | `update NAME\|ID [--name N] [--threshold F] [--enabled/--disabled]` | `PATCH` | Update |
 | `remove NAME\|ID` | `DELETE` | Remove |
 
@@ -2176,7 +2216,27 @@ opal listen profiles activate default
 opal listen profiles remove late_night
 ```
 
-### 7.6 `settings`
+### 7.6 `personas`
+
+Personas are named speaker identities; an optional `--voice` binds an OPAL Say voice id so
+spoken feedback keeps a consistent voice. They live in `personas.yaml` and travel with
+`config export`/`config import`.
+
+| Command | Description |
+|---|---|
+| `list [--enabled/--disabled]` | List personas |
+| `get ID\|NAME` | Show a persona |
+| `add PERSONA_ID --name N [--description] [--voice V] [--enabled/--disabled]` | Register a persona |
+| `update ID\|NAME [--name] [--description] [--voice V] [--enabled/--disabled]` | Update a persona |
+| `remove ID\|NAME` | Remove a persona |
+| `validate ID\|NAME` | Check the persona is enabled and its bindings are well-formed |
+
+```bash
+opal listen personas add amy --name "Amy" --voice en-gb-alan-low
+opal listen personas validate amy
+```
+
+### 7.7 `settings`
 
 | Command | Description |
 |---|---|
@@ -2193,7 +2253,7 @@ opal listen settings set auto_start_listener true
 opal listen settings set stt_refiner faster_whisper     # requires the [whisper] extra
 ```
 
-### 7.7 `test`
+### 7.8 `test`
 
 | Command | Description |
 |---|---|
@@ -2253,7 +2313,7 @@ speech_end {'session_id': 'a1b2c3d4e5f6', 'reason': 'speech_end'}
 { ...full RecognitionResult... }
 ```
 
-### 7.8 `pipeline`
+### 7.9 `pipeline`
 
 ```bash
 opal listen pipeline start
@@ -2261,7 +2321,7 @@ opal listen pipeline status
 opal listen pipeline stop
 ```
 
-### 7.9 `failed`
+### 7.10 `failed`
 
 | Command | Description |
 |---|---|
@@ -2282,7 +2342,7 @@ opal listen failed add "dim the lounge" --expected-intent light_dim --notes "int
 opal listen failed remove 5
 ```
 
-### 7.10 `regression`
+### 7.11 `regression`
 
 | Command | Description |
 |---|---|
@@ -2305,7 +2365,7 @@ opal listen regression update 3 --disabled
 opal listen test regression
 ```
 
-### 7.11 `logs`
+### 7.12 `logs`
 
 ```bash
 opal listen logs list                              # 100 newest
@@ -2315,7 +2375,7 @@ opal listen logs get 42
 opal listen logs count
 ```
 
-### 7.12 `perf`
+### 7.13 `perf`
 
 ```bash
 opal listen perf last
@@ -2324,7 +2384,7 @@ opal listen perf summary --limit 1000
 opal listen perf history --limit 50
 ```
 
-### 7.13 `config`
+### 7.14 `config`
 
 | Command | Description |
 |---|---|
@@ -2334,7 +2394,7 @@ opal listen perf history --limit 50
 | `download FILE [-o PATH]` | Download a backup |
 | `restore FILE [-y]` | Restore (asks for confirmation) |
 | `delete-backup FILE [-y]` | Delete a backup (asks for confirmation) |
-| `export [--out-dir DIR]` | JSON to stdout, or the six YAML files into `DIR` |
+| `export [--out-dir DIR]` | JSON to stdout, or the seven YAML files into `DIR` |
 | `import [--from-dir DIR] [-y]` | Replace configuration from local YAML (default: server `./config/`) |
 
 ```bash
@@ -2354,11 +2414,11 @@ opal listen config import --from-dir ./my-config --yes
 > `--from-dir` reads files on the **client** machine and uploads them as a bundle. Without it, `import`
 > uses the YAML directory on the **server**.
 
-### 7.14 `system`
+### 7.15 `system`
 
 ```bash
-opal listen system ping          # GET /healthz
-opal listen system info          # GET /
+opal listen system ping          # GET /api/v1/info/ping
+opal listen system info          # GET /api/v1/info/
 opal listen system doctor        # GET /api/v1/health/ (exit 1 on errors)
 opal listen system devices       # GET /api/v1/health/audio_devices
 opal listen system live          # GET /api/v1/health/live  (OPAL v1.2 liveness probe)
@@ -2380,7 +2440,7 @@ Example `doctor` output:
 overall: ! warning
 ```
 
-### 7.15 `event`
+### 7.16 `event`
 
 `event publish` is the one command that does **not** call the REST API. It opens a ZeroMQ `PUB` socket,
 connects to `--xpub` (the opal event bus broker's ingest endpoint), and sends a two-frame
@@ -2494,12 +2554,12 @@ opal listen system doctor
 The same steps with the REST API:
 
 ```bash
-SLOT=$(curl -s -X POST $API/api/v1/slots/ -H 'Content-Type: application/json' \
+SLOT=$(curl -s -X POST $API/api/v1/slot/ -H 'Content-Type: application/json' \
   -d '{"name":"color","slot_type":"list"}' | jq .id)
 for v in red blue warm_white; do
-  curl -s -X POST $API/api/v1/slots/$SLOT/values -H 'Content-Type: application/json' -d "{\"value\":\"$v\"}" >/dev/null
+  curl -s -X POST $API/api/v1/slot/$SLOT/value -H 'Content-Type: application/json' -d "{\"value\":\"$v\"}" >/dev/null
 done
-curl -s -X POST $API/api/v1/intents/ -H 'Content-Type: application/json' \
+curl -s -X POST $API/api/v1/intent/ -H 'Content-Type: application/json' \
   -d '{"name":"light_color","phrases":["make [the] {room_name} (light | lights) {color}"]}'
 curl -s -X POST $API/api/v1/recognition/test_text -H 'Content-Type: application/json' \
   -d '{"text":"make the bedroom lights blue"}' | jq '{intent_name, slot_values}'
@@ -2607,7 +2667,7 @@ opal listen profiles activate default
 Switch profiles from home automation:
 
 ```bash
-curl -s -X POST $API/api/v1/profiles/$(curl -s $API/api/v1/profiles/ | jq '.[] | select(.name=="car") | .id')/activate
+curl -s -X POST $API/api/v1/profile/$(curl -s $API/api/v1/profile/ | jq '.[] | select(.name=="car") | .id')/activate
 ```
 
 ### 9.7 Use a larger model or the Whisper refiner
@@ -2781,7 +2841,7 @@ python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixture
 | Negative phrases | `tests/negative/negative_phrases.yaml` | Must be `no_match` with a reason |
 | Audio fixtures | `tests/audio/manifest.yaml`, `fixtures/*.wav` | Full pipeline via REST, wakeword false positives and negatives |
 | Noise | `tests/noise/test_noise.py` (`slow`) | Golden WAVs with white/pink noise at 20/10 dB SNR |
-| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v1.5.0.yaml` |
+| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v1.6.0.yaml` |
 | CLI | `test_cli.py`, `test_e2e_server.py` | Every command, parity map, real server + SSE |
 | Config / backup | `test_config_schema.py`, `test_backup_and_config.py` | YAML schemas, validate-before-apply, rollback |
 | Migrations | `test_migrations.py` | Upgrade/downgrade, drift, foreign keys |
@@ -2850,55 +2910,64 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 
 | Method | Path | Operation | `opal listen ...` | GUI page |
 |---|---|---|---|---|
-| GET | `/` | `root` | `system info` | System |
-| GET | `/healthz` | `healthz` | `system ping` | System |
-| GET | `/api/v1/wakewords/` | `list_wakewords` | `wakewords list` | Wakewords |
-| POST | `/api/v1/wakewords/` | `create_wakeword` | `wakewords add` | Wakewords |
-| GET | `/api/v1/wakewords/{wakeword_id}` | `get_wakeword` | `wakewords get` | Wakewords |
-| PATCH | `/api/v1/wakewords/{wakeword_id}` | `update_wakeword` | `wakewords update` | Wakewords |
-| DELETE | `/api/v1/wakewords/{wakeword_id}` | `delete_wakeword` | `wakewords remove` | Wakewords |
-| GET | `/api/v1/intents/` | `list_intents` | `intents list` | Intents |
-| POST | `/api/v1/intents/` | `create_intent` | `intents add` | Intents |
-| GET | `/api/v1/intents/{intent_id}` | `get_intent` | `intents get` | Intents |
-| PATCH | `/api/v1/intents/{intent_id}` | `update_intent` | `intents update` | Intents |
-| DELETE | `/api/v1/intents/{intent_id}` | `delete_intent` | `intents remove` | Intents |
-| GET | `/api/v1/intents/{intent_id}/phrases` | `list_phrases` | `intents phrases` | Intents |
-| POST | `/api/v1/intents/{intent_id}/phrases` | `add_phrase` | `intents add-phrase` | Intents |
-| DELETE | `/api/v1/intents/{intent_id}/phrases/{phrase_id}` | `delete_phrase` | `intents remove-phrase` | Intents |
-| GET | `/api/v1/slots/` | `list_slots` | `slots list` | Slots |
-| POST | `/api/v1/slots/` | `create_slot` | `slots add` | Slots |
-| GET | `/api/v1/slots/{slot_id}` | `get_slot` | `slots get` | Slots |
-| PATCH | `/api/v1/slots/{slot_id}` | `update_slot` | `slots update` | Slots |
-| DELETE | `/api/v1/slots/{slot_id}` | `delete_slot` | `slots remove` | Slots |
-| GET | `/api/v1/slots/{slot_id}/values` | `list_slot_values` | `slots values` | Slots |
-| POST | `/api/v1/slots/{slot_id}/values` | `add_slot_value` | `slots add-value` | Slots |
-| DELETE | `/api/v1/slots/{slot_id}/values/{value_id}` | `delete_slot_value` | `slots remove-value` | Slots |
-| GET | `/api/v1/slots/{slot_id}/values/{value_id}/aliases` | `list_aliases` | `slots aliases` | Slots |
-| POST | `/api/v1/slots/{slot_id}/values/{value_id}/aliases` | `add_alias` | `slots add-alias` | Slots |
-| DELETE | `/api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}` | `delete_alias` | `slots remove-alias` | Slots |
-| GET | `/api/v1/profiles/` | `list_profiles` | `profiles list` | Profiles |
-| POST | `/api/v1/profiles/` | `create_profile` | `profiles add` | Profiles |
-| GET | `/api/v1/profiles/{profile_id}` | `get_profile` | `profiles get` | Profiles |
-| PATCH | `/api/v1/profiles/{profile_id}` | `update_profile` | `profiles update` | Profiles |
-| DELETE | `/api/v1/profiles/{profile_id}` | `delete_profile` | `profiles remove` | Profiles |
-| POST | `/api/v1/profiles/{profile_id}/activate` | `activate_profile` | `profiles activate` | Profiles |
-| GET | `/api/v1/settings/` | `get_all_settings` | `settings list` | Settings |
-| PATCH | `/api/v1/settings/` | `patch_listen_settings` | `settings set` | Settings |
+| GET | `/api/v1/info/` | `opal_info_get` | `system info` | System |
+| GET | `/api/v1/info/ping` | `opal_info_ping` | `system ping` | System |
+| GET | `/api/v1/wakeword/` | `list_wakewords` | `wakewords list` | Wakewords |
+| POST | `/api/v1/wakeword/` | `create_wakeword` | `wakewords add` | Wakewords |
+| GET | `/api/v1/wakeword/{wakeword_id}` | `get_wakeword` | `wakewords get` | Wakewords |
+| PATCH | `/api/v1/wakeword/{wakeword_id}` | `update_wakeword` | `wakewords update` | Wakewords |
+| DELETE | `/api/v1/wakeword/{wakeword_id}` | `delete_wakeword` | `wakewords remove` | Wakewords |
+| GET | `/api/v1/intent/` | `list_intents` | `intents list` | Intents |
+| POST | `/api/v1/intent/` | `create_intent` | `intents add` | Intents |
+| GET | `/api/v1/intent/{intent_id}` | `get_intent` | `intents get` | Intents |
+| PATCH | `/api/v1/intent/{intent_id}` | `update_intent` | `intents update` | Intents |
+| DELETE | `/api/v1/intent/{intent_id}` | `delete_intent` | `intents remove` | Intents |
+| GET | `/api/v1/intent/{intent_id}/phrase` | `list_phrases` | `intents phrases` | Intents |
+| POST | `/api/v1/intent/{intent_id}/phrase` | `add_phrase` | `intents add-phrase` | Intents |
+| DELETE | `/api/v1/intent/{intent_id}/phrase/{phrase_id}` | `delete_phrase` | `intents remove-phrase` | Intents |
+| GET | `/api/v1/slot/` | `list_slots` | `slots list` | Slots |
+| POST | `/api/v1/slot/` | `create_slot` | `slots add` | Slots |
+| GET | `/api/v1/slot/{slot_id}` | `get_slot` | `slots get` | Slots |
+| PATCH | `/api/v1/slot/{slot_id}` | `update_slot` | `slots update` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}` | `delete_slot` | `slots remove` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value` | `list_slot_values` | `slots values` | Slots |
+| POST | `/api/v1/slot/{slot_id}/value` | `add_slot_value` | `slots add-value` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}` | `delete_slot_value` | `slots remove-value` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `list_aliases` | `slots aliases` | Slots |
+| POST | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `add_alias` | `slots add-alias` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `delete_alias` | `slots remove-alias` | Slots |
+| GET | `/api/v1/profile/` | `opal_profile_list` | `profiles list` | Profiles |
+| POST | `/api/v1/profile/` | `opal_profile_create` | `profiles add` | Profiles |
+| GET | `/api/v1/profile/{profile_id}` | `opal_profile_get` | `profiles get` | Profiles |
+| PATCH | `/api/v1/profile/{profile_id}` | `opal_profile_patch` | `profiles update` | Profiles |
+| DELETE | `/api/v1/profile/{profile_id}` | `opal_profile_delete` | `profiles remove` | Profiles |
+| POST | `/api/v1/profile/{profile_id}/activate` | `opal_profile_activate` | `profiles activate` | Profiles |
+| GET | `/api/v1/setting/` | `opal_setting_list` | `settings list` | Settings |
+| PATCH | `/api/v1/setting/` | `opal_setting_patch` | `settings patch` | Settings |
+| GET | `/api/v1/setting/{key}` | `opal_setting_get` | `settings get` | Settings |
+| PUT | `/api/v1/setting/{key}` | `opal_setting_put` | `settings set` | Settings |
+| DELETE | `/api/v1/setting/{key}` | `opal_setting_delete` | `settings unset` | Settings |
+| GET | `/api/v1/persona/` | `opal_persona_list` | `personas list` | Personas |
+| POST | `/api/v1/persona/` | `opal_persona_create` | `personas add` | Personas |
+| GET | `/api/v1/persona/{persona_id}` | `opal_persona_get` | `personas get` | Personas |
+| PATCH | `/api/v1/persona/{persona_id}` | `opal_persona_patch` | `personas update` | Personas |
+| DELETE | `/api/v1/persona/{persona_id}` | `opal_persona_delete` | `personas remove` | Personas |
+| POST | `/api/v1/persona/{persona_id}/validate` | `opal_persona_validate` | `personas validate` | Personas |
 | POST | `/api/v1/recognition/test_text` | `test_text` | `test text` | Test |
 | POST | `/api/v1/recognition/test_audio` | `test_audio` | `test audio` | Test |
 | POST | `/api/v1/recognition/start` | `start_pipeline` | `pipeline start` | Pipeline |
 | POST | `/api/v1/recognition/stop` | `stop_pipeline` | `pipeline stop` | Pipeline |
 | GET | `/api/v1/recognition/status` | `get_status` | `pipeline status` | Pipeline |
 | GET | `/api/v1/recognition/stream` | `stream_results` | `test listen` / `listen-debug` | Test |
-| GET | `/api/v1/logs/` | `list_logs` | `logs list` | Logs |
-| GET | `/api/v1/logs/count` | `count_logs` | `logs count` | Logs |
-| GET | `/api/v1/logs/{log_id}` | `get_log` | `logs get` | Logs |
-| GET | `/api/v1/failed_utterances/` | `list_failed_utterances` | `failed list` | Failed utterances |
-| POST | `/api/v1/failed_utterances/` | `create_failed_utterance` | `failed add` | Failed utterances |
-| GET | `/api/v1/failed_utterances/{fu_id}` | `get_failed_utterance` | `failed get` | Failed utterances |
-| PATCH | `/api/v1/failed_utterances/{fu_id}` | `update_failed_utterance` | `failed update` | Failed utterances |
-| DELETE | `/api/v1/failed_utterances/{fu_id}` | `delete_failed_utterance` | `failed remove` | Failed utterances |
-| POST | `/api/v1/failed_utterances/{fu_id}/promote` | `promote_to_phrase` | `failed promote` | Failed utterances |
+| GET | `/api/v1/log/` | `list_logs` | `logs list` | Logs |
+| GET | `/api/v1/log/count` | `count_logs` | `logs count` | Logs |
+| GET | `/api/v1/log/{log_id}` | `get_log` | `logs get` | Logs |
+| GET | `/api/v1/failed_utterance/` | `list_failed_utterances` | `failed list` | Failed utterances |
+| POST | `/api/v1/failed_utterance/` | `create_failed_utterance` | `failed add` | Failed utterances |
+| GET | `/api/v1/failed_utterance/{fu_id}` | `get_failed_utterance` | `failed get` | Failed utterances |
+| PATCH | `/api/v1/failed_utterance/{fu_id}` | `update_failed_utterance` | `failed update` | Failed utterances |
+| DELETE | `/api/v1/failed_utterance/{fu_id}` | `delete_failed_utterance` | `failed remove` | Failed utterances |
+| POST | `/api/v1/failed_utterance/{fu_id}/promote` | `promote_to_phrase` | `failed promote` | Failed utterances |
 | GET | `/api/v1/regression/` | `list_regression_tests` | `regression list` | Regression |
 | POST | `/api/v1/regression/` | `create_regression_test` | `regression add` | Regression |
 | POST | `/api/v1/regression/run` | `run_regression_tests` | `test regression` | Regression / Test |
@@ -2908,19 +2977,19 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | GET | `/api/v1/performance/last` | `get_last_performance` | `perf last` | Performance |
 | GET | `/api/v1/performance/summary` | `get_performance_summary` | `perf summary` | Performance |
 | GET | `/api/v1/performance/history` | `get_performance_history` | `perf history` | Performance |
-| GET | `/api/v1/health/` | `health_check` | `system doctor` | System |
+| GET | `/api/v1/health/` | `opal_health_get` | `system doctor` | System |
 | GET | `/api/v1/health/audio_devices` | `get_audio_devices` | `system devices` | System |
-| GET | `/api/v1/health/live` | `get_listen_health_live` | `system live` | System |
-| GET | `/api/v1/health/ready` | `get_listen_health_ready` | `system ready` | System |
-| GET | `/api/v1/backup/list` | `list_backups` | `config backups` | Config & backups |
-| POST | `/api/v1/backup/create` | `create_backup` | `config backup` | Config & backups |
-| GET | `/api/v1/backup/download/{filename}` | `download_backup` | `config download` | Config & backups |
-| POST | `/api/v1/backup/restore/{filename}` | `restore_backup` | `config restore` | Config & backups |
-| DELETE | `/api/v1/backup/{filename}` | `delete_backup` | `config delete-backup` | Config & backups |
-| GET | `/api/v1/backup/export` | `export_config` | `config export` | Config & backups |
-| POST | `/api/v1/backup/import` | `import_config` | `config import` | Config & backups |
-| GET | `/api/v1/backup/validate` | `validate_config` | `config validate` | Config & backups |
-| POST | `/api/v1/backup/validate` | `validate_listen_backup_payload` | `config validate --from-dir` | Config & backups |
+| GET | `/api/v1/health/live` | `opal_health_live_get` | `system live` | System |
+| GET | `/api/v1/health/ready` | `opal_health_ready_get` | `system ready` | System |
+| GET | `/api/v1/backup/list` | `opal_backup_list` | `config backups` | Config & backups |
+| POST | `/api/v1/backup/create` | `opal_backup_create` | `config backup` | Config & backups |
+| GET | `/api/v1/backup/download/{filename}` | `opal_backup_download` | `config download` | Config & backups |
+| POST | `/api/v1/backup/restore/{filename}` | `opal_backup_restore` | `config restore` | Config & backups |
+| DELETE | `/api/v1/backup/{filename}` | `opal_backup_delete` | `config delete-backup` | Config & backups |
+| GET | `/api/v1/backup/export` | `opal_backup_export` | `config export` | Config & backups |
+| POST | `/api/v1/backup/import` | `opal_backup_import` | `config import` | Config & backups |
+| GET | `/api/v1/backup/validate` | `opal_backup_validate_stored` | `config validate` | Config & backups |
+| POST | `/api/v1/backup/validate` | `opal_backup_validate` | `config validate --from-dir` | Config & backups |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v1.5.0.yaml](../openapi/opal_listen_v1.5.0.yaml).
+REST contract [opal_listen_v1.6.0.yaml](../openapi/opal_listen_v1.6.0.yaml).

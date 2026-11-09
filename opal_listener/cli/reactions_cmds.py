@@ -131,9 +131,7 @@ def _split_run(run: str) -> list[str]:
     return shlex.split(run)
 
 
-def _actions(
-    runs: list[str] | None, timeout: float, cwd: str | None, env: list[str] | None
-) -> list[dict[str, Any]]:
+def _actions(runs: list[str] | None, timeout: float, cwd: str | None, env: list[str] | None) -> list[dict[str, Any]]:
     env_map = _parse_env(env)
     actions = []
     for run in runs or []:
@@ -171,14 +169,18 @@ def _summary(reaction: dict[str, Any]) -> dict[str, Any]:
         "name": reaction.get("name"),
         "enabled": reaction.get("enabled", True),
         "conditions": len(reaction.get("conditions") or []),
-        "actions": argv0 + (f" (+{len(actions)-1} more)" if len(actions) > 1 else ""),
+        "actions": argv0 + (f" (+{len(actions) - 1} more)" if len(actions) > 1 else ""),
     }
 
 
-_COND_OPT = typer.Option(None, "--cond", help="'path operator value' (repeatable); ops: "
-                                             "eq ne gt gte lt lte in not_in exists contains")
-_RUN_OPT = typer.Option(None, "--run", help="Command line to execute (repeatable; one action each). "
-                                            "Receives the match result JSON on stdin.")
+_COND_OPT = typer.Option(
+    None, "--cond", help="'path operator value' (repeatable); ops: eq ne gt gte lt lte in not_in exists contains"
+)
+_RUN_OPT = typer.Option(
+    None,
+    "--run",
+    help="Command line to execute (repeatable; one action each). Receives the match result JSON on stdin.",
+)
 _TIMEOUT_OPT = typer.Option(None, "--timeout", help="Per-action timeout in seconds (1..3600)")
 _CWD_OPT = typer.Option(None, "--cwd", help="Working directory for the action")
 _ENV_OPT = typer.Option(None, "--env", help="KEY=VALUE env overlay for the action (repeatable)")
@@ -234,8 +236,9 @@ def reactions_update(
     name: str = typer.Argument(...),
     rename: str | None = typer.Option(None, "--name", help="Rename the reaction"),
     cond: list[str] | None = _COND_OPT,
-    clear_conditions: bool = typer.Option(False, "--clear-conditions",
-                                        help="Drop all conditions (fire on any matched intent)"),
+    clear_conditions: bool = typer.Option(
+        False, "--clear-conditions", help="Drop all conditions (fire on any matched intent)"
+    ),
     run: list[str] | None = _RUN_OPT,
     timeout: float | None = _TIMEOUT_OPT,
     cwd: str | None = _CWD_OPT,
@@ -318,9 +321,7 @@ def reactions_test(
     if sum(given) != 1:
         raise CliError("pass exactly one of --text, --payload or --file")
     if text is not None:
-        result_payload: dict[str, Any] = state(ctx).api.post(
-            TEST_TEXT, json={"text": text}, params={"save_log": False}
-        )
+        result_payload: dict[str, Any] = state(ctx).api.post(TEST_TEXT, json={"text": text}, params={"save_log": False})
     elif payload is not None:
         result_payload = yaml.safe_load(payload)
     else:
@@ -336,9 +337,12 @@ def reactions_test(
             console.print(f"[dim]no reactions armed in {escape(str(config_path()))}[/dim]")
         return
     report = [
-        {"name": r.get("name"), "enabled": r.get("enabled", True),
-         "match": bool(r.get("enabled", True)) and all(check_condition(c, result_payload) for c in _conds_of(r)),
-         "failed_conditions": [c.model_dump() for c in _conds_of(r) if not check_condition(c, result_payload)]}
+        {
+            "name": r.get("name"),
+            "enabled": r.get("enabled", True),
+            "match": bool(r.get("enabled", True)) and all(check_condition(c, result_payload) for c in _conds_of(r)),
+            "failed_conditions": [c.model_dump() for c in _conds_of(r) if not check_condition(c, result_payload)],
+        }
         for r in reactions
     ]
     executions: list[dict[str, Any]] = []
@@ -363,7 +367,10 @@ def reactions_test(
             actions = len(_find(reactions, entry["name"]).get("actions") or [])
             console.print(f"[green]✓[/green] {name} — would fire {actions} action(s)")
     for record in executions:
-        line = f"  {record['reactions']}: {' '.join(record['argv'])} -> {record_outcome(record)} ({record['duration_ms']} ms)"
+        line = (
+            f"  {record['reactions']}: {' '.join(record['argv'])}"
+            f" -> {record_outcome(record)} ({record['duration_ms']} ms)"
+        )
         if record.get("stderr_tail"):
             line += f"\n    stderr: {record['stderr_tail'].strip()[-300:]}"
         console.print(Text(line))
@@ -391,16 +398,16 @@ def reactions_log(
         else:
             console.print(f"[dim]no reaction executions recorded yet ({escape(str(path))})[/dim]")
         return
-    records = [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ][-limit:]
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()][-limit:]
     if state(ctx).json_output:
         print_json(records)
         return
     for r in records:
-        console.print(Text(
-            f"{r.get('ts')}  {r.get('origin', 'service'):<7}  {r.get('reactions')}  "
-            f"{' '.join(r.get('argv') or [])} -> "
-            f"{r.get('error') or 'exit ' + str(r.get('exit_code'))}  ({r.get('duration_ms')} ms)"
-        ))
+        console.print(
+            Text(
+                f"{r.get('ts')}  {r.get('origin', 'service'):<7}  {r.get('reactions')}  "
+                f"{' '.join(r.get('argv') or [])} -> "
+                f"{r.get('error') or 'exit ' + str(r.get('exit_code'))}  ({r.get('duration_ms')} ms)"
+            )
+        )
     console.print(f"[dim]{len(records)} execution(s) — full log: {escape(str(path))}[/dim]")

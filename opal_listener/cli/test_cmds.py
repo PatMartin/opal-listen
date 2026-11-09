@@ -103,7 +103,8 @@ def _stream(ctx: typer.Context, debug: bool, count: int, duration: float, start:
             elif event == "partial":
                 console.print(f"[cyan]… {escape(str(data['text']))}[/cyan]")
             elif event == "status":
-                console.print(f"[magenta]status: {escape(str(data.get('state')))} {escape(str(data.get('last_error') or ''))}[/magenta]")
+                st, last_error = escape(str(data.get("state"))), escape(str(data.get("last_error") or ""))
+                console.print(f"[magenta]status: {st} {last_error}[/magenta]")
             else:
                 console.print(f"[bold]{escape(str(event))}[/bold] {escape(str(data))}")
     except KeyboardInterrupt:

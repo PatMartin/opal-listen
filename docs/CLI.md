@@ -21,21 +21,22 @@ The server must therefore be running, either locally or on another machine.
 6. [`intents`: intents and training phrases](#6-intents--intents-and-training-phrases)
 7. [`slots`: slots, values and aliases](#7-slots--slots-values-and-aliases)
 8. [`profiles`: recognition profiles](#8-profiles--recognition-profiles)
-9. [`settings`: global settings](#9-settings--global-settings)
-10. [`test`: recognition testing](#10-test--recognition-testing)
-11. [`pipeline`: microphone pipeline control](#11-pipeline--microphone-pipeline-control)
-12. [`failed`: failed utterance review](#12-failed--failed-utterance-review)
-13. [`regression`: regression test management](#13-regression--regression-test-management)
-14. [`logs`: recognition logs](#14-logs--recognition-logs)
-15. [`perf`: performance metrics](#15-perf--performance-metrics)
-16. [`config`: validation, backup, export and import](#16-config--validation-backup-export-and-import)
-17. [`system`: health and diagnostics](#17-system--health-and-diagnostics)
-18. [`event`: publish ZeroMQ events](#18-event--publish-zeromq-events)
-19. [`reactions`: intent-triggered shell commands](#19-reactions--intent-triggered-shell-commands)
-20. [Walkthroughs](#20-walkthroughs)
-21. [Scripting and automation](#21-scripting-and-automation)
-22. [Troubleshooting](#22-troubleshooting)
-23. [Appendix: CLI ↔ REST mapping](#23-appendix-cli--rest-mapping)
+9. [`personas`: OPAL personas](#9-personas--opal-personas)
+10. [`settings`: global settings](#10-settings--global-settings)
+11. [`test`: recognition testing](#11-test--recognition-testing)
+12. [`pipeline`: microphone pipeline control](#12-pipeline--microphone-pipeline-control)
+13. [`failed`: failed utterance review](#13-failed--failed-utterance-review)
+14. [`regression`: regression test management](#14-regression--regression-test-management)
+15. [`logs`: recognition logs](#15-logs--recognition-logs)
+16. [`perf`: performance metrics](#16-perf--performance-metrics)
+17. [`config`: validation, backup, export and import](#17-config--validation-backup-export-and-import)
+18. [`system`: health and diagnostics](#18-system--health-and-diagnostics)
+19. [`event`: publish ZeroMQ events](#19-event--publish-zeromq-events)
+20. [`reactions`: intent-triggered shell commands](#20-reactions--intent-triggered-shell-commands)
+21. [Walkthroughs](#21-walkthroughs)
+22. [Scripting and automation](#22-scripting-and-automation)
+23. [Troubleshooting](#23-troubleshooting)
+24. [Appendix: CLI ↔ REST mapping](#24-appendix-cli--rest-mapping)
 
 ---
 
@@ -242,7 +243,7 @@ API errors are printed as `Error: HTTP <status>: <detail>`. Validation errors li
 ```
 Error: HTTP 422: setting 'stt_mode' must be one of grammar, open
 Error: HTTP 409: wakeword 'computer' already exists
-Error: 'nabu' not found in /api/v1/wakewords/
+Error: 'nabu' not found in /api/v1/wakeword/
 ```
 
 Per the OPAL v1.2 standard, mutating commands for wakewords, intents, phrases, slots, slot values,
@@ -277,6 +278,7 @@ opal
     ├── slots       list | get | add | update | remove
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
     ├── profiles    list | get | add | update | activate | remove
+    ├── personas    list | get | add | update | remove | validate
     ├── settings    list | get | set | patch | unset
     ├── test        text | audio | listen | listen-debug | regression
     ├── pipeline    start | stop | status
@@ -645,11 +647,39 @@ opal listen profiles remove test_profile
 
 ---
 
-## 9. `settings`: global settings
+## 9. `personas`: OPAL personas
+
+A persona is a named speaker identity registered with the service, optionally bound to an
+OPAL Say `voice_id` so spoken feedback keeps a consistent voice. Personas are portable
+configuration: they export/import with `config export`/`config import` (`personas.yaml`).
+
+| Command | Description |
+|---|---|
+| `list [--enabled/--disabled]` | List personas, optionally filtered by enabled state |
+| `get PERSONA` | Show a persona (persona_id or name) |
+| `add PERSONA_ID --name N [--description D] [--voice V] [--enabled/--disabled]` | Register a persona |
+| `update PERSONA [--name N] [--description D] [--voice V] [--enabled/--disabled]` | Change a persona |
+| `remove PERSONA` | Remove a persona |
+| `validate PERSONA` | Check the persona is enabled and its declared bindings are well-formed |
+
+### Examples
+
+```bash
+opal listen personas add amy --name "Amy" --voice en-gb-alan-low
+opal listen personas list --enabled
+opal listen personas validate amy
+```
+
+`--voice` names a voice in the OPAL Say catalog (e.g. `en-gb-alan-low`); this service only
+checks that a declared voice id is well-formed — existence is OPAL Say's concern.
+
+---
+
+## 10. `settings`: global settings
 
 Settings are typed global key/value pairs. The server validates the type, range and allowed choices on
-every change. Per the OPAL standard, the collection `GET`/`PATCH /api/v1/settings/` is a single atomic
-resource and each key is also addressable via `GET`/`PUT`/`DELETE /api/v1/settings/{key}`; all settings
+every change. Per the OPAL standard, the collection `GET`/`PATCH /api/v1/setting/` is a single atomic
+resource and each key is also addressable via `GET`/`PUT`/`DELETE /api/v1/setting/{key}`; all settings
 commands fetch the current strong `ETag` and send it back as `If-Match` automatically, so updates apply
 atomically and safely even if another client changed settings concurrently (a stale `If-Match` is
 rejected with `412`, a missing one with `428`).
@@ -734,7 +764,7 @@ opal listen settings set whisper_model tiny.en
 
 ---
 
-## 10. `test`: recognition testing
+## 11. `test`: recognition testing
 
 | Command | Description |
 |---|---|
@@ -929,7 +959,7 @@ Manage the tests themselves with [`opal listen regression`](#13-regression--regr
 
 ---
 
-## 11. `pipeline`: microphone pipeline control
+## 12. `pipeline`: microphone pipeline control
 
 | Command | Description |
 |---|---|
@@ -960,7 +990,7 @@ Important `status` fields:
 
 ---
 
-## 12. `failed`: failed utterance review
+## 13. `failed`: failed utterance review
 
 When `auto_capture_failures` is `true` (the default), every `no_match` from the microphone or an audio
 file is stored as a **failed utterance**. You review these, annotate them, and *promote* useful ones to
@@ -1017,7 +1047,7 @@ opal listen failed remove 5
 
 ---
 
-## 13. `regression`: regression test management
+## 14. `regression`: regression test management
 
 A regression test is a phrase that must keep resolving to an expected intent (and optionally expected
 slot values). Run the tests with [`opal listen test regression`](#test-regression).
@@ -1068,7 +1098,7 @@ opal listen test regression
 
 ---
 
-## 14. `logs`: recognition logs
+## 15. `logs`: recognition logs
 
 Every recognition (microphone, audio file, or text with `--save`) is stored as a log entry. The number
 of rows kept is limited by `max_recognition_logs`. Listing uses OPAL v1.2 cursor pagination: each page
@@ -1108,7 +1138,7 @@ opal listen logs count
 
 ---
 
-## 15. `perf`: performance metrics
+## 16. `perf`: performance metrics
 
 | Command | Description |
 |---|---|
@@ -1150,7 +1180,7 @@ Example `summary` output (abbreviated):
 
 ---
 
-## 16. `config`: validation, backup, export and import
+## 17. `config`: validation, backup, export and import
 
 | Command | Description |
 |---|---|
@@ -1205,14 +1235,14 @@ opal listen config delete-backup opal_listener_20260929T181500000000_pre_import.
 
 ### Export and import
 
-The configuration is made of six YAML files: `wakewords.yaml`, `intents.yaml`, `slots.yaml`,
+The configuration is made of seven YAML files: `wakewords.yaml`, `intents.yaml`, `slots.yaml`,
 `profiles.yaml`, `stt.yaml` and `settings.yaml`.
 
 ```bash
 # Export as one JSON bundle to stdout
 opal listen config export > bundle.json
 
-# Export as six YAML files, ready for editing or version control
+# Export as seven YAML files, ready for editing or version control
 opal listen config export --out-dir ./my-config
 
 # Edit, validate, then import. The server makes a pre-import backup automatically.
@@ -1229,17 +1259,17 @@ After an import, the CLI prints the backup filename, a count of imported items, 
 > `--from-dir` reads YAML files on the **client** machine and uploads them. Without it, `import` uses
 > the YAML directory on the **server**.
 
-> `import` **replaces** wakewords, intents, slots, profiles and settings. Items that are not in the YAML
+> `import` **replaces** wakewords, intents, slots, profiles, personas and settings. Items that are not in the YAML
 > files are deleted.
 
 ---
 
-## 17. `system`: health and diagnostics
+## 18. `system`: health and diagnostics
 
 | Command | Description |
 |---|---|
-| `ping` | Legacy liveness probe (`GET /healthz`) |
-| `info` | Service name and version (`GET /`) |
+| `ping` | Liveness probe (`GET /api/v1/info/ping`) |
+| `info` | Service name, package version and contract version (`GET /api/v1/info/`) |
 | `doctor` | Run all health checks. Exits `1` if any check is an error. |
 | `devices` | List audio input devices visible to the **server** |
 | `live` | OPAL v1.2 liveness probe: process + database reachability (`GET /api/v1/health/live`) |
@@ -1284,7 +1314,7 @@ tests work without a microphone. A missing model is an error.
 
 ---
 
-## 18. `event`: publish ZeroMQ events
+## 19. `event`: publish ZeroMQ events
 
 `opal listen event publish` fires a message directly onto the opal event bus, independently of the REST
 API. It opens a ZeroMQ `PUB` socket, connects to `--xpub`, and sends a two-frame `[TOPIC, MESSAGE]`
@@ -1326,7 +1356,7 @@ message has been handed to the socket, not once a subscriber has received it.
 
 ---
 
-## 19. `reactions`: intent-triggered shell commands
+## 20. `reactions`: intent-triggered shell commands
 
 Reactions run shell commands when a live-mic recognition matches an intent (see the User Guide §4.5
 for the full model: gating, condition grammar, stdin contract).
@@ -1400,7 +1430,7 @@ files.
 
 ---
 
-## 20. Walkthroughs
+## 21. Walkthroughs
 
 ### 18.1 Full CRUD tour (based on `scripts/test-cli.sh`)
 
@@ -1555,7 +1585,7 @@ opal listen test regression
 
 ---
 
-## 21. Scripting and automation
+## 22. Scripting and automation
 
 ### JSON output with `jq`
 
@@ -1626,7 +1656,7 @@ opal listen --json regression list \
 
 ---
 
-## 22. Troubleshooting
+## 23. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -1647,11 +1677,11 @@ opal listen --json regression list \
 
 ---
 
-## 23. Appendix: CLI ↔ REST mapping
+## 24. Appendix: CLI ↔ REST mapping
 
 All paths are relative to the API base URL. Commands that take a name or id first resolve it with a
 `GET` on the collection. Per the OPAL v1.2 standard, every `PATCH`/`DELETE` below on wakewords, intents,
-phrases, slots, slot values, aliases, profiles and settings requires a strong `If-Match`; the CLI fetches
+phrases, slots, slot values, aliases, profiles, personas and settings requires a strong `If-Match`; the CLI fetches
 the current `ETag` automatically before sending the mutation (missing precondition → `428`, stale → `412`).
 
 > `event publish` has no REST counterpart: it talks directly to the ZeroMQ event bus (`--xpub`), not the
@@ -1659,38 +1689,44 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 
 | CLI (`opal listen ...`) | REST |
 |---|---|
-| `wakewords list` | `GET /api/v1/wakewords/` |
-| `wakewords add` | `POST /api/v1/wakewords/` |
-| `wakewords get` | `GET /api/v1/wakewords/{id}` |
-| `wakewords update` | `PATCH /api/v1/wakewords/{id}` (If-Match) |
-| `wakewords remove` | `DELETE /api/v1/wakewords/{id}` (If-Match) |
-| `intents list` | `GET /api/v1/intents/` |
-| `intents add` | `POST /api/v1/intents/` |
-| `intents get` | `GET /api/v1/intents/{id}` |
-| `intents update` | `PATCH /api/v1/intents/{id}` (If-Match) |
-| `intents remove` | `DELETE /api/v1/intents/{id}` (If-Match) |
-| `intents phrases` | `GET /api/v1/intents/{id}/phrases` |
-| `intents add-phrase` | `POST /api/v1/intents/{id}/phrases` |
-| `intents remove-phrase` | `DELETE /api/v1/intents/{id}/phrases/{phrase_id}` (If-Match) |
-| `slots list` | `GET /api/v1/slots/` |
-| `slots add` | `POST /api/v1/slots/` (+ `POST .../values` per `--value`) |
-| `slots get` | `GET /api/v1/slots/{id}` |
-| `slots update` | `PATCH /api/v1/slots/{id}` (If-Match) |
-| `slots remove` | `DELETE /api/v1/slots/{id}` (If-Match) |
-| `slots values` | `GET /api/v1/slots/{id}/values` |
-| `slots add-value` | `POST /api/v1/slots/{id}/values` (+ `POST .../aliases` per `--alias`) |
-| `slots remove-value` | `DELETE /api/v1/slots/{id}/values/{value_id}` (If-Match) |
-| `slots aliases` | `GET /api/v1/slots/{id}/values/{value_id}/aliases` |
-| `slots add-alias` | `POST /api/v1/slots/{id}/values/{value_id}/aliases` |
-| `slots remove-alias` | `DELETE /api/v1/slots/{id}/values/{value_id}/aliases/{alias_id}` (If-Match) |
-| `profiles list` | `GET /api/v1/profiles/` |
-| `profiles add` | `POST /api/v1/profiles/` |
-| `profiles get` | `GET /api/v1/profiles/{id}` |
-| `profiles update` | `PATCH /api/v1/profiles/{id}` (If-Match) |
-| `profiles remove` | `DELETE /api/v1/profiles/{id}` (If-Match) |
-| `profiles activate` | `POST /api/v1/profiles/{id}/activate` |
-| `settings list` | `GET /api/v1/settings/` |
-| `settings set` | `PATCH /api/v1/settings/` (If-Match; atomic, may set several keys) |
+| `wakewords list` | `GET /api/v1/wakeword/` |
+| `wakewords add` | `POST /api/v1/wakeword/` |
+| `wakewords get` | `GET /api/v1/wakeword/{id}` |
+| `wakewords update` | `PATCH /api/v1/wakeword/{id}` (If-Match) |
+| `wakewords remove` | `DELETE /api/v1/wakeword/{id}` (If-Match) |
+| `intents list` | `GET /api/v1/intent/` |
+| `intents add` | `POST /api/v1/intent/` |
+| `intents get` | `GET /api/v1/intent/{id}` |
+| `intents update` | `PATCH /api/v1/intent/{id}` (If-Match) |
+| `intents remove` | `DELETE /api/v1/intent/{id}` (If-Match) |
+| `intents phrases` | `GET /api/v1/intent/{id}/phrase` |
+| `intents add-phrase` | `POST /api/v1/intent/{id}/phrase` |
+| `intents remove-phrase` | `DELETE /api/v1/intent/{id}/phrase/{phrase_id}` (If-Match) |
+| `slots list` | `GET /api/v1/slot/` |
+| `slots add` | `POST /api/v1/slot/` (+ `POST .../value` per `--value`) |
+| `slots get` | `GET /api/v1/slot/{id}` |
+| `slots update` | `PATCH /api/v1/slot/{id}` (If-Match) |
+| `slots remove` | `DELETE /api/v1/slot/{id}` (If-Match) |
+| `slots values` | `GET /api/v1/slot/{id}/value` |
+| `slots add-value` | `POST /api/v1/slot/{id}/value` (+ `POST .../alias` per `--alias`) |
+| `slots remove-value` | `DELETE /api/v1/slot/{id}/value/{value_id}` (If-Match) |
+| `slots aliases` | `GET /api/v1/slot/{id}/value/{value_id}/alias` |
+| `slots add-alias` | `POST /api/v1/slot/{id}/value/{value_id}/alias` |
+| `slots remove-alias` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |
+| `profiles list` | `GET /api/v1/profile/` |
+| `profiles add` | `POST /api/v1/profile/` |
+| `profiles get` | `GET /api/v1/profile/{id}` |
+| `profiles update` | `PATCH /api/v1/profile/{id}` (If-Match) |
+| `profiles remove` | `DELETE /api/v1/profile/{id}` (If-Match) |
+| `profiles activate` | `POST /api/v1/profile/{id}/activate` |
+| `personas list` | `GET /api/v1/persona/` |
+| `personas add` | `POST /api/v1/persona/` |
+| `personas get` | `GET /api/v1/persona/{persona_id}` |
+| `personas update` | `PATCH /api/v1/persona/{persona_id}` (If-Match) |
+| `personas remove` | `DELETE /api/v1/persona/{persona_id}` (If-Match) |
+| `personas validate` | `POST /api/v1/persona/{persona_id}/validate` |
+| `settings list` | `GET /api/v1/setting/` |
+| `settings set` | `PATCH /api/v1/setting/` (If-Match; atomic, may set several keys) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
 | `test listen`, `test listen-debug` | `GET /api/v1/recognition/stream` (SSE) |
@@ -1698,20 +1734,20 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `pipeline start` | `POST /api/v1/recognition/start` |
 | `pipeline stop` | `POST /api/v1/recognition/stop` |
 | `pipeline status` | `GET /api/v1/recognition/status` |
-| `failed list` | `GET /api/v1/failed_utterances/` |
-| `failed add` | `POST /api/v1/failed_utterances/` |
-| `failed get` | `GET /api/v1/failed_utterances/{id}` |
-| `failed update` | `PATCH /api/v1/failed_utterances/{id}` |
-| `failed remove` | `DELETE /api/v1/failed_utterances/{id}` |
-| `failed promote` | `POST /api/v1/failed_utterances/{id}/promote` |
+| `failed list` | `GET /api/v1/failed_utterance/` |
+| `failed add` | `POST /api/v1/failed_utterance/` |
+| `failed get` | `GET /api/v1/failed_utterance/{id}` |
+| `failed update` | `PATCH /api/v1/failed_utterance/{id}` |
+| `failed remove` | `DELETE /api/v1/failed_utterance/{id}` |
+| `failed promote` | `POST /api/v1/failed_utterance/{id}/promote` |
 | `regression list` | `GET /api/v1/regression/` |
 | `regression add` | `POST /api/v1/regression/` |
 | `regression get` | `GET /api/v1/regression/{id}` |
 | `regression update` | `PATCH /api/v1/regression/{id}` |
 | `regression remove` | `DELETE /api/v1/regression/{id}` |
-| `logs list` | `GET /api/v1/logs/` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
-| `logs count` | `GET /api/v1/logs/count` |
-| `logs get` | `GET /api/v1/logs/{id}` |
+| `logs list` | `GET /api/v1/log/` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
+| `logs count` | `GET /api/v1/log/count` |
+| `logs get` | `GET /api/v1/log/{id}` |
 | `perf last` | `GET /api/v1/performance/last` |
 | `perf summary` | `GET /api/v1/performance/summary` |
 | `perf history` | `GET /api/v1/performance/history` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
@@ -1727,7 +1763,7 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `system devices` | `GET /api/v1/health/audio_devices` |
 | `system live` | `GET /api/v1/health/live` (liveness probe) |
 | `system ready` | `GET /api/v1/health/ready` (readiness probe) |
-| `system info` | `GET /` |
-| `system ping` | `GET /healthz` |
+| `system info` | `GET /api/v1/info/` |
+| `system ping` | `GET /api/v1/info/ping` |
 
 See the [User Guide](USER_GUIDE.md) for the REST API, configuration files and architecture.

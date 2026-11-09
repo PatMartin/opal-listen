@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings
 from opal_listener.main import create_app
 
-CONTRACT_PATH = PACKAGE_DIR.parent / "openapi" / "opal_listen_v1.5.0.yaml"
+CONTRACT_PATH = PACKAGE_DIR.parent / "openapi" / "opal_listen_v1.6.0.yaml"
 METHODS = ("get", "post", "put", "patch", "delete")
 CONSTRAINTS = ("maxLength", "minLength", "maximum", "minimum", "default", "format", "contentMediaType")
 
@@ -307,7 +307,10 @@ def test_web_ui_parity_table_matches_api_and_cli(generated: dict[str, Any]) -> N
     for path, item in generated["paths"].items():
         for method, operation in item.items():
             suffix = re.sub(r"\W", "_", path) + f"_{method}"
-            api[operation["operationId"].removesuffix(suffix)] = (method.upper(), path)
+            # v1.6.0 froze operationIds at their old (plural) path-derived names, so the id no
+            # longer ends with the current path's suffix; strip the generated `_api_v1_*` tail.
+            name = re.sub(r"_api_v1_.*$", "", operation["operationId"].removesuffix(suffix))
+            api[name] = (method.upper(), path)
     assert {n: (m, p) for n, (m, p, _) in ui.items()} == api
     for name, (_m, _p, cli) in ui.items():
         assert OPERATION_COMMANDS[name] in cli, f"{name}: UI says '{cli}', CLI says '{OPERATION_COMMANDS[name]}'"
@@ -398,10 +401,7 @@ def _ui_call_paths(html: str) -> set[str]:
     import re
 
     paths = {m.group(1) for m in re.finditer(r'api(?:WithEtag)?\(\s*"[A-Z]+",\s*["`](/[^`"]+)', html)}
-    paths |= {
-        m.group(1)
-        for m in re.finditer(r'(?:fetch|EventSource)\(\s*[`"](?:\$\{S\.base\})?(/[^`"]+)', html)
-    }
+    paths |= {m.group(1) for m in re.finditer(r'(?:fetch|EventSource)\(\s*[`"](?:\$\{S\.base\})?(/[^`"]+)', html)}
     return {_normalize_ui_path(p) for p in paths}
 
 
@@ -410,10 +410,7 @@ def test_web_ui_exercises_every_contract_path() -> None:
     an action (regression: opal_setting_get and opal_backup_download had rows but no call sites)."""
     html = (PACKAGE_DIR / "view" / "static" / "opal-listen.html").read_text(encoding="utf-8")
     called = _ui_call_paths(html)
-    # Intentionally internal: `GET /` is the service-discovery/info op (returns {name, version,
-    # docs, ui}) for API clients — the SPA is that UI, it needs nothing from the payload.
-    internal = {"/"}
-    missing = {_normalize_ui_path(p) for p in CONTRACT["paths"]} - called - internal
+    missing = {_normalize_ui_path(p) for p in CONTRACT["paths"]} - called
     assert not missing, f"contract paths with no SPA call site: {sorted(missing)}"
 
 
@@ -476,7 +473,7 @@ def test_opal_correlation_headers_stamped_at_runtime(client: TestClient) -> None
     """Behavioral check for the documented OPAL headers: transaction/request ids are always
     returned (generated when absent), session/causation are echoed only when supplied, and
     malformed ids are rejected with a 422 OpalError — on success and error responses alike."""
-    response = client.get("/api/v1/wakewords/")
+    response = client.get("/api/v1/wakeword/")
     assert response.status_code == 200
     assert response.headers["X-Opal-Transaction-Id"]
     assert response.headers["X-Opal-Request-Id"]
@@ -490,17 +487,17 @@ def test_opal_correlation_headers_stamped_at_runtime(client: TestClient) -> None
         "X-Opal-Request-Id": "req-1",
         "X-Opal-Causation-Id": "cause-1",
     }
-    echoed = client.get("/api/v1/wakewords/", headers=context)
+    echoed = client.get("/api/v1/wakeword/", headers=context)
     for name, value in context.items():
         assert echoed.headers[name] == value
 
-    not_found = client.get("/api/v1/wakewords/999999")
+    not_found = client.get("/api/v1/wakeword/999999")
     assert not_found.status_code == 404
     assert not_found.json()["error"]["code"] == "not_found"
     assert not_found.headers["X-Opal-Transaction-Id"]
     assert not_found.headers["X-Opal-Request-Id"]
 
-    invalid = client.get("/api/v1/wakewords/", headers={"X-Opal-Transaction-Id": "not opaque"})
+    invalid = client.get("/api/v1/wakeword/", headers={"X-Opal-Transaction-Id": "not opaque"})
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "invalid_header"
     assert invalid.headers["X-Opal-Transaction-Id"]

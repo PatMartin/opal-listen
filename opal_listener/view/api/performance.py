@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, Query
 
 from opal_listener.models.opal_standard import OPAL_422_RESPONSE
-from opal_listener.models.schemas import PerformanceResultRead, PerformanceSummary
+from opal_listener.models.schemas import PerformancePage, PerformanceResultRead, PerformanceSummary
 from opal_listener.service import recognition_store
 from opal_listener.service.errors import InvalidRequestError
 from opal_listener.service.listener_service import ListenerService
@@ -34,18 +32,18 @@ def get_performance_summary(
         return recognition_store.performance_summary(session, limit)
 
 
-@router.get("/history")
+@router.get("/history", response_model=PerformancePage)
 def get_performance_history(
     limit: int = Query(default=100, ge=1, le=500, description="Maximum items per page."),
     cursor: str = Query(
         default=None, min_length=1, description="Opaque continuation token returned from the preceding page."
     ),
     svc: ListenerService = Depends(get_service),
-) -> dict[str, Any]:
+) -> PerformancePage:
     """Use cursor pagination, stable descending time-plus-ID ordering; filters are bound into the cursor."""
     cursor_tuple = decode_cursor(cursor, _SCOPE, {}, InvalidRequestError) if cursor is not None else None
     with svc.db.session() as session:
         rows, has_more = recognition_store.performance_history_page(session, limit, cursor_tuple)
-        items = [PerformanceResultRead.model_validate(r).model_dump(mode="json") for r in rows]
+        items = [PerformanceResultRead.model_validate(r) for r in rows]
     next_cursor = encode_cursor(_SCOPE, {}, rows[-1].created_at, rows[-1].id) if has_more and rows else None
-    return {"items": items, "next_cursor": next_cursor, "has_more": has_more}
+    return PerformancePage(items=items, next_cursor=next_cursor, has_more=has_more)

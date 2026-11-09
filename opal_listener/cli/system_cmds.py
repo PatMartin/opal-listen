@@ -114,7 +114,7 @@ def config_delete_backup(
 @config_app.command("export")
 def config_export(
     ctx: typer.Context,
-    out_dir: Path | None = typer.Option(None, "--out-dir", file_okay=False, help="Write the six YAML files here"),
+    out_dir: Path | None = typer.Option(None, "--out-dir", file_okay=False, help="Write the seven YAML files here"),
 ) -> None:
     """Export configuration (JSON to stdout, or YAML files with --out-dir)."""
     bundle = ConfigBundle.model_validate(state(ctx).api.get(f"{BACKUP}/export"))
@@ -183,14 +183,14 @@ def system_devices(ctx: typer.Context) -> None:
 
 @system_app.command("info")
 def system_info(ctx: typer.Context) -> None:
-    """Server name and version."""
-    render_kv(ctx, state(ctx).api.get("/"))
+    """Service identity: name, package version and API contract version."""
+    render_kv(ctx, state(ctx).api.get("/api/v1/info/"))
 
 
 @system_app.command("ping")
 def system_ping(ctx: typer.Context) -> None:
     """Liveness probe."""
-    result = state(ctx).api.get("/healthz")
+    result = state(ctx).api.get("/api/v1/info/ping")
     done(ctx, f"{state(ctx).api.base_url} is up", result)
 
 

@@ -4,9 +4,9 @@ Each step ends with a verification milestone. Steps 1–9 are implemented; step 
 
 | # | Step | Deliverable | Verification milestone | Status |
 |---|---|---|---|---|
-| 1 | Project skeleton | `pyproject.toml`, package layout, `AppSettings` (env `OPAL_LISTENER_*`), ruff | `ruff check` clean; `python -m opal_listener` serves `/healthz` | done |
+| 1 | Project skeleton | `pyproject.toml`, package layout, `AppSettings` (env `OPAL_LISTENER_*`), ruff | `ruff check` clean; `python -m opal_listener` serves `/api/v1/info/ping` | done |
 | 2 | Data layer | SQLModel tables, Alembic `0001`, SQLite pragmas (FK, WAL) | `test_migrations.py`: upgrade/downgrade, no model drift, FK enforced | done |
-| 3 | Contracts | Pydantic schemas mirroring `openapi/opal_listen_v1.5.0.yaml` + additive typed models | `test_contract.py`: generated OpenAPI ⊇ contract (paths, params, schemas, required) | done |
+| 3 | Contracts | Pydantic schemas mirroring `openapi/opal_listen_v1.6.0.yaml` + additive typed models | `test_contract.py`: generated OpenAPI ⊇ contract (paths, params, schemas, required) | done |
 | 4 | Intent/slot engine | normalizer, template expansion, numbers, matcher, grammar phrases | `test_nlu_and_audio.py`, golden + negative text sets | done |
 | 5 | Config system | YAML schemas, `compile_bundle`, seed, import/export, validate, settings registry | `test_config_schema.py`, `test_backup_and_config.py` | done |
 | 6 | Provider abstraction + Vosk | `ListenerProvider`, `VoskListenerProvider` (two-stage wakeword, grammar STT), `FakeListenerProvider`, faster-whisper refiner | audio fixtures: golden, negative, wakeword FP/FN | done |

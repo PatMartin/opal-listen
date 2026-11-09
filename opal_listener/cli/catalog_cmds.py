@@ -8,13 +8,13 @@ import typer
 import yaml
 
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import done, render, render_kv, state
+from opal_listener.cli.output import console, done, escape, render, render_kv, state
 
-WAKEWORDS = "/api/v1/wakewords/"
-INTENTS = "/api/v1/intents/"
-SLOTS = "/api/v1/slots/"
-PROFILES = "/api/v1/profiles/"
-SETTINGS = "/api/v1/settings/"
+WAKEWORDS = "/api/v1/wakeword/"
+INTENTS = "/api/v1/intent/"
+SLOTS = "/api/v1/slot/"
+PROFILES = "/api/v1/profile/"
+SETTINGS = "/api/v1/setting/"
 
 wakewords_app = typer.Typer(help="Manage wakewords.", no_args_is_help=True)
 intents_app = typer.Typer(help="Manage intents and training phrases.", no_args_is_help=True)
@@ -68,7 +68,7 @@ def wakewords_add(
 ) -> None:
     """Add a wakeword."""
     body = {"name": name, "enabled": enabled, "confidence_threshold": threshold}
-    created = state(ctx).api.post(WAKEWORDS, json=body)
+    created = state(ctx).api.post_with_etag(WAKEWORDS, json=body)
     done(ctx, f"wakeword '{created['name']}' added (id {created['id']})", created)
 
 
@@ -140,7 +140,7 @@ def intents_add(
         "confidence_threshold": threshold,
         "phrases": phrase or [],
     }
-    created = state(ctx).api.post(INTENTS, json=body)
+    created = state(ctx).api.post_with_etag(INTENTS, json=body)
     done(ctx, f"intent '{created['name']}' added with {len(created['phrases'])} phrase(s)", created)
 
 
@@ -177,7 +177,7 @@ def intents_phrases(ctx: typer.Context, intent: str = typer.Argument(..., help="
     item = api.resolve(INTENTS, intent)
     render(
         ctx,
-        api.get(f"{INTENTS}{item['id']}/phrases"),
+        api.get(f"{INTENTS}{item['id']}/phrase"),
         ("id", "phrase", "created_at"),
         f"{item['name']} phrases",
     )
@@ -192,7 +192,7 @@ def intents_add_phrase(
     """Add a training phrase to an intent."""
     api = state(ctx).api
     item = api.resolve(INTENTS, intent)
-    created = api.post(f"{INTENTS}{item['id']}/phrases", json={"phrase": phrase})
+    created = api.post_with_etag(f"{INTENTS}{item['id']}/phrase", json={"phrase": phrase})
     done(ctx, f"phrase added to '{item['name']}' (id {created['id']})", created)
 
 
@@ -205,8 +205,8 @@ def intents_remove_phrase(
     """Remove a training phrase."""
     api = state(ctx).api
     item = api.resolve(INTENTS, intent)
-    target = api.resolve(f"{INTENTS}{item['id']}/phrases", phrase, key="phrase")
-    phrases_path = f"{INTENTS}{item['id']}/phrases"
+    target = api.resolve(f"{INTENTS}{item['id']}/phrase", phrase, key="phrase")
+    phrases_path = f"{INTENTS}{item['id']}/phrase"
     api.delete_with_etag(f"{phrases_path}/{target['id']}", etag_path=phrases_path)
     done(ctx, f"phrase '{target['phrase']}' removed from '{item['name']}'")
 
@@ -215,7 +215,7 @@ def intents_remove_phrase(
 
 
 def _value(api: Any, slot: dict[str, Any], value: str) -> dict[str, Any]:
-    return api.resolve(f"{SLOTS}{slot['id']}/values", value, key="value")
+    return api.resolve(f"{SLOTS}{slot['id']}/value", value, key="value")
 
 
 @slots_app.command("list")
@@ -254,9 +254,9 @@ def slots_add(
 ) -> None:
     """Add a slot."""
     api = state(ctx).api
-    created = api.post(SLOTS, json={"name": name, "slot_type": slot_type, "description": description})
+    created = api.post_with_etag(SLOTS, json={"name": name, "slot_type": slot_type, "description": description})
     for v in value or []:
-        api.post(f"{SLOTS}{created['id']}/values", json={"value": v})
+        api.post_with_etag(f"{SLOTS}{created['id']}/value", json={"value": v})
     done(ctx, f"slot '{created['name']}' added (id {created['id']})", created)
 
 
@@ -291,7 +291,7 @@ def slots_values(ctx: typer.Context, slot: str = typer.Argument(..., help="Name 
     """List the values of a slot with aliases."""
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
-    values = api.get(f"{SLOTS}{item['id']}/values")
+    values = api.get(f"{SLOTS}{item['id']}/value")
     if not state(ctx).json_output:
         values = [{**v, "aliases": ", ".join(a["alias"] for a in v["aliases"])} for v in values]
     render(ctx, values, ("id", "value", "aliases"), f"{item['name']} values")
@@ -307,9 +307,9 @@ def slots_add_value(
     """Add a value (and optional aliases) to a slot."""
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
-    created = api.post(f"{SLOTS}{item['id']}/values", json={"value": value})
+    created = api.post_with_etag(f"{SLOTS}{item['id']}/value", json={"value": value})
     for a in alias or []:
-        api.post(f"{SLOTS}{item['id']}/values/{created['id']}/aliases", json={"alias": a})
+        api.post_with_etag(f"{SLOTS}{item['id']}/value/{created['id']}/alias", json={"alias": a})
     done(ctx, f"value '{created['value']}' added to '{item['name']}'", created)
 
 
@@ -323,7 +323,7 @@ def slots_remove_value(
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
     target = _value(api, item, value)
-    values_path = f"{SLOTS}{item['id']}/values"
+    values_path = f"{SLOTS}{item['id']}/value"
     api.delete_with_etag(f"{values_path}/{target['id']}", etag_path=values_path)
     done(ctx, f"value '{target['value']}' removed from '{item['name']}'")
 
@@ -338,7 +338,7 @@ def slots_aliases(
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
     target = _value(api, item, value)
-    render(ctx, api.get(f"{SLOTS}{item['id']}/values/{target['id']}/aliases"), ("id", "alias"), "Aliases")
+    render(ctx, api.get(f"{SLOTS}{item['id']}/value/{target['id']}/alias"), ("id", "alias"), "Aliases")
 
 
 @slots_app.command("add-alias")
@@ -352,7 +352,7 @@ def slots_add_alias(
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
     target = _value(api, item, value)
-    created = api.post(f"{SLOTS}{item['id']}/values/{target['id']}/aliases", json={"alias": alias})
+    created = api.post_with_etag(f"{SLOTS}{item['id']}/value/{target['id']}/alias", json={"alias": alias})
     done(ctx, f"alias '{alias}' -> '{target['value']}' added", created)
 
 
@@ -367,7 +367,7 @@ def slots_remove_alias(
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
     target = _value(api, item, value)
-    base = f"{SLOTS}{item['id']}/values/{target['id']}/aliases"
+    base = f"{SLOTS}{item['id']}/value/{target['id']}/alias"
     found = api.resolve(base, alias, key="alias")
     api.delete_with_etag(f"{base}/{found['id']}", etag_path=base)
     done(ctx, f"alias '{found['alias']}' removed")
@@ -519,6 +519,101 @@ def settings_patch(
     """Atomically set several settings in one collection PATCH (all-or-nothing validation)."""
     updated = state(ctx).api.patch_with_etag(SETTINGS, json=parse_pairs(pairs))
     render_kv(ctx, updated, "Settings updated")
+
+
+# --- personas --------------------------------------------------------------------------------
+
+PERSONAS = "/api/v1/persona/"
+PERSONA_COLUMNS = ("persona_id", "name", "enabled", "voice_id", "description", "updated_at")
+
+personas_app = typer.Typer(
+    help="Manage OPAL personas (speaker identities, optional OPAL Say voice).", no_args_is_help=True
+)
+
+
+def _persona_id(api: Any, ref: str) -> str:
+    """Resolve a persona by persona_id or by human-readable name."""
+    items = api.get(PERSONAS)
+    for item in items:
+        if item["persona_id"] == ref or item["name"] == ref:
+            return item["persona_id"]
+    raise CliError(f"'{ref}' not found in {PERSONAS}")
+
+
+@personas_app.command("list")
+def personas_list(
+    ctx: typer.Context,
+    enabled: bool | None = typer.Option(None, "--enabled/--disabled"),
+) -> None:
+    """List personas."""
+    params = {"enabled": enabled} if enabled is not None else {}
+    render(ctx, state(ctx).api.get(PERSONAS, params=params), PERSONA_COLUMNS, "Personas")
+
+
+@personas_app.command("get")
+def personas_get(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
+    """Show one persona."""
+    api = state(ctx).api
+    render_kv(ctx, api.get(f"{PERSONAS}{_persona_id(api, persona)}"))
+
+
+@personas_app.command("add")
+def personas_add(
+    ctx: typer.Context,
+    persona_id: str = typer.Argument(..., help="Globally unique persona id, e.g. 'amy'"),
+    name: str = typer.Option(..., "--name", help="Human-readable name"),
+    description: str | None = typer.Option(None, "--description"),
+    voice: str | None = typer.Option(None, "--voice", help="OPAL Say voice id, e.g. en-gb-alan-low"),
+    enabled: bool = typer.Option(True, "--enabled/--disabled"),
+) -> None:
+    """Register a persona."""
+    body = {"persona_id": persona_id, "name": name, "description": description, "voice_id": voice, "enabled": enabled}
+    created = state(ctx).api.post_with_etag(PERSONAS, json=body)
+    done(ctx, f"persona '{created['persona_id']}' registered", created)
+
+
+@personas_app.command("update")
+def personas_update(
+    ctx: typer.Context,
+    persona: str = typer.Argument(..., help="Persona id or name"),
+    name: str | None = typer.Option(None, "--name"),
+    description: str | None = typer.Option(None, "--description"),
+    voice: str | None = typer.Option(None, "--voice"),
+    enabled: bool | None = typer.Option(None, "--enabled/--disabled"),
+) -> None:
+    """Update a persona."""
+    api = state(ctx).api
+    pid = _persona_id(api, persona)
+    body = _changes(name=name, description=description, voice_id=voice, enabled=enabled)
+    updated = api.patch_with_etag(f"{PERSONAS}{pid}", json=body)
+    done(ctx, f"persona '{updated['persona_id']}' updated", updated)
+
+
+@personas_app.command("remove")
+def personas_remove(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
+    """Remove a persona."""
+    api = state(ctx).api
+    pid = _persona_id(api, persona)
+    api.delete_with_etag(f"{PERSONAS}{pid}")
+    done(ctx, f"persona '{pid}' removed")
+
+
+@personas_app.command("validate")
+def personas_validate(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
+    """Check that a persona is enabled and its declared bindings are well-formed."""
+    api = state(ctx).api
+    pid = _persona_id(api, persona)
+    report = api.post(f"{PERSONAS}{pid}/validate")
+    if state(ctx).json_output:
+        render(ctx, report)
+        return
+    for error in report["errors"]:
+        console.print(f"[red]error[/red]   {escape(error)}")
+    for warning in report["warnings"]:
+        console.print(f"[yellow]warning[/yellow] {escape(warning)}")
+    console.print("[green]persona is valid[/green]" if report["valid"] else "[red]persona is invalid[/red]")
+    if not report["valid"]:
+        raise CliError("validation failed")
 
 
 @settings_app.command("unset")

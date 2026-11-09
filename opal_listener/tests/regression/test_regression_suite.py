@@ -12,6 +12,14 @@ from fastapi.testclient import TestClient
 GOLDEN = yaml.safe_load((Path(__file__).resolve().parent / "golden_phrases.yaml").read_text())["golden"]
 
 
+def _create_test(client: TestClient, body: dict[str, Any]) -> Any:
+    """POST /api/v1/regression/ with the collection's current strong ETag (v1.6.0 If-Match)."""
+    etag = client.get("/api/v1/regression/").headers["etag"]
+    response = client.post("/api/v1/regression/", json=body, headers={"If-Match": etag})
+    assert response.status_code == 201, response.text
+    return response
+
+
 @pytest.mark.parametrize("case", GOLDEN, ids=lambda c: c["text"])
 def test_golden_phrase(client: TestClient, case: dict[str, Any]) -> None:
     result = client.post(
@@ -31,7 +39,7 @@ def test_golden_set_passes_via_regression_api(client: TestClient) -> None:
             "expected_intent": case["intent_name"],
             "expected_slots": case["slot_values"],
         }
-        assert client.post("/api/v1/regression/", json=body).status_code == 201
+        _create_test(client, body)
     run = client.post("/api/v1/regression/run").json()
     assert run["failed"] == 0, [r for r in run["results"] if not r["passed"]]
     assert run["total"] == len(GOLDEN)
@@ -39,10 +47,7 @@ def test_golden_set_passes_via_regression_api(client: TestClient) -> None:
 
 
 def test_negative_regression_test_expects_no_match(client: TestClient) -> None:
-    client.post(
-        "/api/v1/regression/",
-        json={"name": "weather", "phrase": "what is the weather", "expected_intent": "no_match"},
-    )
+    _create_test(client, {"name": "weather", "phrase": "what is the weather", "expected_intent": "no_match"})
     assert client.post("/api/v1/regression/run").json()["passed"] == 1
 
 
@@ -53,10 +58,14 @@ def test_failed_utterance_promotion_loop(client: TestClient) -> None:
     assert first["matched"] is False
 
     fu = client.post(
-        "/api/v1/failed_utterances/", json={"transcript": text, "recognition_log_id": first["recognition_log_id"]}
+        "/api/v1/failed_utterance/", json={"transcript": text, "recognition_log_id": first["recognition_log_id"]}
     ).json()
+    intent = next(i for i in client.get("/api/v1/intent/").json() if i["name"] == "light_turn_on")
+    phrases_etag = client.get(f"/api/v1/intent/{intent['id']}/phrase").headers["etag"]
     promoted = client.post(
-        f"/api/v1/failed_utterances/{fu['id']}/promote", params={"intent_name": "light_turn_on"}
+        f"/api/v1/failed_utterance/{fu['id']}/promote",
+        params={"intent_name": "light_turn_on"},
+        headers={"If-Match": phrases_etag},
     ).json()
     assert promoted["phrase"]["phrase"] == "illuminate the {room_name}"
     assert promoted["failed_utterance"]["promoted_to_phrase"] is True
@@ -72,19 +81,19 @@ def test_failed_utterance_promotion_loop(client: TestClient) -> None:
 
 
 def test_regression_detects_breaking_change(client: TestClient) -> None:
-    client.post(
-        "/api/v1/regression/",
-        json={
+    _create_test(
+        client,
+        {
             "name": "kitchen_on",
             "phrase": "turn on the kitchen light",
             "expected_intent": "light_turn_on",
             "expected_slots": {"room_name": "kitchen"},
         },
     )
-    intent = next(i for i in client.get("/api/v1/intents/").json() if i["name"] == "light_turn_on")
-    etag = client.get(f"/api/v1/intents/{intent['id']}").headers["etag"]
+    intent = next(i for i in client.get("/api/v1/intent/").json() if i["name"] == "light_turn_on")
+    etag = client.get(f"/api/v1/intent/{intent['id']}").headers["etag"]
     assert (
-        client.patch(f"/api/v1/intents/{intent['id']}", json={"enabled": False}, headers={"If-Match": etag}).status_code
+        client.patch(f"/api/v1/intent/{intent['id']}", json={"enabled": False}, headers={"If-Match": etag}).status_code
         == 200
     )
     run = client.post("/api/v1/regression/run").json()

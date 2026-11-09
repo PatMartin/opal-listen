@@ -137,7 +137,7 @@ opal listen settings set cooldown_ms 1000
 opal listen config backup
 opal listen config backups
 opal listen config restore <filename> --yes              # automatic rollback on failure
-opal listen config export --out-dir ./my-config          # six YAML files
+opal listen config export --out-dir ./my-config          # seven YAML files
 opal listen config validate --from-dir ./my-config
 opal listen config import --from-dir ./my-config --yes   # pre-import backup is taken automatically
 ```

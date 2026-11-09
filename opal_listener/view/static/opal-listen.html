@@ -115,56 +115,56 @@
 // [FastAPI function name, method, path, `opal listen` command, view]
 // ---------------------------------------------------------------------------------------------------
 const ROUTES = [
-  ["list_wakewords", "GET", "/api/v1/wakewords/", "wakewords list", "wakewords"],
-  ["create_wakeword", "POST", "/api/v1/wakewords/", "wakewords add", "wakewords"],
-  ["get_wakeword", "GET", "/api/v1/wakewords/{wakeword_id}", "wakewords get", "wakewords"],
-  ["update_wakeword", "PATCH", "/api/v1/wakewords/{wakeword_id}", "wakewords update", "wakewords"],
-  ["delete_wakeword", "DELETE", "/api/v1/wakewords/{wakeword_id}", "wakewords remove", "wakewords"],
-  ["list_intents", "GET", "/api/v1/intents/", "intents list", "intents"],
-  ["create_intent", "POST", "/api/v1/intents/", "intents add", "intents"],
-  ["get_intent", "GET", "/api/v1/intents/{intent_id}", "intents get", "intents"],
-  ["update_intent", "PATCH", "/api/v1/intents/{intent_id}", "intents update", "intents"],
-  ["delete_intent", "DELETE", "/api/v1/intents/{intent_id}", "intents remove", "intents"],
-  ["list_phrases", "GET", "/api/v1/intents/{intent_id}/phrases", "intents phrases", "intents"],
-  ["add_phrase", "POST", "/api/v1/intents/{intent_id}/phrases", "intents add-phrase", "intents"],
-  ["delete_phrase", "DELETE", "/api/v1/intents/{intent_id}/phrases/{phrase_id}", "intents remove-phrase", "intents"],
-  ["list_slots", "GET", "/api/v1/slots/", "slots list", "slots"],
-  ["create_slot", "POST", "/api/v1/slots/", "slots add", "slots"],
-  ["get_slot", "GET", "/api/v1/slots/{slot_id}", "slots get", "slots"],
-  ["update_slot", "PATCH", "/api/v1/slots/{slot_id}", "slots update", "slots"],
-  ["delete_slot", "DELETE", "/api/v1/slots/{slot_id}", "slots remove", "slots"],
-  ["list_slot_values", "GET", "/api/v1/slots/{slot_id}/values", "slots values", "slots"],
-  ["add_slot_value", "POST", "/api/v1/slots/{slot_id}/values", "slots add-value", "slots"],
-  ["delete_slot_value", "DELETE", "/api/v1/slots/{slot_id}/values/{value_id}", "slots remove-value", "slots"],
-  ["list_aliases", "GET", "/api/v1/slots/{slot_id}/values/{value_id}/aliases", "slots aliases", "slots"],
-  ["add_alias", "POST", "/api/v1/slots/{slot_id}/values/{value_id}/aliases", "slots add-alias", "slots"],
-  ["delete_alias", "DELETE", "/api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}", "slots remove-alias", "slots"],
-  ["opal_profiles_list", "GET", "/api/v1/profiles/", "profiles list", "profiles"],
-  ["opal_profiles_create", "POST", "/api/v1/profiles/", "profiles add", "profiles"],
-  ["opal_profile_get", "GET", "/api/v1/profiles/{profile_id}", "profiles get", "profiles"],
-  ["opal_profile_patch", "PATCH", "/api/v1/profiles/{profile_id}", "profiles update", "profiles"],
-  ["opal_profile_delete", "DELETE", "/api/v1/profiles/{profile_id}", "profiles remove", "profiles"],
-  ["opal_profile_activate", "POST", "/api/v1/profiles/{profile_id}/activate", "profiles activate", "profiles"],
-  ["opal_settings_get", "GET", "/api/v1/settings/", "settings list", "settings"],
-  ["opal_settings_patch", "PATCH", "/api/v1/settings/", "settings patch", "settings"],
-  ["opal_setting_get", "GET", "/api/v1/settings/{key}", "settings get", "settings"],
-  ["opal_setting_put", "PUT", "/api/v1/settings/{key}", "settings set", "settings"],
-  ["opal_setting_delete", "DELETE", "/api/v1/settings/{key}", "settings unset", "settings"],
+  ["list_wakewords", "GET", "/api/v1/wakeword/", "wakewords list", "wakewords"],
+  ["create_wakeword", "POST", "/api/v1/wakeword/", "wakewords add", "wakewords"],
+  ["get_wakeword", "GET", "/api/v1/wakeword/{wakeword_id}", "wakewords get", "wakewords"],
+  ["update_wakeword", "PATCH", "/api/v1/wakeword/{wakeword_id}", "wakewords update", "wakewords"],
+  ["delete_wakeword", "DELETE", "/api/v1/wakeword/{wakeword_id}", "wakewords remove", "wakewords"],
+  ["list_intents", "GET", "/api/v1/intent/", "intents list", "intents"],
+  ["create_intent", "POST", "/api/v1/intent/", "intents add", "intents"],
+  ["get_intent", "GET", "/api/v1/intent/{intent_id}", "intents get", "intents"],
+  ["update_intent", "PATCH", "/api/v1/intent/{intent_id}", "intents update", "intents"],
+  ["delete_intent", "DELETE", "/api/v1/intent/{intent_id}", "intents remove", "intents"],
+  ["list_phrases", "GET", "/api/v1/intent/{intent_id}/phrase", "intents phrases", "intents"],
+  ["add_phrase", "POST", "/api/v1/intent/{intent_id}/phrase", "intents add-phrase", "intents"],
+  ["delete_phrase", "DELETE", "/api/v1/intent/{intent_id}/phrase/{phrase_id}", "intents remove-phrase", "intents"],
+  ["list_slots", "GET", "/api/v1/slot/", "slots list", "slots"],
+  ["create_slot", "POST", "/api/v1/slot/", "slots add", "slots"],
+  ["get_slot", "GET", "/api/v1/slot/{slot_id}", "slots get", "slots"],
+  ["update_slot", "PATCH", "/api/v1/slot/{slot_id}", "slots update", "slots"],
+  ["delete_slot", "DELETE", "/api/v1/slot/{slot_id}", "slots remove", "slots"],
+  ["list_slot_values", "GET", "/api/v1/slot/{slot_id}/value", "slots values", "slots"],
+  ["add_slot_value", "POST", "/api/v1/slot/{slot_id}/value", "slots add-value", "slots"],
+  ["delete_slot_value", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}", "slots remove-value", "slots"],
+  ["list_aliases", "GET", "/api/v1/slot/{slot_id}/value/{value_id}/alias", "slots aliases", "slots"],
+  ["add_alias", "POST", "/api/v1/slot/{slot_id}/value/{value_id}/alias", "slots add-alias", "slots"],
+  ["delete_alias", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}", "slots remove-alias", "slots"],
+  ["opal_profile_list", "GET", "/api/v1/profile/", "profiles list", "profiles"],
+  ["opal_profile_create", "POST", "/api/v1/profile/", "profiles add", "profiles"],
+  ["opal_profile_get", "GET", "/api/v1/profile/{profile_id}", "profiles get", "profiles"],
+  ["opal_profile_patch", "PATCH", "/api/v1/profile/{profile_id}", "profiles update", "profiles"],
+  ["opal_profile_delete", "DELETE", "/api/v1/profile/{profile_id}", "profiles remove", "profiles"],
+  ["opal_profile_activate", "POST", "/api/v1/profile/{profile_id}/activate", "profiles activate", "profiles"],
+  ["opal_setting_list", "GET", "/api/v1/setting/", "settings list", "settings"],
+  ["opal_setting_patch", "PATCH", "/api/v1/setting/", "settings patch", "settings"],
+  ["opal_setting_get", "GET", "/api/v1/setting/{key}", "settings get", "settings"],
+  ["opal_setting_put", "PUT", "/api/v1/setting/{key}", "settings set", "settings"],
+  ["opal_setting_delete", "DELETE", "/api/v1/setting/{key}", "settings unset", "settings"],
   ["test_text", "POST", "/api/v1/recognition/test_text", "test text", "test"],
   ["test_audio", "POST", "/api/v1/recognition/test_audio", "test audio", "test"],
   ["start_pipeline", "POST", "/api/v1/recognition/start", "pipeline start", "pipeline"],
   ["stop_pipeline", "POST", "/api/v1/recognition/stop", "pipeline stop", "pipeline"],
   ["get_status", "GET", "/api/v1/recognition/status", "pipeline status", "pipeline"],
   ["stream_results", "GET", "/api/v1/recognition/stream", "test listen / listen-debug", "test"],
-  ["list_logs", "GET", "/api/v1/logs/", "logs list", "logs"],
-  ["count_logs", "GET", "/api/v1/logs/count", "logs count", "logs"],
-  ["get_log", "GET", "/api/v1/logs/{log_id}", "logs get", "logs"],
-  ["list_failed_utterances", "GET", "/api/v1/failed_utterances/", "failed list", "failed"],
-  ["create_failed_utterance", "POST", "/api/v1/failed_utterances/", "failed add", "failed"],
-  ["get_failed_utterance", "GET", "/api/v1/failed_utterances/{fu_id}", "failed get", "failed"],
-  ["update_failed_utterance", "PATCH", "/api/v1/failed_utterances/{fu_id}", "failed update", "failed"],
-  ["delete_failed_utterance", "DELETE", "/api/v1/failed_utterances/{fu_id}", "failed remove", "failed"],
-  ["promote_to_phrase", "POST", "/api/v1/failed_utterances/{fu_id}/promote", "failed promote", "failed"],
+  ["list_logs", "GET", "/api/v1/log/", "logs list", "logs"],
+  ["count_logs", "GET", "/api/v1/log/count", "logs count", "logs"],
+  ["get_log", "GET", "/api/v1/log/{log_id}", "logs get", "logs"],
+  ["list_failed_utterances", "GET", "/api/v1/failed_utterance/", "failed list", "failed"],
+  ["create_failed_utterance", "POST", "/api/v1/failed_utterance/", "failed add", "failed"],
+  ["get_failed_utterance", "GET", "/api/v1/failed_utterance/{fu_id}", "failed get", "failed"],
+  ["update_failed_utterance", "PATCH", "/api/v1/failed_utterance/{fu_id}", "failed update", "failed"],
+  ["delete_failed_utterance", "DELETE", "/api/v1/failed_utterance/{fu_id}", "failed remove", "failed"],
+  ["promote_to_phrase", "POST", "/api/v1/failed_utterance/{fu_id}/promote", "failed promote", "failed"],
   ["list_regression_tests", "GET", "/api/v1/regression/", "regression list", "regression"],
   ["create_regression_test", "POST", "/api/v1/regression/", "regression add", "regression"],
   ["get_regression_test", "GET", "/api/v1/regression/{test_id}", "regression get", "regression"],
@@ -187,14 +187,20 @@ const ROUTES = [
   ["opal_backup_import", "POST", "/api/v1/backup/import", "config import", "config"],
   ["opal_backup_validate_stored", "GET", "/api/v1/backup/validate", "config validate", "config"],
   ["opal_backup_validate", "POST", "/api/v1/backup/validate", "config validate --from-dir", "config"],
-  ["root", "GET", "/", "system info", "system"],
-  ["healthz", "GET", "/healthz", "system ping", "system"],
+  ["opal_persona_list", "GET", "/api/v1/persona/", "personas list", "personas"],
+  ["opal_persona_create", "POST", "/api/v1/persona/", "personas add", "personas"],
+  ["opal_persona_get", "GET", "/api/v1/persona/{persona_id}", "personas get", "personas"],
+  ["opal_persona_patch", "PATCH", "/api/v1/persona/{persona_id}", "personas update", "personas"],
+  ["opal_persona_delete", "DELETE", "/api/v1/persona/{persona_id}", "personas remove", "personas"],
+  ["opal_persona_validate", "POST", "/api/v1/persona/{persona_id}/validate", "personas validate", "personas"],
+  ["opal_info_get", "GET", "/api/v1/info/", "system info", "system"],
+  ["opal_info_ping", "GET", "/api/v1/info/ping", "system ping", "system"],
 ];
 const ROUTE = Object.fromEntries(ROUTES.map(r => [r[0], { name: r[0], method: r[1], path: r[2], cli: r[3], view: r[4] }]));
 
 const NAV = [
   ["Overview", [["system", "System"], ["pipeline", "Pipeline"]]],
-  ["Configure", [["wakewords", "Wakewords"], ["intents", "Intents"], ["slots", "Slots"], ["profiles", "Profiles"], ["settings", "Settings"]]],
+  ["Configure", [["wakewords", "Wakewords"], ["intents", "Intents"], ["slots", "Slots"], ["profiles", "Profiles"], ["personas", "Personas"], ["settings", "Settings"]]],
   ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["regression", "Regression"], ["logs", "Logs"], ["perf", "Performance"]]],
   ["Admin", [["config", "Config & backups"], ["api", "API & parity"]]],
 ];
@@ -398,7 +404,7 @@ const VIEWS = {};
 
 VIEWS.system = async () => {
   const [info, ping, health, devices, live, ready] = await Promise.allSettled([
-    api("GET", "/"), api("GET", "/healthz"), api("GET", "/api/v1/health/"), api("GET", "/api/v1/health/audio_devices"),
+    api("GET", "/api/v1/info/"), api("GET", "/api/v1/info/ping"), api("GET", "/api/v1/health/"), api("GET", "/api/v1/health/audio_devices"),
     api("GET", "/api/v1/health/live"), api("GET", "/api/v1/health/ready"),
   ]);
   const val = p => p.status === "fulfilled" ? p.value : null;
@@ -407,8 +413,8 @@ VIEWS.system = async () => {
   const probe = p => { const v = val(p); return v ? `${statusBadge(v.status)} <span class="muted">ready: ${cell(v.ready)}</span>` : ""; };
   return `<h2>System</h2><div class="sub">Service info, liveness, startup health checks and audio devices.</div>
     <div class="cols">
-      ${card("Info", ["root"], err(info) + kv(val(info)))}
-      ${card("Ping", ["healthz"], err(ping) + kv(val(ping)))}
+      ${card("Info", ["opal_info_get"], err(info) + kv(val(info)))}
+      ${card("Ping", ["opal_info_ping"], err(ping) + kv(val(ping)))}
     </div>
     <div class="cols">
       ${card("Liveness", ["opal_health_live_get"], err(live) + probe(live))}
@@ -434,7 +440,7 @@ VIEWS.pipeline = async () => {
 };
 
 VIEWS.wakewords = async () => {
-  const items = await api("GET", "/api/v1/wakewords/");
+  const items = await api("GET", "/api/v1/wakeword/");
   const rows = table(items, [
     ["id", "id"],
     ["name", "name", r => `<input name="name" value="${esc(r.name)}" data-ww="${r.id}">`],
@@ -454,7 +460,7 @@ VIEWS.wakewords = async () => {
 
 VIEWS.intents = async ([id]) => {
   if (id) return intentDetail(id);
-  const items = await api("GET", "/api/v1/intents/");
+  const items = await api("GET", "/api/v1/intent/");
   return `<h2>Intents</h2><div class="sub">Intents with training phrases. Click an intent to edit its phrases.</div>
     ${opsLine(["list_intents", "create_intent", "get_intent", "update_intent", "delete_intent", "list_phrases", "add_phrase", "delete_phrase"])}
     ${card("Intents", ["list_intents"], table(items, [["id", "id"], ["name", "name"], ["enabled", "enabled"], ["confidence_threshold", "threshold"],
@@ -470,7 +476,7 @@ VIEWS.intents = async ([id]) => {
 };
 
 async function intentDetail(id) {
-  const [intent, phrases] = await Promise.all([api("GET", `/api/v1/intents/${id}`), api("GET", `/api/v1/intents/${id}/phrases`)]);
+  const [intent, phrases] = await Promise.all([api("GET", `/api/v1/intent/${id}`), api("GET", `/api/v1/intent/${id}/phrase`)]);
   return `<p><a href="#/intents">← Intents</a></p><h2>${esc(intent.name)}</h2><div class="sub">${esc(intent.description || "")}</div>
     <div class="cols">
     ${card("Settings", ["get_intent", "update_intent"], `<form data-form="intentUpdate" data-id="${intent.id}">
@@ -492,7 +498,7 @@ async function intentDetail(id) {
 
 VIEWS.slots = async ([id]) => {
   if (id) return slotDetail(id);
-  const items = await api("GET", "/api/v1/slots/");
+  const items = await api("GET", "/api/v1/slot/");
   const values = r => r.values.map(v => esc(v.value) + (v.aliases.length ? ` <span class="muted">(${v.aliases.map(a => esc(a.alias)).join(", ")})</span>` : "")).join(", ");
   return `<h2>Slots</h2><div class="sub">Slot types: <code>list</code> (values + aliases), <code>number</code> (spoken numbers), <code>text</code> (free text, needs open STT).</div>
     ${opsLine(["list_slots", "create_slot", "get_slot", "update_slot", "delete_slot", "list_slot_values", "add_slot_value", "delete_slot_value", "list_aliases", "add_alias", "delete_alias"])}
@@ -508,7 +514,7 @@ VIEWS.slots = async ([id]) => {
 };
 
 async function slotDetail(id) {
-  const [slot, values] = await Promise.all([api("GET", `/api/v1/slots/${id}`), api("GET", `/api/v1/slots/${id}/values`)]);
+  const [slot, values] = await Promise.all([api("GET", `/api/v1/slot/${id}`), api("GET", `/api/v1/slot/${id}/value`)]);
   const aliasCell = v => v.aliases.map(a => `<span class="chip">${esc(a.alias)}${btn("×", "aliasDelete", { slot: slot.id, value: v.id, id: a.id }, "")}</span>`).join("") +
     `<form data-form="aliasAdd" data-slot="${slot.id}" data-value="${v.id}" class="row" style="display:inline-flex"><input name="alias" placeholder="new alias" size="12" required><button class="small" type="submit">+</button></form>`;
   return `<p><a href="#/slots">← Slots</a></p><h2>${esc(slot.name)}</h2><div class="sub">${esc(slot.slot_type)} slot · ${esc(slot.description || "")}</div>
@@ -547,35 +553,35 @@ function profileForm(p, lists) {
 }
 
 async function profileLists() {
-  const [w, i, s] = await Promise.all([api("GET", "/api/v1/wakewords/"), api("GET", "/api/v1/intents/"), api("GET", "/api/v1/slots/")]);
+  const [w, i, s] = await Promise.all([api("GET", "/api/v1/wakeword/"), api("GET", "/api/v1/intent/"), api("GET", "/api/v1/slot/")]);
   return { wakewords: w.map(x => x.name), intents: i.map(x => x.name), slots: s.map(x => x.name) };
 }
 
 VIEWS.profiles = async ([id]) => {
   const lists = await profileLists();
   if (id) {
-    const p = await api("GET", `/api/v1/profiles/${id}`);
+    const p = await api("GET", `/api/v1/profile/${id}`);
     return `<p><a href="#/profiles">← Profiles</a></p><h2>${esc(p.name)} ${p.is_active ? '<span class="badge ok">active</span>' : ""}</h2>
       <div class="sub">Lists and maps replace the stored values on save.</div>
       ${card("Edit profile", ["opal_profile_get", "opal_profile_patch"], profileForm(p, lists),
         (p.is_active ? "" : btn("Activate", "profileActivate", { id: p.id }, "small")) + btn("Delete", "profileDelete", { id: p.id, name: p.name }, "danger small"))}`;
   }
-  const items = await api("GET", "/api/v1/profiles/");
+  const items = await api("GET", "/api/v1/profile/");
   return `<h2>Profiles</h2><div class="sub">Exactly one profile is active; it selects wakewords, thresholds, VAD settings, models and enabled intents/slots.</div>
-    ${opsLine(["opal_profiles_list", "opal_profiles_create", "opal_profile_get", "opal_profile_patch", "opal_profile_delete", "opal_profile_activate"])}
-    ${card("Profiles", ["opal_profiles_list"], table(items, [["id", "id"], ["name", "name"], ["is_active", "active"], ["confidence_thresholds", "thresholds"],
+    ${opsLine(["opal_profile_list", "opal_profile_create", "opal_profile_get", "opal_profile_patch", "opal_profile_delete", "opal_profile_activate"])}
+    ${card("Profiles", ["opal_profile_list"], table(items, [["id", "id"], ["name", "name"], ["is_active", "active"], ["confidence_thresholds", "thresholds"],
       ["vad_settings", "vad"], ["enabled_intents", "intents"], ["description", "description"]],
       { rowAct: r => `data-act="go" data-to="#/profiles/${r.id}"`,
         actions: r => (r.is_active ? "" : btn("Activate", "profileActivate", { id: r.id }, "small")) + btn("Delete", "profileDelete", { id: r.id, name: r.name }, "danger small") }))}
-    ${card("Add profile", ["opal_profiles_create"], profileForm({}, lists))}`;
+    ${card("Add profile", ["opal_profile_create"], profileForm({}, lists))}`;
 };
 
 VIEWS.settings = async () => {
-  const settings = await api("GET", "/api/v1/settings/");
+  const settings = await api("GET", "/api/v1/setting/");
   const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
   return `<h2>Settings</h2><div class="sub">Values are validated by type and range on save; changes are applied atomically via PATCH with the current ETag.</div>
-    ${opsLine(["opal_settings_get", "opal_settings_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
-    ${card("Settings", ["opal_settings_get", "opal_settings_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
+    ${opsLine(["opal_setting_list", "opal_setting_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
+    ${card("Settings", ["opal_setting_list", "opal_setting_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
       ["value", "value", r => `<input data-setting="${esc(r.key)}" value="${esc(r.value)}" style="width:100%">`]],
       { actions: r => btn("Info", "settingGet", { key: r.key }, "ghost small") + btn("Save", "settingSave", { key: r.key }, "small") + btn("Reset", "settingReset", { key: r.key }, "small ghost") }))}`;
 };
@@ -605,7 +611,7 @@ VIEWS.test = async () => {
 
 VIEWS.failed = async () => {
   const f = S.failed;
-  const items = await api("GET", "/api/v1/failed_utterances/", { query: { limit: f.limit, offset: f.offset, reviewed: f.reviewed, promoted: f.promoted } });
+  const items = await api("GET", "/api/v1/failed_utterance/", { query: { limit: f.limit, offset: f.offset, reviewed: f.reviewed, promoted: f.promoted } });
   const sel = (name, value) => `<select data-filter="failed.${name}"><option value="" ${value === "" ? "selected" : ""}>any</option>
     <option value="true" ${value === "true" ? "selected" : ""}>yes</option><option value="false" ${value === "false" ? "selected" : ""}>no</option></select>`;
   return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here. Promote them to training phrases (slot values become placeholders) and a regression test.</div>
@@ -630,7 +636,7 @@ function pager(key, count, hasMore = true) {
 }
 
 VIEWS.regression = async () => {
-  const [tests, intents] = await Promise.all([api("GET", "/api/v1/regression/"), api("GET", "/api/v1/intents/")]);
+  const [tests, intents] = await Promise.all([api("GET", "/api/v1/regression/"), api("GET", "/api/v1/intent/")]);
   const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option>${esc(n)}</option>`).join("");
   return `<h2>Regression</h2><div class="sub">Phrases that must keep resolving to the expected intent and slots (use <code>no_match</code> for negative tests).</div>
     ${opsLine(["list_regression_tests", "create_regression_test", "get_regression_test", "update_regression_test", "delete_regression_test", "run_regression_tests"])}
@@ -649,8 +655,8 @@ VIEWS.regression = async () => {
 VIEWS.logs = async () => {
   const l = S.logs;
   const [page, count, intents] = await Promise.all([
-    api("GET", "/api/v1/logs/", { query: { limit: l.limit, cursor: l.cursor, intent_name: l.intent, matched: l.matched } }),
-    api("GET", "/api/v1/logs/count"), api("GET", "/api/v1/intents/"),
+    api("GET", "/api/v1/log/", { query: { limit: l.limit, cursor: l.cursor, intent_name: l.intent, matched: l.matched } }),
+    api("GET", "/api/v1/log/count"), api("GET", "/api/v1/intent/"),
   ]);
   l._next = page.next_cursor;
   const logs = page.items;
@@ -744,10 +750,51 @@ VIEWS.api = async () => {
       <pre id="rawResult" class="muted">response appears here</pre>`)}`;
 };
 
+
+VIEWS.personas = async () => {
+  const items = await api("GET", "/api/v1/persona/");
+  const form = (f, p = {}) => `<form data-form="${f}" ${p.persona_id ? `data-id="${esc(p.persona_id)}"` : ""}>
+    <div class="row"><label><span>Persona id</span><input name="persona_id" required maxlength="200" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" value="${esc(p.persona_id || "")}" ${p.persona_id ? "disabled" : ""}></label>
+    <label><span>Name</span><input name="name" required maxlength="200" value="${esc(p.name || "")}"></label>
+    <label><span>Voice (OPAL Say id)</span><input name="voice_id" value="${esc(p.voice_id || "")}" placeholder="en-gb-alan-low"></label></div>
+    <label><span>Description</span><input name="description" maxlength="1000" value="${esc(p.description || "")}"></label>
+    <label class="check"><input type="checkbox" name="enabled" ${p.enabled === false ? "" : "checked"}> enabled</label>
+    <button type="submit">${p.persona_id ? "Save" : "Add persona"}</button></form>`;
+  return `<h2>Personas</h2><div class="sub">Named speaker identities; an optional OPAL Say voice keeps spoken feedback consistent.</div>
+    ${opsLine(["opal_persona_list", "opal_persona_create", "opal_persona_get", "opal_persona_patch", "opal_persona_delete", "opal_persona_validate"])}
+    ${card("Registered personas", ["opal_persona_list"], table(items,
+      [["persona_id", "id"], ["name", "name"], ["enabled", "enabled"], ["voice_id", "voice"], ["description", "description"], ["updated_at", "updated"]],
+      { actions: r => btn("Validate", "personaValidate", { id: r.persona_id }, "ghost small") +
+        btn("Edit", "personaEdit", { id: r.persona_id }, "small") + btn("Delete", "personaDelete", { id: r.persona_id }, "danger small"),
+        rowAct: r => `data-act="personaGet" data-id="${esc(r.persona_id)}"`, empty: "No personas registered." }))}
+    ${card("Add persona", ["opal_persona_create"], form("personaAdd"))}`;
+};
+
 // ---------------------------------------------------------------------------------------------------
 // click actions (data-act) and form handlers (data-form)
 // ---------------------------------------------------------------------------------------------------
 const ACT = {
+  personaGet: async d => modal(`<h3>Persona ${esc(d.id)}</h3>${op("opal_persona_get")}${kv(await api("GET", `/api/v1/persona/${enc(d.id)}`))}<p>${btn("Close", "closeModal")}</p>`),
+  personaValidate: async d => {
+    const r = await api("POST", `/api/v1/persona/${enc(d.id)}/validate`);
+    modal(`<h3>Validate ${esc(d.id)}</h3>${op("opal_persona_validate")}${kv({ valid: r.valid })}` +
+      (r.errors.length ? `<p class="err">${r.errors.map(esc).join("<br>")}</p>` : "") +
+      (r.warnings.length ? `<p class="warn">${r.warnings.map(esc).join("<br>")}</p>` : "") +
+      `<p>${btn("Close", "closeModal")}</p>`);
+  },
+  personaEdit: async d => {
+    const p = await api("GET", `/api/v1/persona/${enc(d.id)}`);
+    modal(`<h3>Edit persona</h3>${op("opal_persona_patch")}` + (() => {
+      const f = `<form data-form="personaEdit" data-id="${esc(p.persona_id)}">
+        <label><span>Name</span><input name="name" required maxlength="200" value="${esc(p.name)}"></label>
+        <label><span>Voice (OPAL Say id)</span><input name="voice_id" value="${esc(p.voice_id || "")}"></label>
+        <label><span>Description</span><input name="description" maxlength="1000" value="${esc(p.description || "")}"></label>
+        <label class="check"><input type="checkbox" name="enabled" ${p.enabled ? "checked" : ""}> enabled</label>
+        <button type="submit">Save</button></form>`;
+      return f;
+    })());
+  },
+  personaDelete: async d => { confirmOr(`Delete persona '${d.id}'?`); await apiWithEtag("DELETE", `/api/v1/persona/${enc(d.id)}`); toast("persona deleted"); render(); },
   go: d => { location.hash = d.to; },
   refresh: () => render(),
   closeModal: () => closeModal(),
@@ -765,26 +812,26 @@ const ACT = {
 
   wwSave: async d => {
     const body = { name: $(`[data-ww="${d.id}"]`).value, confidence_threshold: Number($(`[data-ww-th="${d.id}"]`).value), enabled: $(`[data-ww-en="${d.id}"]`).checked };
-    await apiWithEtag("PATCH", `/api/v1/wakewords/${d.id}`, { body }); toast("wakeword saved"); render();
+    await apiWithEtag("PATCH", `/api/v1/wakeword/${d.id}`, { body }); toast("wakeword saved"); render();
   },
-  wwGet: async d => modal(`<h3>Wakeword ${esc(d.id)}</h3>${op("get_wakeword")}${kv(await api("GET", `/api/v1/wakewords/${d.id}`))}<p>${btn("Close", "closeModal")}</p>`),
-  wwDelete: async d => { confirmOr(`Delete wakeword '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/wakewords/${d.id}`); toast("wakeword deleted"); render(); },
+  wwGet: async d => modal(`<h3>Wakeword ${esc(d.id)}</h3>${op("get_wakeword")}${kv(await api("GET", `/api/v1/wakeword/${d.id}`))}<p>${btn("Close", "closeModal")}</p>`),
+  wwDelete: async d => { confirmOr(`Delete wakeword '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/wakeword/${d.id}`); toast("wakeword deleted"); render(); },
 
-  intentDelete: async d => { confirmOr(`Delete intent '${d.name}' and its phrases?`); await apiWithEtag("DELETE", `/api/v1/intents/${d.id}`); toast("intent deleted"); location.hash = "#/intents"; },
-  phraseDelete: async d => { await apiWithEtag("DELETE", `/api/v1/intents/${d.intent}/phrases/${d.id}`, { etagPath: `/api/v1/intents/${d.intent}/phrases` }); toast("phrase deleted"); render(); },
+  intentDelete: async d => { confirmOr(`Delete intent '${d.name}' and its phrases?`); await apiWithEtag("DELETE", `/api/v1/intent/${d.id}`); toast("intent deleted"); location.hash = "#/intents"; },
+  phraseDelete: async d => { await apiWithEtag("DELETE", `/api/v1/intent/${d.intent}/phrase/${d.id}`, { etagPath: `/api/v1/intent/${d.intent}/phrase` }); toast("phrase deleted"); render(); },
 
-  slotDelete: async d => { confirmOr(`Delete slot '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/slots/${d.id}`); toast("slot deleted"); location.hash = "#/slots"; },
-  valueDelete: async d => { confirmOr(`Delete value '${d.name}' and its aliases?`); await apiWithEtag("DELETE", `/api/v1/slots/${d.slot}/values/${d.id}`, { etagPath: `/api/v1/slots/${d.slot}/values` }); toast("value deleted"); render(); },
-  aliasDelete: async d => { await apiWithEtag("DELETE", `/api/v1/slots/${d.slot}/values/${d.value}/aliases/${d.id}`, { etagPath: `/api/v1/slots/${d.slot}/values/${d.value}/aliases` }); toast("alias deleted"); render(); },
-  aliasList: async d => modal(`<h3>Aliases</h3>${op("list_aliases")}${table(await api("GET", `/api/v1/slots/${d.slot}/values/${d.value}/aliases`),
+  slotDelete: async d => { confirmOr(`Delete slot '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/slot/${d.id}`); toast("slot deleted"); location.hash = "#/slots"; },
+  valueDelete: async d => { confirmOr(`Delete value '${d.name}' and its aliases?`); await apiWithEtag("DELETE", `/api/v1/slot/${d.slot}/value/${d.id}`, { etagPath: `/api/v1/slot/${d.slot}/value` }); toast("value deleted"); render(); },
+  aliasDelete: async d => { await apiWithEtag("DELETE", `/api/v1/slot/${d.slot}/value/${d.value}/alias/${d.id}`, { etagPath: `/api/v1/slot/${d.slot}/value/${d.value}/alias` }); toast("alias deleted"); render(); },
+  aliasList: async d => modal(`<h3>Aliases</h3>${op("list_aliases")}${table(await api("GET", `/api/v1/slot/${d.slot}/value/${d.value}/alias`),
     [["id", "id"], ["alias", "alias"], ["created_at", "created"]], { empty: "No aliases." })}<p>${btn("Close", "closeModal")}</p>`),
 
-  profileActivate: async d => { const p = await apiWithEtag("POST", `/api/v1/profiles/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
-  profileDelete: async d => { confirmOr(`Delete profile '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/profiles/${d.id}`); toast("profile deleted"); location.hash = "#/profiles"; },
+  profileActivate: async d => { const p = await apiWithEtag("POST", `/api/v1/profile/${d.id}/activate`); toast(`profile '${p.name}' is active`); render(); refreshHeader(); },
+  profileDelete: async d => { confirmOr(`Delete profile '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/profile/${d.id}`); toast("profile deleted"); location.hash = "#/profiles"; },
 
-  settingGet: async d => modal(`<h3>Setting <code>${esc(d.key)}</code></h3>${op("opal_setting_get")}${kv(await api("GET", `/api/v1/settings/${enc(d.key)}`))}<p>${btn("Close", "closeModal")}</p>`),
-  settingSave: async d => { const s = await apiWithEtag("PUT", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/", body: { value: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s.value}`); render(); },
-  settingReset: async d => { await apiWithEtag("DELETE", `/api/v1/settings/${enc(d.key)}`, { etagPath: "/api/v1/settings/" }); toast(`${d.key} reset to default`); render(); },
+  settingGet: async d => modal(`<h3>Setting <code>${esc(d.key)}</code></h3>${op("opal_setting_get")}${kv(await api("GET", `/api/v1/setting/${enc(d.key)}`))}<p>${btn("Close", "closeModal")}</p>`),
+  settingSave: async d => { const s = await apiWithEtag("PUT", `/api/v1/setting/${enc(d.key)}`, { etagPath: "/api/v1/setting/", body: { value: $(`[data-setting="${d.key}"]`).value } }); toast(`${d.key} = ${s.value}`); render(); },
+  settingReset: async d => { await apiWithEtag("DELETE", `/api/v1/setting/${enc(d.key)}`, { etagPath: "/api/v1/setting/" }); toast(`${d.key} reset to default`); render(); },
 
   listenStart: async d => listenStart(d.debug === "1"),
   listenStop: async () => listenStop(),
@@ -796,7 +843,7 @@ const ACT = {
     if (el) el.innerHTML = regressionRunTable(run);
   },
   regressionEdit: async d => {
-    const [t, intents] = await Promise.all([api("GET", `/api/v1/regression/${d.id}`), api("GET", "/api/v1/intents/")]);
+    const [t, intents] = await Promise.all([api("GET", `/api/v1/regression/${d.id}`), api("GET", "/api/v1/intent/")]);
     const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option ${n === t.expected_intent ? "selected" : ""}>${esc(n)}</option>`).join("");
     modal(`<h3>Regression test ${t.id}</h3><div class="ops">${op("get_regression_test")} ${op("update_regression_test")}</div>
       <form data-form="regressionUpdate" data-id="${t.id}">
@@ -807,10 +854,10 @@ const ACT = {
       <label><input type="checkbox" name="enabled" ${t.enabled ? "checked" : ""}> enabled</label>
       <p class="row"><button type="submit">Save</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
   },
-  regressionDelete: async d => { confirmOr(`Delete regression test ${d.id}?`); await api("DELETE", `/api/v1/regression/${d.id}`); toast("test deleted"); render(); },
+  regressionDelete: async d => { confirmOr(`Delete regression test ${d.id}?`); await apiWithEtag("DELETE", `/api/v1/regression/${d.id}`); toast("test deleted"); render(); },
 
   failedEdit: async d => {
-    const f = await api("GET", `/api/v1/failed_utterances/${d.id}`);
+    const f = await api("GET", `/api/v1/failed_utterance/${d.id}`);
     modal(`<h3>Failed utterance ${f.id}</h3><div class="ops">${op("get_failed_utterance")} ${op("update_failed_utterance")}</div>
       <p><code>${esc(f.transcript)}</code> <span class="muted">log ${cell(f.recognition_log_id)} · ${cell(f.created_at)}</span></p>
       <form data-form="failedUpdate" data-id="${f.id}">
@@ -821,7 +868,7 @@ const ACT = {
       <p class="row"><button type="submit">Save</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
   },
   failedPromote: async d => {
-    const [f, intents] = await Promise.all([api("GET", `/api/v1/failed_utterances/${d.id}`), api("GET", "/api/v1/intents/")]);
+    const [f, intents] = await Promise.all([api("GET", `/api/v1/failed_utterance/${d.id}`), api("GET", "/api/v1/intent/")]);
     modal(`<h3>Promote to training phrase</h3>${op("promote_to_phrase")}<p><code>${esc(f.transcript)}</code></p>
       <form data-form="failedPromote" data-id="${f.id}">
       <label class="block"><span>intent</span><select name="intent_name">${intents.map(i => `<option ${i.name === f.expected_intent ? "selected" : ""}>${esc(i.name)}</option>`).join("")}</select></label>
@@ -829,14 +876,14 @@ const ACT = {
       <p class="hint">Known slot values in the utterance are replaced by <code>{slot}</code> placeholders.</p>
       <p class="row"><button type="submit">Promote</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
   },
-  failedDelete: async d => { confirmOr(`Delete failed utterance ${d.id}?`); await api("DELETE", `/api/v1/failed_utterances/${d.id}`); toast("deleted"); render(); },
+  failedDelete: async d => { confirmOr(`Delete failed utterance ${d.id}?`); await api("DELETE", `/api/v1/failed_utterance/${d.id}`); toast("deleted"); render(); },
   failedFromResult: async d => {
-    const f = await api("POST", "/api/v1/failed_utterances/", { body: { transcript: d.text, recognition_log_id: d.log ? Number(d.log) : null } });
+    const f = await api("POST", "/api/v1/failed_utterance/", { body: { transcript: d.text, recognition_log_id: d.log ? Number(d.log) : null } });
     toast(`recorded as failed utterance ${f.id}`);
   },
 
   logShow: async d => {
-    const log = await api("GET", `/api/v1/logs/${d.id}`);
+    const log = await api("GET", `/api/v1/log/${d.id}`);
     const failBtn = log.transcript ? btn("Record as failed utterance", "failedFromResult", { text: log.transcript, log: log.id }, "ghost") : "";
     modal(`<h3>Recognition log ${log.id}</h3>${op("get_log")}${kv(log)}<p class="row">${failBtn} ${btn("Close", "closeModal")}</p>`);
   },
@@ -892,46 +939,57 @@ function importHtml(r) {
 }
 
 const FORM = {
+  personaAdd: async v => {
+    const p = await apiWithEtag("POST", "/api/v1/persona/", { body: {
+      persona_id: v.persona_id.trim(), name: v.name.trim(),
+      description: v.description || null, voice_id: v.voice_id || null, enabled: v.enabled } });
+    toast(`persona '${p.persona_id}' registered`); render();
+  },
+  personaEdit: async (v, f) => {
+    await apiWithEtag("PATCH", `/api/v1/persona/${f.dataset.id}`, { body: {
+      name: v.name, description: v.description || null, voice_id: v.voice_id || null, enabled: v.enabled } });
+    closeModal(); toast("persona saved"); render();
+  },
   setBase: v => { S.base = v.base.replace(/\/+$/, ""); S.token = v.token || ""; localStorage.setItem("opal_api", S.base); localStorage.setItem("opal_token", S.token); render(); refreshHeader(); },
 
-  wwAdd: async v => { const w = await api("POST", "/api/v1/wakewords/", { body: v }); toast(`wakeword '${w.name}' added`); render(); },
+  wwAdd: async v => { const w = await apiWithEtag("POST", "/api/v1/wakeword/", { body: v }); toast(`wakeword '${w.name}' added`); render(); },
 
   intentAdd: async v => {
     const phrases = v.phrases.split("\n").map(s => s.trim()).filter(Boolean);
-    const i = await api("POST", "/api/v1/intents/", { body: { name: v.name.trim(), description: v.description || null, enabled: v.enabled, confidence_threshold: v.confidence_threshold ?? 0.7, phrases } });
+    const i = await apiWithEtag("POST", "/api/v1/intent/", { body: { name: v.name.trim(), description: v.description || null, enabled: v.enabled, confidence_threshold: v.confidence_threshold ?? 0.7, phrases } });
     toast(`intent '${i.name}' added`); location.hash = `#/intents/${i.id}`;
   },
   intentUpdate: async (v, f) => {
-    await apiWithEtag("PATCH", `/api/v1/intents/${f.dataset.id}`, { body: { name: v.name, description: v.description, enabled: v.enabled, confidence_threshold: v.confidence_threshold } });
+    await apiWithEtag("PATCH", `/api/v1/intent/${f.dataset.id}`, { body: { name: v.name, description: v.description, enabled: v.enabled, confidence_threshold: v.confidence_threshold } });
     toast("intent saved"); render();
   },
-  phraseAdd: async (v, f) => { await api("POST", `/api/v1/intents/${f.dataset.id}/phrases`, { body: { phrase: v.phrase } }); toast("phrase added"); render(); },
+  phraseAdd: async (v, f) => { await apiWithEtag("POST", `/api/v1/intent/${f.dataset.id}/phrase`, { body: { phrase: v.phrase } }); toast("phrase added"); render(); },
   quickTest: async v => {
     const r = await api("POST", "/api/v1/recognition/test_text", { body: { text: v.text }, query: { save_log: false } });
     $("#quickResult").innerHTML = `<p><span class="badge ${r.matched ? "ok" : "warn"}">${esc(r.intent_name)}</span> ${cell(r.intent_confidence)} ${cell(r.slot_values)} <span class="muted">${esc(r.no_match_reason || "")}</span></p>`;
   },
 
   slotAdd: async v => {
-    const slot = await api("POST", "/api/v1/slots/", { body: { name: v.name.trim(), slot_type: v.slot_type, description: v.description || null } });
+    const slot = await apiWithEtag("POST", "/api/v1/slot/", { body: { name: v.name.trim(), slot_type: v.slot_type, description: v.description || null } });
     for (const line of v.values.split("\n").map(s => s.trim()).filter(Boolean)) {
       const [value, aliases = ""] = line.split(":");
-      const created = await api("POST", `/api/v1/slots/${slot.id}/values`, { body: { value: value.trim() } });
+      const created = await apiWithEtag("POST", `/api/v1/slot/${slot.id}/value`, { body: { value: value.trim() } });
       for (const alias of aliases.split(",").map(s => s.trim()).filter(Boolean)) {
-        await api("POST", `/api/v1/slots/${slot.id}/values/${created.id}/aliases`, { body: { alias } });
+        await apiWithEtag("POST", `/api/v1/slot/${slot.id}/value/${created.id}/alias`, { body: { alias } });
       }
     }
     toast(`slot '${slot.name}' added`); location.hash = `#/slots/${slot.id}`;
   },
-  slotUpdate: async (v, f) => { await apiWithEtag("PATCH", `/api/v1/slots/${f.dataset.id}`, { body: v }); toast("slot saved"); render(); },
+  slotUpdate: async (v, f) => { await apiWithEtag("PATCH", `/api/v1/slot/${f.dataset.id}`, { body: v }); toast("slot saved"); render(); },
   valueAdd: async (v, f) => {
     const id = f.dataset.id;
-    const created = await api("POST", `/api/v1/slots/${id}/values`, { body: { value: v.value.trim() } });
+    const created = await apiWithEtag("POST", `/api/v1/slot/${id}/value`, { body: { value: v.value.trim() } });
     for (const alias of v.aliases.split(",").map(s => s.trim()).filter(Boolean)) {
-      await api("POST", `/api/v1/slots/${id}/values/${created.id}/aliases`, { body: { alias } });
+      await apiWithEtag("POST", `/api/v1/slot/${id}/value/${created.id}/alias`, { body: { alias } });
     }
     toast("value added"); render();
   },
-  aliasAdd: async (v, f) => { await api("POST", `/api/v1/slots/${f.dataset.slot}/values/${f.dataset.value}/aliases`, { body: { alias: v.alias } }); toast("alias added"); render(); },
+  aliasAdd: async (v, f) => { await apiWithEtag("POST", `/api/v1/slot/${f.dataset.slot}/value/${f.dataset.value}/alias`, { body: { alias: v.alias } }); toast("alias added"); render(); },
 
   profileSave: async (v, f) => {
     const thresholds = {};
@@ -945,8 +1003,8 @@ const FORM = {
       confidence_thresholds: thresholds, vad_settings: parseJson(v.vad, "vad_settings"), model_paths: models,
     };
     const p = f.dataset.id
-      ? await apiWithEtag("PATCH", `/api/v1/profiles/${f.dataset.id}`, { body })
-      : await apiWithEtag("POST", "/api/v1/profiles/", { etagPath: "/api/v1/profiles/", body });
+      ? await apiWithEtag("PATCH", `/api/v1/profile/${f.dataset.id}`, { body })
+      : await apiWithEtag("POST", "/api/v1/profile/", { etagPath: "/api/v1/profile/", body });
     toast(`profile '${p.name}' saved`); refreshHeader();
     if (f.dataset.id) render(); else location.hash = `#/profiles/${p.id}`;
   },
@@ -965,24 +1023,27 @@ const FORM = {
   },
 
   failedAdd: async v => {
-    await api("POST", "/api/v1/failed_utterances/", { body: { transcript: v.transcript, expected_intent: v.expected_intent || null, notes: v.notes || null } });
+    await api("POST", "/api/v1/failed_utterance/", { body: { transcript: v.transcript, expected_intent: v.expected_intent || null, notes: v.notes || null } });
     toast("failed utterance added"); render();
   },
   failedUpdate: async (v, f) => {
-    await api("PATCH", `/api/v1/failed_utterances/${f.dataset.id}`, { body: { expected_intent: v.expected_intent || null, notes: v.notes || null, reviewed: v.reviewed, promoted_to_phrase: v.promoted_to_phrase } });
+    await api("PATCH", `/api/v1/failed_utterance/${f.dataset.id}`, { body: { expected_intent: v.expected_intent || null, notes: v.notes || null, reviewed: v.reviewed, promoted_to_phrase: v.promoted_to_phrase } });
     closeModal(); toast("saved"); render();
   },
   failedPromote: async (v, f) => {
-    const r = await api("POST", `/api/v1/failed_utterances/${f.dataset.id}/promote`, { query: { intent_name: v.intent_name, create_regression: v.create_regression } });
+    const intents = await api("GET", "/api/v1/intent/");
+    const target = intents.find(i => i.name === v.intent_name);
+    if (!target) throw new Error(`intent '${v.intent_name}' not found`);
+    const r = await apiWithEtag("POST", `/api/v1/failed_utterance/${f.dataset.id}/promote`, { etagPath: `/api/v1/intent/${target.id}/phrase`, query: { intent_name: v.intent_name, create_regression: v.create_regression } });
     closeModal(); toast(`added phrase '${r.phrase.phrase}'` + (r.regression_test ? ` and regression test ${r.regression_test.id}` : "")); render();
   },
 
   regressionAdd: async v => {
-    await api("POST", "/api/v1/regression/", { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
+    await apiWithEtag("POST", "/api/v1/regression/", { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
     toast("regression test added"); render();
   },
   regressionUpdate: async (v, f) => {
-    await api("PATCH", `/api/v1/regression/${f.dataset.id}`, { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
+    await apiWithEtag("PATCH", `/api/v1/regression/${f.dataset.id}`, { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
     closeModal(); toast("regression test saved"); render();
   },
 

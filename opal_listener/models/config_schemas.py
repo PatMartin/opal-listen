@@ -69,9 +69,22 @@ class SlotsFile(_Spec):
     slots: list[SlotSpec] = []
 
 
+class PersonaSpec(_Spec):
+    persona_id: str = Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    voice_id: str | None = Field(default=None, min_length=1)
+    enabled: bool = True
+
+
 class ProfilesFile(_Spec):
     version: int = CONFIG_VERSION
     profiles: list[ProfileSpec] = []
+
+
+class PersonasFile(_Spec):
+    version: int = CONFIG_VERSION
+    personas: list[PersonaSpec] = []
 
 
 class SettingsFile(_Spec):
@@ -91,6 +104,7 @@ CONFIG_FILES: dict[str, tuple[type[_Spec], str]] = {
     "intents.yaml": (IntentsFile, "intents"),
     "slots.yaml": (SlotsFile, "slots"),
     "profiles.yaml": (ProfilesFile, "profiles"),
+    "personas.yaml": (PersonasFile, "personas"),
     "settings.yaml": (SettingsFile, "settings"),
 }
 
@@ -107,4 +121,5 @@ class ConfigBundle(_Spec):
     intents: list[IntentSpec] = []
     slots: list[SlotSpec] = []
     profiles: list[ProfileSpec] = []
+    personas: list[PersonaSpec] = []
     settings: dict[str, SettingScalar] = {}

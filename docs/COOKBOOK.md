@@ -182,7 +182,7 @@ opal listen config restore "$latest" --yes
 
 ### 12. Keep your whole voice model in git
 
-`config export --out-dir` writes the six YAML files (wakewords, intents, slots,
+`config export --out-dir` writes the seven YAML files (wakewords, intents, slots,
 profiles, stt, settings) as reviewable source. Validate offline, then import —
 which auto-validates, takes a pre-import backup, and reports row counts.
 
@@ -545,7 +545,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint openapi/opal_listen_v1.5.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
+spectral lint openapi/opal_listen_v1.6.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs

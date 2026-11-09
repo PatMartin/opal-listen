@@ -9,9 +9,9 @@ import typer
 from opal_listener.cli.catalog_cmds import _changes, parse_pairs
 from opal_listener.cli.output import console, done, print_json, render, render_kv, state
 
-FAILED = "/api/v1/failed_utterances/"
+FAILED = "/api/v1/failed_utterance/"
 REGRESSION = "/api/v1/regression/"
-LOGS = "/api/v1/logs/"
+LOGS = "/api/v1/log/"
 PERF = "/api/v1/performance"
 
 failed_app = typer.Typer(help="Review failed utterances and promote them to training phrases.", no_args_is_help=True)
@@ -106,8 +106,12 @@ def failed_promote(
     regression: bool = typer.Option(True, "--regression/--no-regression", help="Also create a regression test"),
 ) -> None:
     """Add a failed utterance as a training phrase (slot values become {placeholders})."""
-    result = state(ctx).api.post(
-        f"{FAILED}{fu_id}/promote", params={"intent_name": intent, "create_regression": regression}
+    api = state(ctx).api
+    target = api.resolve("/api/v1/intent/", intent)
+    result = api.post_with_etag(
+        f"{FAILED}{fu_id}/promote",
+        params={"intent_name": intent, "create_regression": regression},
+        etag_path=f"/api/v1/intent/{target['id']}/phrase",
     )
     done(ctx, f"promoted as '{result['phrase']['phrase']}' for intent '{intent}'", result)
 
@@ -144,7 +148,7 @@ def regression_add(
         "expected_slots": parse_pairs(slot),
         "enabled": enabled,
     }
-    created = state(ctx).api.post(REGRESSION, json=body)
+    created = state(ctx).api.post_with_etag(REGRESSION, json=body)
     done(ctx, f"regression test {created['id']} added", created)
 
 
@@ -166,14 +170,14 @@ def regression_update(
         expected_slots=parse_pairs(slot) if slot else None,
         enabled=enabled,
     )
-    updated = state(ctx).api.patch(f"{REGRESSION}{test_id}", json=body)
+    updated = state(ctx).api.patch_with_etag(f"{REGRESSION}{test_id}", json=body)
     done(ctx, f"regression test {test_id} updated", updated)
 
 
 @regression_app.command("remove")
 def regression_remove(ctx: typer.Context, test_id: int) -> None:
     """Delete a regression test."""
-    state(ctx).api.delete(f"{REGRESSION}{test_id}")
+    state(ctx).api.delete_with_etag(f"{REGRESSION}{test_id}")
     done(ctx, f"regression test {test_id} removed")
 
 

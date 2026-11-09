@@ -27,6 +27,6 @@ def test_negative_phrase_is_no_match(client: TestClient, case: dict[str, Any]) -
 
 def test_no_match_results_are_logged_as_failures_only_for_audio_sources(client: TestClient) -> None:
     client.post("/api/v1/recognition/test_text", json={"text": "open the front door"})
-    logs = client.get("/api/v1/logs/", params={"matched": False}).json()["items"]
+    logs = client.get("/api/v1/log/", params={"matched": False}).json()["items"]
     assert logs and logs[0]["intent_name"] == "no_match"
-    assert client.get("/api/v1/failed_utterances/").json() == []
+    assert client.get("/api/v1/failed_utterance/").json() == []

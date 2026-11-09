@@ -120,6 +120,20 @@ class Profile(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class Persona(SQLModel, table=True):
+    """Registered OPAL persona: a named speaker identity that may bind an OPAL Say voice_id."""
+
+    __tablename__ = "personas"
+
+    persona_id: str = Field(primary_key=True, max_length=200)
+    name: str = Field(max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    voice_id: str | None = Field(default=None, max_length=200)
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class Setting(SQLModel, table=True):
     __tablename__ = "settings"
 

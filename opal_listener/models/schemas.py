@@ -1,12 +1,22 @@
-"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v1.5.0.yaml; extra models/fields are additive."""
+"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v1.6.0.yaml; extra models/fields are additive."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
+from pydantic_core import CoreSchema
+
+
+def _cursor_union_schema(cls: type, core_schema: CoreSchema, handler: Any) -> dict[str, Any]:
+    """Emit the contract's JSON-Schema union form for next_cursor (``type: [string, null]``)
+    instead of pydantic's ``anyOf``."""
+    schema = handler(core_schema)
+    schema["properties"]["next_cursor"] = {"type": ["string", "null"]}
+    return schema
+
 
 NO_MATCH = "no_match"
 
@@ -294,6 +304,16 @@ class RecognitionLogRead(_Read):
     created_at: datetime
 
 
+class LogPage(BaseModel):
+    """Cursor-paginated recognition log history."""
+
+    items: list[RecognitionLogRead]
+    next_cursor: str | None
+    has_more: bool
+
+    __get_pydantic_json_schema__ = classmethod(_cursor_union_schema)
+
+
 class FailedUtteranceBase(BaseModel):
     transcript: str = Field(max_length=1000)
     expected_intent: str | None = Field(default=None, max_length=100)
@@ -410,6 +430,16 @@ class PerformanceSummary(BaseModel):
     total_latency_ms: LatencyStats
 
 
+class PerformancePage(BaseModel):
+    """Cursor-paginated performance result history."""
+
+    items: list[PerformanceResultRead]
+    next_cursor: str | None
+    has_more: bool
+
+    __get_pydantic_json_schema__ = classmethod(_cursor_union_schema)
+
+
 # --- health / backup / config ----------------------------------------------------------------
 
 CheckStatus = Literal["ok", "warning", "error"]
@@ -473,3 +503,49 @@ class OpalImportResult(BaseModel):
     backup_filename: str | None = None
     counts: dict[str, int] | None = None
     warnings: list[str | dict[str, Any]] | None = None
+
+
+# --- personas --------------------------------------------------------------------------------
+
+PERSONA_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
+
+
+class PersonaBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    voice_id: str | None = Field(default=None, min_length=1)
+    enabled: bool = True
+
+
+class PersonaCreate(PersonaBase):
+    persona_id: str = Field(min_length=1, max_length=200, pattern=PERSONA_ID_PATTERN)
+
+
+class PersonaUpdate(BaseModel):
+    """Partial persona update; minProperties: 1 per the contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    voice_id: str | None = Field(default=None, min_length=1)
+    enabled: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _at_least_one_field(cls, data: Any) -> Any:
+        if isinstance(data, dict) and not data:
+            raise ValueError("at least one field must be provided")
+        return data
+
+
+class PersonaRead(_Read):
+    persona_id: str
+    name: str
+    description: str | None = None
+    voice_id: str | None = None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime

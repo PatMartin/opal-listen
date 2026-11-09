@@ -15,10 +15,15 @@ from opal_listener.service.concurrency import collection_etag, item_etag, requir
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.view.api.deps import get_service
 
-router = APIRouter(prefix="/api/v1/wakewords", tags=["wakewords"])
+router = APIRouter(prefix="/api/v1/wakeword", tags=["wakewords"])
 
 
-@router.get("/", response_model=list[WakewordRead], responses=OPAL_422_RESPONSE)
+@router.get(
+    "/",
+    response_model=list[WakewordRead],
+    responses=OPAL_422_RESPONSE,
+    operation_id="list_wakewords_api_v1_wakewords__get",
+)
 def list_wakewords(response: Response, svc: ListenerService = Depends(get_service)) -> list[WakewordRead]:
     with svc.db.session() as session:
         items = [WakewordRead.model_validate(w) for w in catalog.list_wakewords(session)]
@@ -26,17 +31,33 @@ def list_wakewords(response: Response, svc: ListenerService = Depends(get_servic
     return items
 
 
-@router.post("/", response_model=WakewordRead, status_code=201, responses=OPAL_409_RESPONSE)
+@router.post(
+    "/",
+    response_model=WakewordRead,
+    status_code=201,
+    responses={**OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    operation_id="create_wakeword_api_v1_wakewords__post",
+)
 def create_wakeword(
-    data: WakewordCreate, response: Response, svc: ListenerService = Depends(get_service)
+    data: WakewordCreate,
+    response: Response,
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
+    svc: ListenerService = Depends(get_service),
 ) -> WakewordRead:
     with svc.config_change() as session:
+        current = [WakewordRead.model_validate(w) for w in catalog.list_wakewords(session)]
+        require_matching_etag(if_match, collection_etag(current), "wakewords")
         result = WakewordRead.model_validate(catalog.create_wakeword(session, data))
-    response.headers["Location"] = f"/api/v1/wakewords/{result.id}"
+    response.headers["Location"] = f"/api/v1/wakeword/{result.id}"
     return result
 
 
-@router.get("/{wakeword_id}", response_model=WakewordRead, responses=OPAL_404_RESPONSE)
+@router.get(
+    "/{wakeword_id}",
+    response_model=WakewordRead,
+    responses=OPAL_404_RESPONSE,
+    operation_id="get_wakeword_api_v1_wakewords__wakeword_id__get",
+)
 def get_wakeword(wakeword_id: int, response: Response, svc: ListenerService = Depends(get_service)) -> WakewordRead:
     with svc.db.session() as session:
         item = WakewordRead.model_validate(catalog.get_or_404(session, Wakeword, wakeword_id, "wakeword"))
@@ -48,11 +69,12 @@ def get_wakeword(wakeword_id: int, response: Response, svc: ListenerService = De
     "/{wakeword_id}",
     response_model=WakewordRead,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    operation_id="update_wakeword_api_v1_wakewords__wakeword_id__patch",
 )
 def update_wakeword(
     wakeword_id: int,
     data: WakewordUpdate,
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> WakewordRead:
     with svc.config_change() as session:
@@ -62,10 +84,15 @@ def update_wakeword(
     return result
 
 
-@router.delete("/{wakeword_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES})
+@router.delete(
+    "/{wakeword_id}",
+    status_code=204,
+    responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    operation_id="delete_wakeword_api_v1_wakewords__wakeword_id__delete",
+)
 def delete_wakeword(
     wakeword_id: int,
-    if_match: str = Header(..., alias="If-Match", min_length=1),
+    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:

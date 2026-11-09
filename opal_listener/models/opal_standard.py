@@ -74,6 +74,21 @@ class OpalEngine(BaseModel):
     enabled: bool
 
 
+class ServiceInfo(BaseModel):
+    """Kernel ServiceInfo: service identity (name, package version, API contract version)."""
+
+    name: str
+    version: str
+    api_version: str
+    description: str | None = None
+
+
+class LivenessRead(BaseModel):
+    """Kernel LivenessRead: ping probe body."""
+
+    status: Literal["ok"]
+
+
 class OpalCursorPageMetadata(BaseModel):
     next_cursor: str | None
     has_more: bool

@@ -246,7 +246,7 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
     out_dir = tmp_path / "export"
     assert cli("config", "export", "--out-dir", str(out_dir)).exit_code == 0
     assert sorted(p.name for p in out_dir.iterdir()) == sorted(
-        ["wakewords.yaml", "stt.yaml", "intents.yaml", "slots.yaml", "profiles.yaml", "settings.yaml"]
+        ["wakewords.yaml", "stt.yaml", "intents.yaml", "slots.yaml", "profiles.yaml", "personas.yaml", "settings.yaml"]
     )
     assert cli("config", "validate", "--from-dir", str(out_dir)).exit_code == 0
     assert json.loads(cli("config", "export").output)["wakewords"][0]["name"] == "computer"
@@ -276,7 +276,7 @@ def test_system_commands(cli: CliHarness) -> None:
     doctor = cli("system", "doctor")
     assert "sqlite" in doctor.output and "overall" in doctor.output
     assert isinstance(cli.json("system", "devices"), list)
-    assert cli.json("system", "info")["name"] == "opal_listener"
+    assert cli.json("system", "info")["name"] == "opal-listen-svc"
     assert "is up" in cli("system", "ping").output
 
 
@@ -408,21 +408,19 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
     patches = [c for c in calls if c[0] == "PATCH"]
     assert len(patches) == 1
     _method, url, kw = patches[0]
-    assert url.endswith("/api/v1/settings/")
+    assert url.endswith("/api/v1/setting/")
     assert kw["headers"]["If-Match"].startswith('"')
     assert kw["json"] == {"cooldown_ms": 2500, "filler_words": "um"}
     # the collection ETag was fetched first
-    etag_gets = [c for c in calls[: calls.index(patches[0])] if c[0] == "GET" and c[1].endswith("/api/v1/settings/")]
-    assert etag_gets, "expected a GET /api/v1/settings/ ETag probe before the PATCH"
+    etag_gets = [c for c in calls[: calls.index(patches[0])] if c[0] == "GET" and c[1].endswith("/api/v1/setting/")]
+    assert etag_gets, "expected a GET /api/v1/setting/ ETag probe before the PATCH"
     assert cli.json("settings", "get", "cooldown_ms")["value"] == 2500
     # atomicity: one invalid key means none are applied
     assert cli("settings", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
     assert cli.json("settings", "get", "cooldown_ms")["value"] == 2500
 
 
-def test_logs_count_sends_contract_params(
-    cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_logs_count_sends_contract_params(cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """`logs count` takes no params — the contract dropped the decorative limit/cursor."""
     calls: list[tuple[str, str, dict[str, Any]]] = []
     original = client.request
@@ -434,5 +432,5 @@ def test_logs_count_sends_contract_params(
     monkeypatch.setattr(client, "request", spy)
     result = cli("logs", "count")
     assert result.exit_code == 0, result.output
-    gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/logs/count")]
+    gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/log/count")]
     assert gets and not gets[0][2].get("params")

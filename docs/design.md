@@ -81,7 +81,7 @@ sequenceDiagram
 Key decisions (validated on the Pi with `vosk-model-small-en-us-0.15`):
 
 - **Grammar-constrained command STT.** The transcriber is created with phrase fragments derived from the
-  enabled intents (literal runs between placeholders, slot values/aliases, number words). This fixed
+  enabled intents (literal runs between placeholders, slot values/alias, number words). This fixed
   misrecognitions that open dictation and flat word lists produced ("kitchen lie it", dropped short words).
 - **Two-stage wakeword.** A fast `[wakeword, [unk]]` recognizer opens the session on a partial hit (no
   command audio lost); a second recognizer with sound-alike *distractors* (`commuter, compute, ...`)
@@ -151,7 +151,7 @@ Retention: `max_recognition_logs` (default 10 000) pruned every 100 results.
 
 ## 4. API contract
 
-`openapi/opal_listen_v1.5.0.yaml` is the source of truth (REST contract 1.5.0 on the OPAL SUITE STANDARD
+`openapi/opal_listen_v1.6.0.yaml` is the source of truth (REST contract 1.6.0 on the OPAL SUITE STANDARD
 v1.3).
 `tests/test_contract.py` asserts that the generated OpenAPI is a compatible superset: same paths,
 methods, operationIds, tags, parameters, request bodies, response codes, schemas, field types,
@@ -178,10 +178,10 @@ Mutable portable configuration (wakewords, intents, phrases, slots, slot values,
 settings) uses strong, content-derived `ETag`s (`service/concurrency.py`) and mandatory `If-Match` on
 `PATCH`/`DELETE`: missing or empty → `428`, stale → `412` (both `OpalError`-shaped). Sub-resources without
 their own `GET` (phrases, slot values, aliases) are gated on the parent collection's ETag. Settings are
-exposed as a single atomic resource — `GET`/`PATCH /api/v1/settings/` exclusively, no per-key routes —
+exposed as a single atomic resource — `GET`/`PATCH /api/v1/setting/` exclusively, no per-key routes —
 and `PATCH` applies all supplied keys in one transaction (rolled back entirely on any invalid value).
 
-Growing histories (`GET /logs/`, `GET /performance/history`) use opaque cursor pagination (stable
+Growing histories (`GET /api/v1/log/`, `GET /performance/history`) use opaque cursor pagination (stable
 descending `created_at`+`id` ordering, `items`/`next_cursor`/`has_more`); cursors are scoped to their
 exact filter set and rejected (`422`) if reused with different filters or after corruption.
 `/api/v1/health/live` and `/api/v1/health/ready` add standard liveness/readiness probes
@@ -345,7 +345,7 @@ Vosk-dependent tests are marked `vosk` and skipped when the model is missing; no
 ```
 Dockerfile                         python:3.12-slim-bookworm, libportaudio2, non-root user in 'audio'
 opal_listener/docker-compose.yml
-  services.listener                build context '..'; port 8000; healthcheck /healthz
+  services.listener                build context '..'; port 8000; healthcheck /api/v1/info/ping
     volumes: listener_data:/data (SQLite + backups)
              ./config:/config:ro (YAML seed/import)
              ${VOSK_MODELS_DIR}:/models:ro

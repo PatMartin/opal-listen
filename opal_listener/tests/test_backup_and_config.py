@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from opal_listener.app_settings import PACKAGE_DIR
 from opal_listener.service.config_store import load_config_dir
-from opal_listener.tests.conftest import patch_settings
+from opal_listener.tests.conftest import etag_of, patch_settings
 
 
 def _config_etag(client: TestClient) -> str:
@@ -33,11 +33,13 @@ def test_backup_create_list_download_delete(client: TestClient) -> None:
 
 def test_restore_returns_previous_state(client: TestClient) -> None:
     filename = client.post("/api/v1/backup/create").json()["filename"]
-    client.post("/api/v1/wakewords/", json={"name": "jarvis"})
-    assert len(client.get("/api/v1/wakewords/").json()) == 2
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
+    assert len(client.get("/api/v1/wakeword/").json()) == 2
     result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
     assert result["status"] == "restored"
-    assert [w["name"] for w in client.get("/api/v1/wakewords/").json()] == ["computer"]
+    assert [w["name"] for w in client.get("/api/v1/wakeword/").json()] == ["computer"]
     # the pre-restore safety backup holds the newer state
     assert result["rollback_backup"] in [b["filename"] for b in client.get("/api/v1/backup/list").json()]
     assert client.post("/api/v1/recognition/test_text", json={"text": "what time is it"}).json()["matched"]
@@ -47,7 +49,7 @@ def test_restore_rejects_corrupt_backup_and_keeps_data(client: TestClient, app_s
     (app_settings.backup_dir / "corrupt.db").write_bytes(b"this is not sqlite" * 100)
     response = client.post("/api/v1/backup/restore/corrupt.db", headers={"If-Match": _config_etag(client)})
     assert response.status_code == 422
-    assert len(client.get("/api/v1/wakewords/").json()) == 1
+    assert len(client.get("/api/v1/wakeword/").json()) == 1
 
 
 def test_restore_with_invalid_config_rolls_back(client: TestClient, app_settings) -> None:
@@ -58,11 +60,13 @@ def test_restore_with_invalid_config_rolls_back(client: TestClient, app_settings
     conn.execute("INSERT INTO intent_phrases (intent_id, phrase, created_at) VALUES (1, 'x {ghost}', '2024-01-01')")
     conn.commit()
     conn.close()
-    client.post("/api/v1/wakewords/", json={"name": "jarvis"})
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
     response = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)})
     assert response.status_code == 422
     assert "invalid configuration" in response.json()["error"]["message"]
-    assert {w["name"] for w in client.get("/api/v1/wakewords/").json()} == {"computer", "jarvis"}
+    assert {w["name"] for w in client.get("/api/v1/wakeword/").json()} == {"computer", "jarvis"}
     # runtime rolled back to the last-known-good snapshot and stays consistent with the database
     service = client.app.state.listener  # type: ignore[attr-defined]
     assert service.snapshot is not None and "jarvis" in service.snapshot.wakewords
@@ -83,10 +87,10 @@ def test_restore_while_listener_running(client: TestClient, fake_provider: type)
         assert result["status"] == "restored"
         # the listener is restarted on the restored database and configuration
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
-        assert client.get("/api/v1/settings/").json()["cooldown_ms"] == "1500"
+        assert client.get("/api/v1/setting/").json()["cooldown_ms"] == "1500"
         assert service.snapshot.settings["cooldown_ms"] == 1500
         fake_provider.script.append("what time is it")
-        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
 
@@ -100,11 +104,11 @@ def test_restore_during_active_recognition(client: TestClient, fake_provider: ty
     filename = client.post("/api/v1/backup/create").json()["filename"]
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
         result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
         assert result["status"] == "restored"
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
-        wait_for(lambda: client.get("/api/v1/logs/count").json()["total"] >= 1)
+        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
 
@@ -165,10 +169,12 @@ def test_backup_filename_traversal_is_rejected(client: TestClient) -> None:
 def test_export_import_roundtrip(client: TestClient) -> None:
     exported = client.get("/api/v1/backup/export").json()
     assert {"wakewords", "stt", "intents", "slots", "profiles", "settings"} <= set(exported)
-    client.post("/api/v1/wakewords/", json={"name": "jarvis"})
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
     result = client.post("/api/v1/backup/import", json=exported, headers={"If-Match": _config_etag(client)}).json()
     assert result["status"] == "imported" and result["backup_filename"]
-    assert [w["name"] for w in client.get("/api/v1/wakewords/").json()] == ["computer"]
+    assert [w["name"] for w in client.get("/api/v1/wakeword/").json()] == ["computer"]
     reexported = client.get("/api/v1/backup/export").json()
     assert {k: v for k, v in reexported.items() if k != "exported_at"} == {
         k: v for k, v in exported.items() if k != "exported_at"
@@ -176,10 +182,14 @@ def test_export_import_roundtrip(client: TestClient) -> None:
 
 
 def test_import_from_server_config_dir(client: TestClient) -> None:
-    client.post("/api/v1/intents/", json={"name": "extra_intent", "phrases": ["hello there"]})
+    client.post(
+        "/api/v1/intent/",
+        headers={"If-Match": etag_of(client, "/api/v1/intent/")},
+        json={"name": "extra_intent", "phrases": ["hello there"]},
+    )
     result = client.post("/api/v1/backup/import", headers={"If-Match": _config_etag(client)}).json()
     assert result["counts"]["intents"] == len(load_config_dir(PACKAGE_DIR / "config").intents)
-    assert "extra_intent" not in {i["name"] for i in client.get("/api/v1/intents/").json()}
+    assert "extra_intent" not in {i["name"] for i in client.get("/api/v1/intent/").json()}
 
 
 def test_invalid_import_changes_nothing(client: TestClient) -> None:
@@ -216,7 +226,7 @@ def test_validate_reports_broken_config_dir(tmp_path: Path) -> None:
     service = ListenerService(Database(settings.database_url), settings)
     with TestClient(create_app(settings, service)) as client:
         # an invalid seed is refused: the database starts empty but valid
-        assert client.get("/api/v1/intents/").json() == []
+        assert client.get("/api/v1/intent/").json() == []
         report = client.get("/api/v1/backup/validate").json()
         assert report["valid"] is False
         assert report["sources"] == {"config_dir": False, "database": True}

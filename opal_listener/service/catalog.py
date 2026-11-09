@@ -10,6 +10,7 @@ from opal_listener.models import schemas as s
 from opal_listener.models.tables import (
     Intent,
     IntentPhrase,
+    Persona,
     Profile,
     Slot,
     SlotAlias,
@@ -287,3 +288,54 @@ def delete_profile(session: Session, obj_id: int) -> None:
         raise ConflictError("the active profile cannot be deleted")
     session.delete(obj)
     session.flush()
+
+
+# --- personas --------------------------------------------------------------------------------
+
+
+def list_personas(session: Session, enabled: bool | None = None) -> list[Persona]:
+    query = select(Persona).order_by(Persona.persona_id)
+    if enabled is not None:
+        query = query.where(Persona.enabled == enabled)
+    return list(session.exec(query).all())
+
+
+def get_persona(session: Session, persona_id: str) -> Persona:
+    obj = session.get(Persona, persona_id)
+    if obj is None:
+        raise NotFoundError(f"persona '{persona_id}' not found")
+    return obj
+
+
+def create_persona(session: Session, data: s.PersonaCreate) -> Persona:
+    if session.get(Persona, data.persona_id) is not None:
+        raise ConflictError(f"persona_id '{data.persona_id}' is already registered")
+    obj = Persona(**data.model_dump())
+    session.add(obj)
+    session.flush()
+    return obj
+
+
+def update_persona(session: Session, persona_id: str, data: s.PersonaUpdate) -> Persona:
+    obj = get_persona(session, persona_id)
+    _apply(obj, data.model_dump(exclude_unset=True, exclude_none=True))
+    session.add(obj)
+    session.flush()
+    return obj
+
+
+def delete_persona(session: Session, persona_id: str) -> None:
+    session.delete(get_persona(session, persona_id))
+    session.flush()
+
+
+def validate_persona(persona: Persona) -> s.OpalValidationReport:
+    """Local binding checks: the persona is enabled and a declared voice_id is well-formed.
+
+    Voice existence is deliberately not checked — the OPAL Say catalog lives in another service."""
+    errors: list[str] = []
+    if not persona.enabled:
+        errors.append(f"persona '{persona.persona_id}' is disabled")
+    if persona.voice_id is not None and not persona.voice_id.strip():
+        errors.append(f"persona '{persona.persona_id}' declares an empty voice_id")
+    return s.OpalValidationReport(valid=not errors, errors=errors, warnings=[])

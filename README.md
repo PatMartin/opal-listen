@@ -913,7 +913,7 @@ opal-listen/
 ├── opal-listen.png                   project artwork
 ├── README.md                         this guide
 ├── pyproject.toml                    package / CLI entry points
-├── openapi/                          OpenAPI reference (opal_listen_v1.5.0.yaml + shared kernel)
+├── openapi/                          OpenAPI reference (opal_listen_v1.6.0.yaml + shared kernel)
 ├── docs/
 │   ├── QUICKSTART.md                 setup walkthrough
 │   ├── CLI.md                        exhaustive CLI reference
@@ -945,7 +945,7 @@ opal-listen/
 - [CLI reference](docs/CLI.md) — all flags, resource commands, outputs, and scripts.
 - [User guide](docs/USER_GUIDE.md) — extensive guidance for running and tuning the listener.
 - [Design](docs/design.md) — internal architecture and tradeoffs.
-- [OpenAPI](openapi/opal_listen_v1.5.0.yaml) — REST interface description.
+- [OpenAPI](openapi/opal_listen_v1.6.0.yaml) — REST interface description.
 - [OPAL Event](https://github.com/PatMartin/opal-event) — turn recognized intents into guarded actions.
 
 ---

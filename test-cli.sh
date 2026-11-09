@@ -103,18 +103,18 @@ else
         exec python3 -m opal_listener >"$TMP/server.log" 2>&1) &
     SERVER_PID=$!
     echo "Starting isolated server $API (log: $TMP/server.log)"
-    for _ in $(seq 120); do curl -fs "$API/healthz" >/dev/null && break; sleep 0.5; done
+    for _ in $(seq 120); do curl -fs "$API/api/v1/info/ping" >/dev/null && break; sleep 0.5; done
 fi
-curl -fs "$API/healthz" >/dev/null || { echo "server at $API is not reachable"; exit 1; }
+curl -fs "$API/api/v1/info/ping" >/dev/null || { echo "server at $API is not reachable"; exit 1; }
 echo "Run tag: $TAG"
 echo
 
 # --- system ---------------------------------------------------------------------------------------
 
 # liveness probe
-t "system ping" "GET /healthz" '"status": "ok"' system ping
+t "system ping" "GET /api/v1/info/ping" '"status": "ok"' system ping
 # service name and version
-t "system info" "GET /" '"name": "opal_listener"' system info
+t "system info" "GET /api/v1/info/" '"name": "opal-listen-svc"' system info
 # startup health checks; exit code is 1 when a check reports an error, so only the report is checked
 ANY_EXIT=1 t "system doctor" "GET /api/v1/health/" '"checks"' system doctor
 MODEL_OK=0; grep -qF '"name": "vosk_model", "status": "ok"' <<<"$OUT" && MODEL_OK=1
@@ -137,103 +137,103 @@ BACKUP="$(json_get 'd["filename"]')"
 # --- settings -------------------------------------------------------------------------------------
 
 # all settings as key/value pairs
-t "settings list" "GET /api/v1/settings/" '"cooldown_ms"' settings list
+t "settings list" "GET /api/v1/setting/" '"cooldown_ms"' settings list
 # change a setting (the CLI fetches the If-Match ETag automatically)
-t "settings set" "PATCH /api/v1/settings/" '"cooldown_ms": "1234"' settings set cooldown_ms 1234
+t "settings set" "PATCH /api/v1/setting/" '"cooldown_ms": "1234"' settings set cooldown_ms 1234
 # invalid values and unknown keys are rejected
-tf "settings set rejects bad value" "PATCH /api/v1/settings/" 'cooldown_ms' settings set cooldown_ms soon
-tf "settings set rejects unknown key" "PATCH /api/v1/settings/" 'not_a_setting' settings set not_a_setting 1
+tf "settings set rejects bad value" "PATCH /api/v1/setting/" 'cooldown_ms' settings set cooldown_ms soon
+tf "settings set rejects unknown key" "PATCH /api/v1/setting/" 'not_a_setting' settings set not_a_setting 1
 # back to the default
-t "settings restore" "PATCH /api/v1/settings/" '"cooldown_ms": "1500"' settings set cooldown_ms 1500
+t "settings restore" "PATCH /api/v1/setting/" '"cooldown_ms": "1500"' settings set cooldown_ms 1500
 
 # --- wakewords ------------------------------------------------------------------------------------
 
 # create a wakeword
-t "wakewords add" "POST /api/v1/wakewords/" "\"name\": \"$WW\"" wakewords add "$WW" --threshold 0.75
+t "wakewords add" "POST /api/v1/wakeword/" "\"name\": \"$WW\"" wakewords add "$WW" --threshold 0.75
 # list wakewords
-t "wakewords list" "GET /api/v1/wakewords/" "\"$WW\"" wakewords list
+t "wakewords list" "GET /api/v1/wakeword/" "\"$WW\"" wakewords list
 # get one wakeword (by name)
-t "wakewords get" "GET /api/v1/wakewords/{wakeword_id}" '"confidence_threshold": 0.75' wakewords get "$WW"
+t "wakewords get" "GET /api/v1/wakeword/{wakeword_id}" '"confidence_threshold": 0.75' wakewords get "$WW"
 # update threshold and disable it
-t "wakewords update" "PATCH /api/v1/wakewords/{wakeword_id}" '"enabled": false' \
+t "wakewords update" "PATCH /api/v1/wakeword/{wakeword_id}" '"enabled": false' \
     wakewords update "$WW" --threshold 0.65 --disabled
 
 # --- slots ----------------------------------------------------------------------------------------
 
 # create a list slot
-t "slots add" "POST /api/v1/slots/" "\"name\": \"$SLOT\"" slots add "$SLOT" --description "smoke colours"
+t "slots add" "POST /api/v1/slot/" "\"name\": \"$SLOT\"" slots add "$SLOT" --description "smoke colours"
 # add values
-t "slots add-value red" "POST /api/v1/slots/{slot_id}/values" '"value": "red"' slots add-value "$SLOT" red
-t "slots add-value blue" "POST /api/v1/slots/{slot_id}/values" '"value": "blue"' slots add-value "$SLOT" blue
+t "slots add-value red" "POST /api/v1/slot/{slot_id}/value" '"value": "red"' slots add-value "$SLOT" red
+t "slots add-value blue" "POST /api/v1/slot/{slot_id}/value" '"value": "blue"' slots add-value "$SLOT" blue
 # add an alias that normalizes to a value
-t "slots add-alias" "POST /api/v1/slots/{slot_id}/values/{value_id}/aliases" '"alias": "crimson"' \
+t "slots add-alias" "POST /api/v1/slot/{slot_id}/value/{value_id}/alias" '"alias": "crimson"' \
     slots add-alias "$SLOT" red crimson
 # list slots
-t "slots list" "GET /api/v1/slots/" "\"$SLOT\"" slots list
+t "slots list" "GET /api/v1/slot/" "\"$SLOT\"" slots list
 # get one slot with values and aliases
-t "slots get" "GET /api/v1/slots/{slot_id}" '"alias": "crimson"' slots get "$SLOT"
+t "slots get" "GET /api/v1/slot/{slot_id}" '"alias": "crimson"' slots get "$SLOT"
 # list values of a slot
-t "slots values" "GET /api/v1/slots/{slot_id}/values" '"value": "blue"' slots values "$SLOT"
+t "slots values" "GET /api/v1/slot/{slot_id}/value" '"value": "blue"' slots values "$SLOT"
 # list aliases of a value
-t "slots aliases" "GET /api/v1/slots/{slot_id}/values/{value_id}/aliases" '"alias": "crimson"' \
+t "slots aliases" "GET /api/v1/slot/{slot_id}/value/{value_id}/alias" '"alias": "crimson"' \
     slots aliases "$SLOT" red
 # update the slot
-t "slots update" "PATCH /api/v1/slots/{slot_id}" '"description": "updated"' slots update "$SLOT" --description updated
+t "slots update" "PATCH /api/v1/slot/{slot_id}" '"description": "updated"' slots update "$SLOT" --description updated
 
 # --- intents --------------------------------------------------------------------------------------
 
 # create an intent with a training phrase that uses the slot
-t "intents add" "POST /api/v1/intents/" "\"name\": \"$INTENT\"" \
+t "intents add" "POST /api/v1/intent/" "\"name\": \"$INTENT\"" \
     intents add "$INTENT" --phrase "paint the wall {$SLOT}"
 # list intents
-t "intents list" "GET /api/v1/intents/" "\"$INTENT\"" intents list
+t "intents list" "GET /api/v1/intent/" "\"$INTENT\"" intents list
 # get one intent with phrases
-t "intents get" "GET /api/v1/intents/{intent_id}" "paint the wall {$SLOT}" intents get "$INTENT"
+t "intents get" "GET /api/v1/intent/{intent_id}" "paint the wall {$SLOT}" intents get "$INTENT"
 # add a phrase
-t "intents add-phrase" "POST /api/v1/intents/{intent_id}/phrases" "color it {$SLOT}" \
+t "intents add-phrase" "POST /api/v1/intent/{intent_id}/phrase" "color it {$SLOT}" \
     intents add-phrase "$INTENT" "color it {$SLOT}"
 # a phrase with an unknown slot is rejected before it is saved
-tf "intents add-phrase rejects unknown slot" "POST /api/v1/intents/{intent_id}/phrases" 'unknown slot' \
+tf "intents add-phrase rejects unknown slot" "POST /api/v1/intent/{intent_id}/phrase" 'unknown slot' \
     intents add-phrase "$INTENT" "paint {ghost_slot}"
 # list phrases
-t "intents phrases" "GET /api/v1/intents/{intent_id}/phrases" "color it {$SLOT}" intents phrases "$INTENT"
+t "intents phrases" "GET /api/v1/intent/{intent_id}/phrase" "color it {$SLOT}" intents phrases "$INTENT"
 # update the intent
-t "intents update" "PATCH /api/v1/intents/{intent_id}" '"confidence_threshold": 0.8' \
+t "intents update" "PATCH /api/v1/intent/{intent_id}" '"confidence_threshold": 0.8' \
     intents update "$INTENT" --threshold 0.8
 # recognize text: the alias 'crimson' becomes slot value 'red'
 t "test text" "POST /api/v1/recognition/test_text" "\"$SLOT\": \"red\"" \
     test text "paint the wall crimson" --expect-intent "$INTENT"
 # remove a phrase (by text)
-t "intents remove-phrase" "DELETE /api/v1/intents/{intent_id}/phrases/{phrase_id}" '"status": "ok"' \
+t "intents remove-phrase" "DELETE /api/v1/intent/{intent_id}/phrase/{phrase_id}" '"status": "ok"' \
     intents remove-phrase "$INTENT" "color it {$SLOT}"
 
 # --- profiles -------------------------------------------------------------------------------------
 
 # list profiles and remember the active one
-t "profiles list" "GET /api/v1/profiles/" '"is_active"' profiles list
+t "profiles list" "GET /api/v1/profile/" '"is_active"' profiles list
 ORIG_PROFILE="$(json_get 'next((p["name"] for p in d if p["is_active"]), "")')"
 # create a profile limited to the new intent and slot
-t "profiles add" "POST /api/v1/profiles/" '"silence_end_ms": 800' profiles add "$PROFILE" \
+t "profiles add" "POST /api/v1/profile/" '"silence_end_ms": 800' profiles add "$PROFILE" \
     --threshold intent=0.75 --vad silence_end_ms=800 --intent "$INTENT" --slot "$SLOT"
 # get one profile
-t "profiles get" "GET /api/v1/profiles/{profile_id}" "\"$INTENT\"" profiles get "$PROFILE"
+t "profiles get" "GET /api/v1/profile/{profile_id}" "\"$INTENT\"" profiles get "$PROFILE"
 # update the profile
-t "profiles update" "PATCH /api/v1/profiles/{profile_id}" '"description": "smoke profile"' \
+t "profiles update" "PATCH /api/v1/profile/{profile_id}" '"description": "smoke profile"' \
     profiles update "$PROFILE" --description "smoke profile"
 # invalid VAD settings are rejected
-tf "profiles update rejects bad VAD" "PATCH /api/v1/profiles/{profile_id}" 'silence_end_ms' \
+tf "profiles update rejects bad VAD" "PATCH /api/v1/profile/{profile_id}" 'silence_end_ms' \
     profiles update "$PROFILE" --vad silence_end_ms=1
 # activate it; recognition now reports this profile
-t "profiles activate" "POST /api/v1/profiles/{profile_id}/activate" '"is_active": true' profiles activate "$PROFILE"
+t "profiles activate" "POST /api/v1/profile/{profile_id}/activate" '"is_active": true' profiles activate "$PROFILE"
 t "test text uses active profile" "POST /api/v1/recognition/test_text" "\"profile_name\": \"$PROFILE\"" \
     test text "paint the wall blue" --no-save --verbose
 # re-activate the profile that was active before
 if [[ -n "$ORIG_PROFILE" ]]; then
-    t "profiles activate original" "POST /api/v1/profiles/{profile_id}/activate" "\"name\": \"$ORIG_PROFILE\"" \
+    t "profiles activate original" "POST /api/v1/profile/{profile_id}/activate" "\"name\": \"$ORIG_PROFILE\"" \
         profiles activate "$ORIG_PROFILE"
 fi
 # delete the profile
-t "profiles remove" "DELETE /api/v1/profiles/{profile_id}" '"status": "ok"' profiles remove "$PROFILE"
+t "profiles remove" "DELETE /api/v1/profile/{profile_id}" '"status": "ok"' profiles remove "$PROFILE"
 
 # --- recognition ----------------------------------------------------------------------------------
 
@@ -262,12 +262,12 @@ RAW=1 t "test listen-debug" "GET /api/v1/recognition/stream" 'status:' test list
 # --- logs and performance --------------------------------------------------------------------------
 
 # recent recognition logs
-t "logs list" "GET /api/v1/logs/" '"normalized_transcript"' logs list --limit 5
+t "logs list" "GET /api/v1/log/" '"normalized_transcript"' logs list --limit 5
 LOG_ID="$(json_get 'd[0]["id"]')"
 # one log entry
-t "logs get" "GET /api/v1/logs/{log_id}" "\"id\": $LOG_ID" logs get "$LOG_ID"
+t "logs get" "GET /api/v1/log/{log_id}" "\"id\": $LOG_ID" logs get "$LOG_ID"
 # counts of matched / no_match
-t "logs count" "GET /api/v1/logs/count" '"total"' logs count
+t "logs count" "GET /api/v1/log/count" '"total"' logs count
 # performance of the latest recognition
 t "perf last" "GET /api/v1/performance/last" '"total_latency_ms"' perf last
 # averages, percentiles and match rate
@@ -278,24 +278,24 @@ t "perf history" "GET /api/v1/performance/history" '"recognition_log_id"' perf h
 # --- failed utterances ----------------------------------------------------------------------------
 
 # record a failure
-t "failed add" "POST /api/v1/failed_utterances/" '"notes": "smoke"' failed add "tint the wall blue" --notes smoke
+t "failed add" "POST /api/v1/failed_utterance/" '"notes": "smoke"' failed add "tint the wall blue" --notes smoke
 FU_ID="$(json_get 'd["id"]')"
 # list unreviewed failures
-t "failed list" "GET /api/v1/failed_utterances/" "\"id\": $FU_ID" failed list --unreviewed --limit 500
+t "failed list" "GET /api/v1/failed_utterance/" "\"id\": $FU_ID" failed list --unreviewed --limit 500
 # one failure
-t "failed get" "GET /api/v1/failed_utterances/{fu_id}" '"transcript": "tint the wall blue"' failed get "$FU_ID"
+t "failed get" "GET /api/v1/failed_utterance/{fu_id}" '"transcript": "tint the wall blue"' failed get "$FU_ID"
 # mark reviewed
-t "failed update" "PATCH /api/v1/failed_utterances/{fu_id}" '"reviewed": true' \
+t "failed update" "PATCH /api/v1/failed_utterance/{fu_id}" '"reviewed": true' \
     failed update "$FU_ID" --reviewed --expected-intent "$INTENT"
 # promote: slot value becomes a placeholder, and a regression test is created
-t "failed promote" "POST /api/v1/failed_utterances/{fu_id}/promote" "tint the wall {$SLOT}" \
+t "failed promote" "POST /api/v1/failed_utterance/{fu_id}/promote" "tint the wall {$SLOT}" \
     failed promote "$FU_ID" --intent "$INTENT"
 PROMOTED_REG="$(json_get 'd["regression_test"]["id"]')"
 # the promoted phrase now matches with another value
 t "test text after promote" "POST /api/v1/recognition/test_text" "\"intent_name\": \"$INTENT\"" \
     test text "tint the wall red" --no-save
 # delete the failure
-t "failed remove" "DELETE /api/v1/failed_utterances/{fu_id}" '"status": "ok"' failed remove "$FU_ID"
+t "failed remove" "DELETE /api/v1/failed_utterance/{fu_id}" '"status": "ok"' failed remove "$FU_ID"
 
 # --- regression tests -----------------------------------------------------------------------------
 
@@ -319,17 +319,17 @@ t "regression remove" "DELETE /api/v1/regression/{test_id}" '"status": "ok"' reg
 # --- deletes --------------------------------------------------------------------------------------
 
 # delete an alias
-t "slots remove-alias" "DELETE /api/v1/slots/{slot_id}/values/{value_id}/aliases/{alias_id}" '"status": "ok"' \
+t "slots remove-alias" "DELETE /api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}" '"status": "ok"' \
     slots remove-alias "$SLOT" red crimson
 # delete a value ('red' stays because the intent's phrases still use the slot)
-t "slots remove-value" "DELETE /api/v1/slots/{slot_id}/values/{value_id}" '"status": "ok"' \
+t "slots remove-value" "DELETE /api/v1/slot/{slot_id}/value/{value_id}" '"status": "ok"' \
     slots remove-value "$SLOT" blue
 # a slot used by a phrase cannot be deleted
-tf "slots remove rejects slot in use" "DELETE /api/v1/slots/{slot_id}" "$SLOT" slots remove "$SLOT"
+tf "slots remove rejects slot in use" "DELETE /api/v1/slot/{slot_id}" "$SLOT" slots remove "$SLOT"
 # delete the intent, then its slot, then the wakeword
-t "intents remove" "DELETE /api/v1/intents/{intent_id}" '"status": "ok"' intents remove "$INTENT"
-t "slots remove" "DELETE /api/v1/slots/{slot_id}" '"status": "ok"' slots remove "$SLOT"
-t "wakewords remove" "DELETE /api/v1/wakewords/{wakeword_id}" '"status": "ok"' wakewords remove "$WW"
+t "intents remove" "DELETE /api/v1/intent/{intent_id}" '"status": "ok"' intents remove "$INTENT"
+t "slots remove" "DELETE /api/v1/slot/{slot_id}" '"status": "ok"' slots remove "$SLOT"
+t "wakewords remove" "DELETE /api/v1/wakeword/{wakeword_id}" '"status": "ok"' wakewords remove "$WW"
 
 # --- configuration --------------------------------------------------------------------------------
 

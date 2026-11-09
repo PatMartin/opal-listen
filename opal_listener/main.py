@@ -14,11 +14,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
-from opal_listener import __version__
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings, get_app_settings
 from opal_listener.data.db import Database
 from opal_listener.models.opal_standard import (
-    OPAL_422_RESPONSE,
     OpalConfigExport,
     OpalCursorPageMetadata,
     OpalEngine,
@@ -102,19 +100,21 @@ _ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
     "list_wakewords_api_v1_wakewords__get": _COLLECTION_ETAG,
     "list_intents_api_v1_intents__get": _COLLECTION_ETAG,
     "list_slots_api_v1_slots__get": _COLLECTION_ETAG,
-    "opal_profiles_list": _COLLECTION_ETAG,
+    "opal_profile_list": _COLLECTION_ETAG,
+    "opal_persona_list": _COLLECTION_ETAG,
     "get_wakeword_api_v1_wakewords__wakeword_id__get": _ITEM_ETAG,
     "get_intent_api_v1_intents__intent_id__get": _ITEM_ETAG,
     "get_slot_api_v1_slots__slot_id__get": _ITEM_ETAG,
     "opal_profile_get": _ITEM_ETAG,
     "opal_profile_patch": _ITEM_ETAG,
+    "opal_persona_get": _ITEM_ETAG,
     "list_phrases_api_v1_intents__intent_id__phrases_get": _MEMBER_ETAG,
     "list_slot_values_api_v1_slots__slot_id__values_get": _MEMBER_ETAG,
     "list_aliases_api_v1_slots__slot_id__values__value_id__aliases_get": _MEMBER_ETAG,
-    "opal_settings_get": _etag_doc(
-        "Strong revision of the whole settings map; required as If-Match for PATCH /api/v1/settings/."
+    "opal_setting_list": _etag_doc(
+        "Strong revision of the whole settings map; required as If-Match for PATCH /api/v1/setting/."
     ),
-    "opal_settings_patch": _etag_doc("Updated settings-map revision after the atomic patch."),
+    "opal_setting_patch": _etag_doc("Updated settings-map revision after the atomic patch."),
 }
 
 # Operations that set a Location header on their 201 responses.
@@ -128,7 +128,8 @@ _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
             "create_slot_api_v1_slots__post",
             "add_slot_value_api_v1_slots__slot_id__values_post",
             "add_alias_api_v1_slots__slot_id__values__value_id__aliases_post",
-            "opal_profiles_create",
+            "opal_profile_create",
+            "opal_persona_create",
             "create_failed_utterance_api_v1_failed_utterances__post",
             "create_regression_test_api_v1_regression__post",
         )
@@ -190,12 +191,10 @@ _OPAL_HEADER_PARAMS: list[dict[str, Any]] = [
 
 
 def _inject_opal_header_params(schema: dict[str, Any]) -> None:
-    """Document the X-Opal-* request headers on kernel-mounted (opal_*) operations."""
+    """Document the X-Opal-* request headers on every operation (v1.6.0 declares them path-wide)."""
     for item in schema.get("paths", {}).values():
         for operation in item.values():
             if not isinstance(operation, dict) or "responses" not in operation:
-                continue
-            if not str(operation.get("operationId", "")).startswith("opal_"):
                 continue
             params = operation.setdefault("parameters", [])
             existing = {p.get("name") for p in params if isinstance(p, dict)}
@@ -209,7 +208,7 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
 
     OpalContextMiddleware stamps the four X-Opal-* correlation headers on every response
     (success, error, and streaming alike); ETag-bearing reads and Location-bearing creates
-    are annotated per operation, matching openapi/opal_listen_v1.5.0.yaml.
+    are annotated per operation, matching openapi/opal_listen_v1.6.0.yaml.
     """
     components = schema.setdefault("components", {})
     components.setdefault("headers", {}).update(_OPAL_HEADER_COMPONENTS)
@@ -291,7 +290,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="1.5.0",
+        version="1.6.0",
         lifespan=lifespan,
     )
     app.state.listener = service
@@ -366,14 +365,6 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     for router in ROUTERS:
         app.include_router(router)
     app.mount("/ui", StaticFiles(directory=STATIC_DIR), name="ui")
-
-    @app.get("/", responses=OPAL_422_RESPONSE)
-    def root() -> dict[str, str]:
-        return {"name": "opal_listener", "version": __version__, "docs": "/docs", "ui": "/ui/opal-listen.html"}
-
-    @app.get("/healthz", responses=OPAL_422_RESPONSE)
-    def healthz() -> dict[str, str]:
-        return {"status": "ok"}
 
     return app
 

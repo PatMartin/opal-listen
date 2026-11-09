@@ -6,9 +6,9 @@ WHAT IT DOES
     calls every REST operation at least once, verifies each response, and prints one PASS / FAIL /
     SKIP line per step, followed by a summary and a REST coverage check.
 
-        [PASS] 11 wakewords add            create_wakeword  POST /api/v1/wakewords/        0.41s
+        [PASS] 11 wakewords add            create_wakeword  POST /api/v1/wakeword/        0.41s
                created 'hey smoke qzkx' (id 2)
-        [FAIL] 26 intents add-phrase       add_phrase       POST /api/v1/intents/{...}     0.38s
+        [FAIL] 26 intents add-phrase       add_phrase       POST /api/v1/intent/{...}     0.38s
                expected exit code 0, got 1: HTTP 422: ...
                $ python -m opal_listener.cli listen --api-url ... --json intents add-phrase ...
 
@@ -30,7 +30,7 @@ COVERAGE
     step FAIL the coverage check; operations whose steps were all skipped are reported as skipped.
 
 WHAT IS VERIFIED (per group)
-    system      ping (/healthz), info (/), doctor (/health/), devices (/health/audio_devices),
+    system      ping (/api/v1/info/ping), info (/api/v1/info/), doctor (/health/), devices (/health/audio_devices),
                 live (/health/live), ready (/health/ready)
     backups     list + create a safety backup before anything is changed
     settings    list, set via PATCH (valid value, rejected invalid value and unknown key, restored)
@@ -297,17 +297,17 @@ def expect(condition: bool, message: str) -> None:
 # Steps run top to bottom. Each returns a short description of what it verified.
 
 
-@step("system ping", "healthz")
+@step("system ping", "/api/v1/info/ping")
 def _ping(t: CliRestTest) -> str:
     result = t.ok("system", "ping")
-    expect(result == {"status": "ok"}, f"unexpected /healthz response {result}")
+    expect(result == {"status": "ok"}, f"unexpected /api/v1/info/ping response {result}")
     return f"{t.api_url} is up"
 
 
-@step("system info", "root")
+@step("system info", "/api/v1/info/")
 def _info(t: CliRestTest) -> str:
     info = t.ok("system", "info")
-    expect(info.get("name") == "opal_listener", f"unexpected / response {info}")
+    expect(info.get("name") == "opal-listen-svc", f"unexpected /api/v1/info/ response {info}")
     return f"version {info.get('version')}"
 
 
@@ -948,7 +948,7 @@ def start_isolated_server(tmp: Path, vosk_model: str | None) -> tuple[subprocess
         if proc.poll() is not None:
             raise RuntimeError(f"server exited with code {proc.returncode}; see {log_path}")
         try:
-            if http_get_json(f"{url}/healthz", timeout=1).get("status") == "ok":
+            if http_get_json(f"{url}/api/v1/info/ping", timeout=1).get("status") == "ok":
                 return proc, url, log_path
         except OSError:
             time.sleep(0.25)
