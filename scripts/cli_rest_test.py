@@ -366,206 +366,206 @@ def _safety_backup(t: CliRestTest) -> str:
     return f"safety backup {result['filename']}"
 
 
-@step("settings list", "opal_settings_get")
+@step("setting list", "opal_setting_list")
 def _settings_list(t: CliRestTest) -> str:
-    settings = t.ok("settings", "list")
+    settings = t.ok("setting", "list")
     expect("cooldown_ms" in settings, "cooldown_ms missing from settings")
     return f"{len(settings)} settings (cooldown_ms={settings['cooldown_ms']})"
 
 
-@step("settings set", "opal_setting_put")
+@step("setting set", "opal_setting_put")
 def _settings_set(t: CliRestTest) -> str:
-    updated = t.ok("settings", "set", "cooldown_ms", "1234")
+    updated = t.ok("setting", "set", "cooldown_ms", "1234")
     expect(updated["value"] == 1234, f"cooldown_ms not stored: {updated}")
-    t.rejected("settings", "set", "cooldown_ms", "soon", contains="cooldown_ms")
-    t.rejected("settings", "set", "not_a_setting", "1", contains="not_a_setting")
-    restored = t.ok("settings", "set", "cooldown_ms", "1500")
+    t.rejected("setting", "set", "cooldown_ms", "soon", contains="cooldown_ms")
+    t.rejected("setting", "set", "not_a_setting", "1", contains="not_a_setting")
+    restored = t.ok("setting", "set", "cooldown_ms", "1500")
     expect(restored["value"] == 1500, f"cooldown_ms not restored: {restored}")
     return "put 1234, invalid value + unknown key rejected, restored 1500"
 
 
-@step("settings get", "opal_setting_get", requires=("settings set",))
+@step("setting get", "opal_setting_get", requires=("setting set",))
 def _settings_get(t: CliRestTest) -> str:
-    read = t.ok("settings", "get", "cooldown_ms")
+    read = t.ok("setting", "get", "cooldown_ms")
     expect(read["key"] == "cooldown_ms" and read["value"] == 1500, f"unexpected SettingRead: {read}")
     expect(read["is_default"] is True and read["pending_restart"] is False, f"missing metadata: {read}")
     return f"cooldown_ms={read['value']} (default={read['default']})"
 
 
-@step("settings patch", "opal_settings_patch", requires=("settings get",))
+@step("setting patch", "opal_setting_patch", requires=("setting get",))
 def _settings_patch(t: CliRestTest) -> str:
-    updated = t.ok("settings", "patch", "cooldown_ms=2345", "dedup_window_ms=1000")
+    updated = t.ok("setting", "patch", "cooldown_ms=2345", "dedup_window_ms=1000")
     expect(updated["cooldown_ms"] == "2345" and updated["dedup_window_ms"] == "1000", f"not patched: {updated}")
-    t.rejected("settings", "patch", "not_a_setting=1", contains="not_a_setting")
-    t.ok("settings", "patch", "cooldown_ms=1500", "dedup_window_ms=2000")
+    t.rejected("setting", "patch", "not_a_setting=1", contains="not_a_setting")
+    t.ok("setting", "patch", "cooldown_ms=1500", "dedup_window_ms=2000")
     return "atomic multi-key patch, unknown key rejected, restored"
 
 
-@step("settings unset", "opal_setting_delete", requires=("settings patch",))
+@step("setting unset", "opal_setting_delete", requires=("setting patch",))
 def _settings_unset(t: CliRestTest) -> str:
-    t.ok("settings", "set", "cooldown_ms", "999")
-    t.ok("settings", "unset", "cooldown_ms")
-    read = t.ok("settings", "get", "cooldown_ms")
+    t.ok("setting", "set", "cooldown_ms", "999")
+    t.ok("setting", "unset", "cooldown_ms")
+    read = t.ok("setting", "get", "cooldown_ms")
     expect(read["value"] == 1500 and read["is_default"] is True, f"not reverted: {read}")
     return "999 reverted to default 1500"
 
 
-@step("wakewords add", "create_wakeword")
+@step("wakeword add", "create_wakeword")
 def _ww_add(t: CliRestTest) -> str:
-    created = t.ok("wakewords", "add", t.wakeword, "--threshold", "0.75")
+    created = t.ok("wakeword", "add", t.wakeword, "--threshold", "0.75")
     expect(created["name"] == t.wakeword, f"unexpected name {created['name']}")
     return f"created '{created['name']}' (id {created['id']})"
 
 
-@step("wakewords list", "list_wakewords", requires=("wakewords add",))
+@step("wakeword list", "list_wakewords", requires=("wakeword add",))
 def _ww_list(t: CliRestTest) -> str:
-    names = [w["name"] for w in t.ok("wakewords", "list")]
+    names = [w["name"] for w in t.ok("wakeword", "list")]
     expect(t.wakeword in names, f"{t.wakeword!r} not listed")
     return f"{len(names)} wakeword(s)"
 
 
-@step("wakewords get", "get_wakeword", requires=("wakewords add",))
+@step("wakeword get", "get_wakeword", requires=("wakeword add",))
 def _ww_get(t: CliRestTest) -> str:
-    item = t.ok("wakewords", "get", t.wakeword)
+    item = t.ok("wakeword", "get", t.wakeword)
     expect(item["confidence_threshold"] == 0.75, f"unexpected threshold {item['confidence_threshold']}")
     return "threshold 0.75"
 
 
-@step("wakewords update", "update_wakeword", requires=("wakewords add",))
+@step("wakeword update", "update_wakeword", requires=("wakeword add",))
 def _ww_update(t: CliRestTest) -> str:
-    t.ok("wakewords", "update", t.wakeword, "--threshold", "0.65", "--disabled")
-    item = t.ok("wakewords", "get", t.wakeword)
+    t.ok("wakeword", "update", t.wakeword, "--threshold", "0.65", "--disabled")
+    item = t.ok("wakeword", "get", t.wakeword)
     expect(item["confidence_threshold"] == 0.65 and item["enabled"] is False, f"not updated: {item}")
     return "threshold 0.65, disabled"
 
 
-@step("slots add", "create_slot", "add_slot_value")
+@step("slot add", "create_slot", "add_slot_value")
 def _slot_add(t: CliRestTest) -> str:
-    created = t.ok("slots", "add", t.slot, "--value", "red", "--description", "smoke test colours")
+    created = t.ok("slot", "add", t.slot, "--value", "red", "--description", "smoke test colours")
     expect(created["slot_type"] == "list", f"unexpected slot_type {created['slot_type']}")
     return f"created '{t.slot}' with value 'red'"
 
 
-@step("slots add-value", "add_slot_value", "add_alias", requires=("slots add",))
+@step("slot add-value", "add_slot_value", "add_alias", requires=("slot add",))
 def _slot_add_value(t: CliRestTest) -> str:
-    created = t.ok("slots", "add-value", t.slot, "blue", "--alias", "navy")
+    created = t.ok("slot", "add-value", t.slot, "blue", "--alias", "navy")
     expect(created["value"] == "blue", f"unexpected value {created}")
     return "value 'blue' with alias 'navy'"
 
 
-@step("slots add-alias", "add_alias", requires=("slots add",))
+@step("slot add-alias", "add_alias", requires=("slot add",))
 def _slot_add_alias(t: CliRestTest) -> str:
-    created = t.ok("slots", "add-alias", t.slot, "red", "crimson")
+    created = t.ok("slot", "add-alias", t.slot, "red", "crimson")
     expect(created["alias"] == "crimson", f"unexpected alias {created}")
     return "alias 'crimson' -> 'red'"
 
 
-@step("slots list", "list_slots", requires=("slots add",))
+@step("slot list", "list_slots", requires=("slot add",))
 def _slot_list(t: CliRestTest) -> str:
-    names = [s["name"] for s in t.ok("slots", "list")]
+    names = [s["name"] for s in t.ok("slot", "list")]
     expect(t.slot in names, f"{t.slot!r} not listed")
     return f"{len(names)} slot(s)"
 
 
-@step("slots get", "get_slot", requires=("slots add-value", "slots add-alias"))
+@step("slot get", "get_slot", requires=("slot add-value", "slot add-alias"))
 def _slot_get(t: CliRestTest) -> str:
-    slot = t.ok("slots", "get", t.slot)
+    slot = t.ok("slot", "get", t.slot)
     values = {v["value"]: sorted(a["alias"] for a in v["aliases"]) for v in slot["values"]}
     expect(values == {"red": ["crimson"], "blue": ["navy"]}, f"unexpected values {values}")
     return f"values {values}"
 
 
-@step("slots values", "list_slot_values", requires=("slots add-value",))
+@step("slot values", "list_slot_values", requires=("slot add-value",))
 def _slot_values(t: CliRestTest) -> str:
-    values = [v["value"] for v in t.ok("slots", "values", t.slot)]
+    values = [v["value"] for v in t.ok("slot", "values", t.slot)]
     expect(values == ["red", "blue"], f"unexpected values {values}")
     return "red, blue"
 
 
-@step("slots aliases", "list_aliases", requires=("slots add-alias",))
+@step("slot aliases", "list_aliases", requires=("slot add-alias",))
 def _slot_aliases(t: CliRestTest) -> str:
-    aliases = [a["alias"] for a in t.ok("slots", "aliases", t.slot, "red")]
+    aliases = [a["alias"] for a in t.ok("slot", "aliases", t.slot, "red")]
     expect(aliases == ["crimson"], f"unexpected aliases {aliases}")
     return "crimson"
 
 
-@step("slots update", "update_slot", requires=("slots add",))
+@step("slot update", "update_slot", requires=("slot add",))
 def _slot_update(t: CliRestTest) -> str:
-    updated = t.ok("slots", "update", t.slot, "--description", "updated by smoke test")
+    updated = t.ok("slot", "update", t.slot, "--description", "updated by smoke test")
     expect(updated["description"] == "updated by smoke test", f"not updated: {updated}")
     return "description updated"
 
 
-@step("intents add", "create_intent", requires=("slots add",))
+@step("intent add", "create_intent", requires=("slot add",))
 def _intent_add(t: CliRestTest) -> str:
-    created = t.ok("intents", "add", t.intent, "--phrase", f"paint the wall {{{t.slot}}}", "--threshold", "0.75")
+    created = t.ok("intent", "add", t.intent, "--phrase", f"paint the wall {{{t.slot}}}", "--threshold", "0.75")
     expect(len(created["phrases"]) == 1, f"unexpected phrases {created['phrases']}")
     return f"created '{t.intent}' with 1 phrase"
 
 
-@step("intents list", "list_intents", requires=("intents add",))
+@step("intent list", "list_intents", requires=("intent add",))
 def _intent_list(t: CliRestTest) -> str:
-    names = [i["name"] for i in t.ok("intents", "list")]
+    names = [i["name"] for i in t.ok("intent", "list")]
     expect(t.intent in names, f"{t.intent!r} not listed")
     return f"{len(names)} intent(s)"
 
 
-@step("intents get", "get_intent", requires=("intents add",))
+@step("intent get", "get_intent", requires=("intent add",))
 def _intent_get(t: CliRestTest) -> str:
-    intent = t.ok("intents", "get", t.intent)
+    intent = t.ok("intent", "get", t.intent)
     expect(intent["confidence_threshold"] == 0.75, f"unexpected intent {intent}")
     return f"id {intent['id']}"
 
 
-@step("intents add-phrase", "add_phrase", requires=("intents add",))
+@step("intent add-phrase", "add_phrase", requires=("intent add",))
 def _intent_add_phrase(t: CliRestTest) -> str:
-    created = t.ok("intents", "add-phrase", t.intent, f"color it {{{t.slot}}}")
+    created = t.ok("intent", "add-phrase", t.intent, f"color it {{{t.slot}}}")
     expect(created["phrase"] == f"color it {{{t.slot}}}", f"unexpected phrase {created}")
-    t.rejected("intents", "add-phrase", t.intent, "paint {ghost_slot}", contains="unknown slot")
+    t.rejected("intent", "add-phrase", t.intent, "paint {ghost_slot}", contains="unknown slot")
     return "valid phrase added, phrase with unknown slot rejected (validate before apply)"
 
 
-@step("intents phrases", "list_phrases", requires=("intents add-phrase",))
+@step("intent phrases", "list_phrases", requires=("intent add-phrase",))
 def _intent_phrases(t: CliRestTest) -> str:
-    phrases = [p["phrase"] for p in t.ok("intents", "phrases", t.intent)]
+    phrases = [p["phrase"] for p in t.ok("intent", "phrases", t.intent)]
     expect(len(phrases) == 2, f"expected 2 phrases, got {phrases}")
     return f"{len(phrases)} phrases"
 
 
-@step("intents update", "update_intent", requires=("intents add",))
+@step("intent update", "update_intent", requires=("intent add",))
 def _intent_update(t: CliRestTest) -> str:
-    updated = t.ok("intents", "update", t.intent, "--threshold", "0.8", "--description", "smoke test")
+    updated = t.ok("intent", "update", t.intent, "--threshold", "0.8", "--description", "smoke test")
     expect(updated["confidence_threshold"] == 0.8, f"not updated: {updated}")
     return "threshold 0.8"
 
 
-@step("test text", "test_text", requires=("intents add", "slots add-alias"))
+@step("test text", "test_text", requires=("intent add", "slot add-alias"))
 def _test_text(t: CliRestTest) -> str:
     result = t.ok("test", "text", "paint the wall crimson", "--expect-intent", t.intent)
     expect(result["slot_values"] == {t.slot: "red"}, f"unexpected slots {result['slot_values']}")
     return f"'paint the wall crimson' -> {result['intent_name']} {result['slot_values']}"
 
 
-@step("intents remove-phrase", "delete_phrase", requires=("intents add-phrase",))
+@step("intent remove-phrase", "delete_phrase", requires=("intent add-phrase",))
 def _intent_remove_phrase(t: CliRestTest) -> str:
-    t.ok("intents", "remove-phrase", t.intent, f"color it {{{t.slot}}}")
-    phrases = [p["phrase"] for p in t.ok("intents", "phrases", t.intent)]
+    t.ok("intent", "remove-phrase", t.intent, f"color it {{{t.slot}}}")
+    phrases = [p["phrase"] for p in t.ok("intent", "phrases", t.intent)]
     expect(len(phrases) == 1, f"phrase not removed: {phrases}")
     return "1 phrase left"
 
 
-@step("profiles list", "opal_profiles_list")
+@step("profile list", "opal_profile_list")
 def _profiles_list(t: CliRestTest) -> str:
-    profiles = t.ok("profiles", "list")
+    profiles = t.ok("profile", "list")
     active = [p["name"] for p in profiles if p["is_active"]]
     t.state["original_profile"] = active[0] if active else None
     return f"{len(profiles)} profile(s), active: {t.state['original_profile']}"
 
 
-@step("profiles add", "opal_profiles_create", requires=("intents add",))
+@step("profile add", "opal_profile_create", requires=("intent add",))
 def _profile_add(t: CliRestTest) -> str:
     created = t.ok(
-        "profiles", "add", t.profile,
+        "profile", "add", t.profile,
         "--threshold", "intent=0.75", "--vad", "silence_end_ms=800",
         "--intent", t.intent, "--slot", t.slot,
     )  # fmt: skip
@@ -574,39 +574,39 @@ def _profile_add(t: CliRestTest) -> str:
     return f"created '{t.profile}'"
 
 
-@step("profiles get", "opal_profile_get", requires=("profiles add",))
+@step("profile get", "opal_profile_get", requires=("profile add",))
 def _profile_get(t: CliRestTest) -> str:
-    profile = t.ok("profiles", "get", t.profile)
+    profile = t.ok("profile", "get", t.profile)
     expect(profile["enabled_intents"] == [t.intent], f"unexpected profile {profile}")
     return f"enabled_intents {profile['enabled_intents']}"
 
 
-@step("profiles update", "opal_profile_patch", requires=("profiles add",))
+@step("profile update", "opal_profile_patch", requires=("profile add",))
 def _profile_update(t: CliRestTest) -> str:
-    updated = t.ok("profiles", "update", t.profile, "--description", "smoke profile")
+    updated = t.ok("profile", "update", t.profile, "--description", "smoke profile")
     expect(updated["description"] == "smoke profile", f"not updated: {updated}")
-    t.rejected("profiles", "update", t.profile, "--vad", "silence_end_ms=1", contains="silence_end_ms")
+    t.rejected("profile", "update", t.profile, "--vad", "silence_end_ms=1", contains="silence_end_ms")
     return "description updated, invalid VAD value rejected"
 
 
-@step("profiles activate", "opal_profile_activate", requires=("profiles add", "test text"))
+@step("profile activate", "opal_profile_activate", requires=("profile add", "test text"))
 def _profile_activate(t: CliRestTest) -> str:
-    t.ok("profiles", "activate", t.profile)
+    t.ok("profile", "activate", t.profile)
     result = t.ok("test", "text", "paint the wall navy", "--no-save", "--verbose")
     expect(result["profile_name"] == t.profile, f"recognition used profile {result['profile_name']}")
     expect(result["slot_values"] == {t.slot: "blue"}, f"unexpected slots {result['slot_values']}")
     original = t.state.get("original_profile")
     if original:
-        t.ok("profiles", "activate", original)
-        active = [p["name"] for p in t.ok("profiles", "list") if p["is_active"]]
+        t.ok("profile", "activate", original)
+        active = [p["name"] for p in t.ok("profile", "list") if p["is_active"]]
         expect(active == [original], f"original profile not re-activated: {active}")
     return f"recognition used '{t.profile}', '{original}' re-activated"
 
 
-@step("profiles remove", "opal_profile_delete", requires=("profiles add",))
+@step("profile remove", "opal_profile_delete", requires=("profile add",))
 def _profile_remove(t: CliRestTest) -> str:
-    t.ok("profiles", "remove", t.profile)
-    names = [p["name"] for p in t.ok("profiles", "list")]
+    t.ok("profile", "remove", t.profile)
+    names = [p["name"] for p in t.ok("profile", "list")]
     expect(t.profile not in names, "profile still listed")
     return "removed"
 
@@ -664,24 +664,24 @@ def _test_listen_debug(t: CliRestTest) -> str:
     return "received the initial 'status' event"
 
 
-@step("logs list", "list_logs", requires=("test text",))
+@step("log list", "list_logs", requires=("test text",))
 def _logs_list(t: CliRestTest) -> str:
-    logs = t.ok("logs", "list", "--limit", "5")["items"]
+    logs = t.ok("log", "list", "--limit", "5")["items"]
     expect(len(logs) >= 1, "no recognition logs")
     t.state["log_id"] = logs[0]["id"]
     return f"latest log id {logs[0]['id']}: {logs[0]['normalized_transcript']!r}"
 
 
-@step("logs get", "get_log", requires=("logs list",))
+@step("log get", "get_log", requires=("log list",))
 def _logs_get(t: CliRestTest) -> str:
-    log = t.ok("logs", "get", str(t.state["log_id"]))
+    log = t.ok("log", "get", str(t.state["log_id"]))
     expect(log["id"] == t.state["log_id"], f"unexpected log {log}")
     return f"source {log['source']}, matched {log['matched']}"
 
 
-@step("logs count", "count_logs", requires=("test text",))
+@step("log count", "count_logs", requires=("test text",))
 def _logs_count(t: CliRestTest) -> str:
-    counts = t.ok("logs", "count")
+    counts = t.ok("log", "count")
     expect(counts["total"] >= 1 and counts["total"] == counts["matched"] + counts["no_match"], f"bad {counts}")
     return f"{counts}"
 
@@ -735,7 +735,7 @@ def _failed_update(t: CliRestTest) -> str:
     return "marked reviewed"
 
 
-@step("failed promote", "promote_to_phrase", requires=("failed add", "intents add"))
+@step("failed promote", "promote_to_phrase", requires=("failed add", "intent add"))
 def _failed_promote(t: CliRestTest) -> str:
     result = t.ok("failed", "promote", str(t.state["failed_id"]), "--intent", t.intent)
     phrase = result["phrase"]["phrase"]
@@ -754,7 +754,7 @@ def _failed_remove(t: CliRestTest) -> str:
     return "removed (get now returns 404)"
 
 
-@step("regression add", "create_regression_test", requires=("intents add",))
+@step("regression add", "create_regression_test", requires=("intent add",))
 def _reg_add(t: CliRestTest) -> str:
     created = t.ok(
         "regression", "add", f"smoke_{t.tag}_blue", "paint the wall blue",
@@ -810,41 +810,41 @@ def _reg_remove(t: CliRestTest) -> str:
     return f"removed {len(list(filter(None, ids)))} test(s)"
 
 
-@step("slots remove-alias", "delete_alias", requires=("slots add-alias",))
+@step("slot remove-alias", "delete_alias", requires=("slot add-alias",))
 def _slot_remove_alias(t: CliRestTest) -> str:
-    t.ok("slots", "remove-alias", t.slot, "red", "crimson")
-    expect(t.ok("slots", "aliases", t.slot, "red") == [], "alias still listed")
+    t.ok("slot", "remove-alias", t.slot, "red", "crimson")
+    expect(t.ok("slot", "aliases", t.slot, "red") == [], "alias still listed")
     return "crimson removed"
 
 
-@step("slots remove-value", "delete_slot_value", requires=("slots add-value",))
+@step("slot remove-value", "delete_slot_value", requires=("slot add-value",))
 def _slot_remove_value(t: CliRestTest) -> str:
-    t.ok("slots", "remove-value", t.slot, "blue")
-    values = [v["value"] for v in t.ok("slots", "values", t.slot)]
+    t.ok("slot", "remove-value", t.slot, "blue")
+    values = [v["value"] for v in t.ok("slot", "values", t.slot)]
     expect(values == ["red"], f"unexpected values {values}")
     return "blue removed"
 
 
-@step("intents remove", "delete_intent", requires=("intents add",))
+@step("intent remove", "delete_intent", requires=("intent add",))
 def _intent_remove(t: CliRestTest) -> str:
-    t.ok("intents", "remove", t.intent)
-    names = [i["name"] for i in t.ok("intents", "list")]
+    t.ok("intent", "remove", t.intent)
+    names = [i["name"] for i in t.ok("intent", "list")]
     expect(t.intent not in names, "intent still listed")
     return "removed"
 
 
-@step("slots remove", "delete_slot", requires=("slots add", "intents remove"))
+@step("slot remove", "delete_slot", requires=("slot add", "intent remove"))
 def _slot_remove(t: CliRestTest) -> str:
-    t.ok("slots", "remove", t.slot)
-    names = [s["name"] for s in t.ok("slots", "list")]
+    t.ok("slot", "remove", t.slot)
+    names = [s["name"] for s in t.ok("slot", "list")]
     expect(t.slot not in names, "slot still listed")
     return "removed"
 
 
-@step("wakewords remove", "delete_wakeword", requires=("wakewords add",))
+@step("wakeword remove", "delete_wakeword", requires=("wakeword add",))
 def _ww_remove(t: CliRestTest) -> str:
-    t.ok("wakewords", "remove", t.wakeword)
-    names = [w["name"] for w in t.ok("wakewords", "list")]
+    t.ok("wakeword", "remove", t.wakeword)
+    names = [w["name"] for w in t.ok("wakeword", "list")]
     expect(t.wakeword not in names, "wakeword still listed")
     return "removed"
 
@@ -897,7 +897,7 @@ def _config_import(t: CliRestTest) -> str:
 def _config_restore(t: CliRestTest) -> str:
     result = t.ok("config", "restore", t.state["safety_backup"], "--yes")
     expect(result["status"] == "restored", f"unexpected {result}")
-    names = [w["name"] for w in t.ok("wakewords", "list")]
+    names = [w["name"] for w in t.ok("wakeword", "list")]
     expect(t.wakeword not in names, "restore did not return to the pre-test state")
     return "database restored to the state before this run"
 

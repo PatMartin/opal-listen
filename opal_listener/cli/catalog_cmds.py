@@ -1,4 +1,4 @@
-"""opal listen wakewords|intents|slots|profiles|settings"""
+"""opal listen wakeword|intent|slot|profile|setting|persona"""
 
 from __future__ import annotations
 

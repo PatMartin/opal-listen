@@ -57,7 +57,7 @@ def test_cli_listen_streams_live_result(live_server: tuple[str, ListenerService]
     url, service = live_server
     runner = CliRunner()
     assert (
-        runner.invoke(cli_app, ["listen", "--api-url", url, "settings", "set", "listener_provider", "fake"]).exit_code
+        runner.invoke(cli_app, ["listen", "--api-url", url, "setting", "set", "listener_provider", "fake"]).exit_code
         == 0
     )
     FakeListenerProvider.script.clear()

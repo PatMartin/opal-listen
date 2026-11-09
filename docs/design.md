@@ -134,14 +134,14 @@ Managed by Alembic (`opal_listener/data/migrations`, revision `0001`). `PRAGMA f
 
 | Table | Columns (all snake_case) |
 |---|---|
-| `wakewords` | id, name (unique, normalized), enabled, confidence_threshold, created_at, updated_at |
-| `intents` | id, name (unique), description, enabled, confidence_threshold, created_at, updated_at |
+| `wakeword` | id, name (unique, normalized), enabled, confidence_threshold, created_at, updated_at |
+| `intent` | id, name (unique), description, enabled, confidence_threshold, created_at, updated_at |
 | `intent_phrases` | id, intent_id → intents (cascade), phrase, created_at; unique(intent_id, phrase) |
-| `slots` | id, name (unique), slot_type (`list`/`number`/`text`), description, created_at, updated_at |
+| `slot` | id, name (unique), slot_type (`list`/`number`/`text`), description, created_at, updated_at |
 | `slot_values` | id, slot_id → slots (cascade), value, created_at; unique(slot_id, value) |
 | `slot_aliases` | id, slot_value_id → slot_values (cascade), alias, created_at; unique(slot_value_id, alias) |
-| `profiles` | id, name (unique), description, is_active, wakeword_names, confidence_thresholds, vad_settings, enabled_intents, enabled_slots, model_paths (JSON), created_at, updated_at |
-| `settings` | id, key (unique), value (string, typed by the settings registry), updated_at |
+| `profile` | id, name (unique), description, is_active, wakeword_names, confidence_thresholds, vad_settings, enabled_intents, enabled_slots, model_paths (JSON), created_at, updated_at |
+| `setting` | id, key (unique), value (string, typed by the settings registry), updated_at |
 | `recognition_logs` | id, session_id, source (`mic`/`audio`/`text`), profile_name, wakeword, transcript, normalized_transcript, intent_name, slot_values (JSON), wakeword_confidence, stt_confidence, intent_confidence, matched, no_match_reason, total/wakeword/stt/intent_latency_ms, audio_level, created_at |
 | `failed_utterances` | id, transcript, expected_intent, notes, recognition_log_id → recognition_logs (set null), reviewed, promoted_to_phrase, created_at |
 | `regression_tests` | id, name, phrase, expected_intent (`no_match` for negatives), expected_slots (JSON), enabled, last_result, last_run_at, created_at |
@@ -248,16 +248,16 @@ mismatches (CI friendly).
 
 | Group | Commands |
 |---|---|
-| `wakewords` | list, get, add, update, remove |
-| `intents` | list, get, add (`--phrase` repeatable), update, remove, phrases, add-phrase, remove-phrase |
-| `slots` | list, get, add, update, remove, values, add-value (`--alias`), remove-value, aliases, add-alias, remove-alias |
-| `profiles` | list, get, add, update, remove, activate (`--threshold k=v`, `--vad k=v`, `--intent`, `--slot`, `--wakeword`, `--model k=path`) |
-| `settings` | list, set (atomic PATCH with an auto-fetched ETag/If-Match; see §4 OPAL SUITE STANDARD v1.2) |
+| `wakeword` | list, get, add, update, remove |
+| `intent` | list, get, add (`--phrase` repeatable), update, remove, phrases, add-phrase, remove-phrase |
+| `slot` | list, get, add, update, remove, values, add-value (`--alias`), remove-value, aliases, add-alias, remove-alias |
+| `profile` | list, get, add, update, remove, activate (`--threshold k=v`, `--vad k=v`, `--intent`, `--slot`, `--wakeword`, `--model k=path`) |
+| `setting` | list, set (atomic PATCH with an auto-fetched ETag/If-Match; see §4 OPAL SUITE STANDARD v1.2) |
 | `test` | text, audio, listen, listen-debug, regression |
 | `pipeline` | start, stop, status |
 | `failed` | list, get, add, update, remove, promote |
 | `regression` | list, get, add, update, remove |
-| `logs` | list, get, count |
+| `log` | list, get, count |
 | `perf` | last, summary, history |
 | `config` | validate (`--from-dir`), backup, backups, restore, download, delete-backup, export (`--out-dir`), import (`--from-dir`) |
 | `system` | doctor, devices, live, ready, info, ping |

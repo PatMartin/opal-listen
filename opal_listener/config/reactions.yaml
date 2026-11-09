@@ -1,5 +1,5 @@
-# Managed by `opal listen reactions` — edits are safe but comments are not preserved.
+# Managed by `opal listen reaction` — edits are safe but comments are not preserved.
 # Reactions fire only on live-mic matches while `reactions_enabled` is true:
-#   opal listen settings set reactions_enabled true
+#   opal listen setting set reactions_enabled true
 # Schema: docs/USER_GUIDE.md section 4.5 (intent reactions).
 reactions: []

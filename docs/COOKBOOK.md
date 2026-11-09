@@ -17,7 +17,7 @@ paste straight into your shell. Multi-step recipes paste as a single unit.
 - Most mutations auto-fetch the resource ETag and send `If-Match` for you; if the
   server answers `412`, someone else changed it — rerun to re-fetch.
 - Global flags (`--json`, `--api-url`) go right after `listen`:
-  `opal listen --json logs count`, not `opal listen logs count --json`.
+  `opal listen --json log count`, not `opal listen log count --json`.
 - Names of intents, slots and profiles must be `snake_case`.
 - Part 1 builds on the seeded catalog (intents `light_turn_on`, `get_time`,
   `cancel`…, slot `room_name`) — run the recipes in order on a fresh install.
@@ -34,7 +34,7 @@ intent matcher and slot extractor the live pipeline uses — no audio needed. Wi
 `--expect-intent` it exits 1 on a miss, so it doubles as a unit test.
 
 ```bash
-opal listen intents add lights_on --description "Switch a room's lights on" \
+opal listen intent add lights_on --description "Switch a room's lights on" \
   --phrase "turn on the lights" --phrase "lights on" --phrase "switch the lights on"
 opal listen test text "computer, please turn on the lights" --expect-intent lights_on
 ```
@@ -47,8 +47,8 @@ seeded `light_turn_on` intent already uses `{room_name}` — teach it a new
 nickname and the slot comes back canonical.
 
 ```bash
-opal listen slots values room_name
-opal listen slots add-alias room_name office "the den"
+opal listen slot values room_name
+opal listen slot add-alias room_name office "the den"
 opal listen test text "computer, turn on the den light" --expect-intent light_turn_on --verbose
 # -> "slot_values": {"room_name": "office"}
 ```
@@ -63,8 +63,8 @@ Wakewords are first-class catalog rows — add a second trigger name, tune its
 confidence independently, and both work immediately in the live pipeline.
 
 ```bash
-opal listen wakewords add jarvis --threshold 0.85
-opal listen wakewords list
+opal listen wakeword add jarvis --threshold 0.85
+opal listen wakeword list
 opal listen test text "jarvis, turn on the lights" --expect-intent lights_on
 ```
 
@@ -75,9 +75,9 @@ sound-alike *distractors* (comma-separated words whose transcript presence vetoe
 the hit). Then watch the no-match side of the log stream to confirm.
 
 ```bash
-opal listen wakewords update computer --threshold 0.9
-opal listen settings set wakeword_distractors "commuter,compute,computing,commute"
-opal listen logs list --no-match --limit 20
+opal listen wakeword update computer --threshold 0.9
+opal listen setting set wakeword_distractors "commuter,compute,computing,commute"
+opal listen log list --no-match --limit 20
 ```
 
 ### 5. Regression-test a folder of golden WAVs
@@ -117,13 +117,13 @@ room=$(jq -r '.slot_values.room_name // "everywhere"')   # stdin = match JSON
 logger -t opal "lights on: $room"                        # swap in your real actuator
 SH
 chmod +x /opt/opal/lights.sh
-opal listen reactions add lights \
+opal listen reaction add lights \
   --cond "intent_name eq light_turn_on" \
   --cond "intent_confidence gte 0.8" \
   --run "/opt/opal/lights.sh" --timeout 10
-opal listen settings set reactions_enabled true   # master switch, off by default
+opal listen setting set reactions_enabled true   # master switch, off by default
 opal listen test listen --count 1                 # say: "computer, turn on the kitchen light"
-opal listen reactions log --limit 5
+opal listen reaction log --limit 5
 ```
 
 Only live-microphone matches fire. `test text`/`test audio` never do, so
@@ -157,14 +157,14 @@ opal listen system doctor   # ✓/!/✗ per check: sqlite, model, microphone, in
 
 ### 10. Atomically retune several settings
 
-`settings patch` applies key=value pairs in one validated, all-or-nothing
+`setting patch` applies key=value pairs in one validated, all-or-nothing
 collection PATCH — nothing half-applies if one value is wrong. Verify what a key
-actually controls with `settings get` first.
+actually controls with `setting get` first.
 
 ```bash
-opal listen settings get cooldown_ms
-opal listen settings patch cooldown_ms=800 dedup_window_ms=4000 filler_words="uh,um,er,please"
-opal listen settings list
+opal listen setting get cooldown_ms
+opal listen setting patch cooldown_ms=800 dedup_window_ms=4000 filler_words="uh,um,er,please"
+opal listen setting list
 ```
 
 ### 11. Snapshot the catalog before surgery — and roll back
@@ -200,12 +200,12 @@ intents/slots and model paths. Switching is instant and atomic — only one
 profile is active at a time.
 
 ```bash
-opal listen profiles add noisy_kitchen \
+opal listen profile add noisy_kitchen \
   --threshold wakeword=0.9 --threshold intent=0.85 --vad silence_end_ms=900
-opal listen profiles add quiet_study \
+opal listen profile add quiet_study \
   --threshold wakeword=0.7 --vad silence_end_ms=400
-opal listen profiles activate noisy_kitchen
-opal listen profiles list
+opal listen profile activate noisy_kitchen
+opal listen profile list
 ```
 
 ### 14. A night-watch profile that hears only alarms
@@ -215,13 +215,13 @@ house only answers to two commands. Switch back at dawn by re-activating the
 default profile.
 
 ```bash
-opal listen intents add alarm_stop --phrase "stop the alarm" --phrase "alarm off"
-opal listen profiles add night_watch --intent alarm_stop --intent cancel
-opal listen profiles activate night_watch
+opal listen intent add alarm_stop --phrase "stop the alarm" --phrase "alarm off"
+opal listen profile add night_watch --intent alarm_stop --intent cancel
+opal listen profile activate night_watch
 opal listen test text "computer, turn on the kitchen light"   # NO MATCH after dark
 opal listen test text "computer, stop the alarm"              # MATCH
 # morning:
-opal listen profiles activate default
+opal listen profile activate default
 ```
 
 ### 15. Turn "it didn't understand me" into training data
@@ -246,10 +246,10 @@ extracted slots, confidences, latency, and the no-match reason. Filter by intent
 or by matched/no-match to find where the model leaks.
 
 ```bash
-opal listen logs count
-opal listen logs list --no-match --limit 50
-opal listen logs list --intent light_turn_on --limit 100
-opal listen logs get 424
+opal listen log count
+opal listen log list --no-match --limit 50
+opal listen log list --intent light_turn_on --limit 100
+opal listen log get 424
 ```
 
 Long histories are cursor-paginated. When more rows exist the table ends with
@@ -270,19 +270,19 @@ opal listen perf history --limit 25
 
 ### 18. Rehearse a reaction before it can fire
 
-`reactions test` evaluates every armed reaction against a result without
+`reaction test` evaluates every armed reaction against a result without
 running anything, and names the condition that failed. `--text` gets the payload
 from a real recognition, so you test exactly what the live pipeline will
 produce. Add `--execute` only when you want to debug the script itself.
 
 ```bash
-opal listen reactions list
-opal listen reactions test --text "computer, turn on the den light"   # ✓ lights — would fire
-opal listen reactions test --text "computer, what time is it"         # ✗ (intent_name eq 'light_turn_on')
-opal listen reactions test --payload \
+opal listen reaction list
+opal listen reaction test --text "computer, turn on the den light"   # ✓ lights — would fire
+opal listen reaction test --text "computer, what time is it"         # ✗ (intent_name eq 'light_turn_on')
+opal listen reaction test --payload \
   '{"intent_name":"light_turn_on","slot_values":{"room_name":"office"},"intent_confidence":0.9}' --execute
-opal listen reactions disable lights                  # park it; keeps conditions and actions
-opal listen settings set reactions_enabled false      # or stop all reactions at once
+opal listen reaction disable lights                  # park it; keeps conditions and actions
+opal listen setting set reactions_enabled false      # or stop all reactions at once
 ```
 
 Conditions on a field that isn't in the payload never match. Include every field
@@ -296,12 +296,12 @@ open dictation, bolt on the faster-whisper refiner for a second pass, and roll i
 back with `unset` — all while the pipeline keeps running.
 
 ```bash
-opal listen settings set stt_mode open
-opal listen settings set stt_refiner faster_whisper
-opal listen settings set whisper_model base.en
+opal listen setting set stt_mode open
+opal listen setting set stt_refiner faster_whisper
+opal listen setting set whisper_model base.en
 opal listen test text "computer, what is the airspeed of an unladen swallow"
 # back out:
-opal listen settings unset stt_refiner && opal listen settings set stt_mode grammar
+opal listen setting unset stt_refiner && opal listen setting set stt_mode grammar
 ```
 
 ### 20. Harden a headless appliance
@@ -311,7 +311,7 @@ log table, and prune old backups — all without editing a file or restarting.
 
 ```bash
 opal listen system devices
-opal listen settings patch audio_device="USB" audio_watchdog_timeout_ms=5000 \
+opal listen setting patch audio_device="USB" audio_watchdog_timeout_ms=5000 \
   max_recognition_logs=5000 auto_start_listener=true
 opal listen --json config backups | jq -r '.[3:][] | .filename' \
   | xargs -r -I{} opal listen config delete-backup {} --yes
@@ -332,7 +332,7 @@ you need HTTP or Python actions, rules over events from *other* producers (look,
 think), fan-out to many actions, or a central execution history. The
 two share a condition grammar; listen's `intent_name` becomes `data.intent_name`
 in a bus event. Every recipe below needs
-`opal listen settings set event_publication_enabled true`.
+`opal listen setting set event_publication_enabled true`.
 
 ### 21. "OK" — the closed voice loop
 
@@ -341,7 +341,7 @@ publishes `opal.listen.intent.match` on every match; an opal-event rule hands
 the event to a shell action that turns it into words through opal-talk.
 
 ```bash
-opal listen settings set event_publication_enabled true
+opal listen setting set event_publication_enabled true
 cat > /opt/opal/speak_ack.sh <<'SH'
 #!/usr/bin/env bash
 event=$(cat)   # stdin carries the event JSON (stdin: "event_json")
@@ -377,8 +377,8 @@ through opal-look, reads the observation summary, and speaks it back. Vision
 query latency stays out of the audio path until asked.
 
 ```bash
-opal listen intents add describe_scene --phrase "what do you see" --phrase "describe the scene"
-opal listen settings set event_publication_enabled true
+opal listen intent add describe_scene --phrase "what do you see" --phrase "describe the scene"
+opal listen setting set event_publication_enabled true
 cat > /opt/opal/describe.sh <<'SH'
 #!/usr/bin/env bash
 labels=$(opal-look-cli analyze run --body '{"source":{"source_id":"doorcam"},"task":"detection"}' \
@@ -399,10 +399,10 @@ by construction: the model can *say* things but cannot *do* anything you didn't
 register. Voice prompt goes in; the answer is spoken by opal-talk.
 
 ```bash
-opal listen slots add question --type text        # slot must exist before a phrase uses it
-opal listen intents add ask_brain --phrase "ask the brain {question}"
+opal listen slot add question --type text        # slot must exist before a phrase uses it
+opal listen intent add ask_brain --phrase "ask the brain {question}"
 opal listen test text "computer, ask the brain why is the sky blue"   # question = "why is the sky blue"
-opal listen settings set event_publication_enabled true
+opal listen setting set event_publication_enabled true
 cat > /opt/opal/ask_brain.sh <<'SH'
 #!/usr/bin/env bash
 q=$(jq -r '.data.slot_values.question // "status report"' </dev/stdin)
@@ -437,10 +437,10 @@ recognition row in listen's logs, the rule firing in event's executions, and the
 speech request in talk — one utterance, one audit trail.
 
 ```bash
-opal listen --json logs list --intent light_turn_on --limit 5
+opal listen --json log list --intent light_turn_on --limit 5
 opal event executions list --limit 10
 opal event get <event-id from the execution>
-opal listen logs get <recognition-log-id>   # exact transcript + slot extraction
+opal listen log get <recognition-log-id>   # exact transcript + slot extraction
 ```
 
 ### 27. "Good night" — one phrase, a house-wide scene
@@ -450,8 +450,8 @@ announcement and an HTTP action arming the camera monitor. Rules execute their
 action list together.
 
 ```bash
-opal listen intents add good_night --phrase "good night" --phrase "bedtime"
-opal listen settings set event_publication_enabled true
+opal listen intent add good_night --phrase "good night" --phrase "bedtime"
+opal listen setting set event_publication_enabled true
 opal event actions create --json \
   '{"id":"night_tts","type":"http","method":"POST","url":"http://127.0.0.1:8001/api/v1/generate","body_mode":"template","body":{"text":"Good night. Locking up."},"timeout_seconds":10}'
 opal event actions create --json \
@@ -468,8 +468,8 @@ condition) runs the real actuator. Two spoken confirmations, zero accidental
 door-unlock.
 
 ```bash
-opal listen intents add unlock_door --phrase "unlock the front door"
-opal listen intents add confirm_dangerous --phrase "yes I am sure" --phrase "confirm"
+opal listen intent add unlock_door --phrase "unlock the front door"
+opal listen intent add confirm_dangerous --phrase "yes I am sure" --phrase "confirm"
 opal event actions create --json \
   '{"id":"ask_confirm","type":"http","method":"POST","url":"http://127.0.0.1:8001/api/v1/generate","body_mode":"template","body":{"text":"Are you sure? Say: yes I am sure."},"timeout_seconds":10}'
 opal event rules create --json \
@@ -497,12 +497,12 @@ opal event topics
 ### 30. Spoken morning briefing, built from real telemetry
 
 A cron job composes last night's recognition stats into a sentence and hands it
-to opal-talk. `logs count` and `perf summary` are `--json`-friendly, so the
+to opal-talk. `log count` and `perf summary` are `--json`-friendly, so the
 briefing writes itself.
 
 ```bash
-total=$(opal listen --json logs count | jq -r '.total')
-matched=$(opal listen --json logs count | jq -r '.matched')
+total=$(opal listen --json log count | jq -r '.total')
+matched=$(opal listen --json log count | jq -r '.matched')
 p95=$(opal listen --json perf summary --limit 500 | jq -r '.total_latency_ms.p95 // 0')
 opal talk generate "Good morning. ${matched} of ${total} commands matched, p95 latency ${p95} milliseconds." \
   -o briefing.wav && aplay briefing.wav
@@ -574,8 +574,8 @@ crontab -l | { cat; echo "*/5 * * * * /opt/opal/health_sweep.sh"; } | crontab -
 "stop" disables it. Two rules, one source of truth for the camera's state.
 
 ```bash
-opal listen intents add cam_on  --phrase "watch the front door"
-opal listen intents add cam_off --phrase "stop watching the door"
+opal listen intent add cam_on  --phrase "watch the front door"
+opal listen intent add cam_off --phrase "stop watching the door"
 for on_off in on off; do
   opal event actions create --json \
     "{\"id\":\"cam_${on_off}\",\"type\":\"http\",\"method\":\"PATCH\",\"url\":\"http://127.0.0.1:8002/api/v1/monitors/front-door\",\"body_mode\":\"template\",\"body\":{\"enabled\":$([ $on_off = on ] && echo true || echo false)}}"
@@ -592,8 +592,8 @@ Because opal-talk is an HTTP service, a remote-room announcement is just an
 the workshop speaker.
 
 ```bash
-opal listen slots add message --type text
-opal listen intents add announce --phrase "announce {message}"
+opal listen slot add message --type text
+opal listen intent add announce --phrase "announce {message}"
 opal event actions create --json \
   '{"id":"workshop_speak","type":"http","method":"POST","url":"http://workshop.local:8001/api/v1/generate","body_mode":"event_json","timeout_seconds":15}'
 opal event rules create --json \
@@ -609,7 +609,7 @@ the model's plan execute.
 ```bash
 opal event actions create --json \
   '{"id":"think_request","type":"http","method":"POST","url":"http://127.0.0.1:8082/api/v1/tasks","body_mode":"event_json","timeout_seconds":15}'
-opal listen intents add approve_plan --phrase "approved" --phrase "go ahead"
+opal listen intent add approve_plan --phrase "approved" --phrase "go ahead"
 opal event rules create --json \
   '{"id":"approval","topic":"opal.listen.intent.match","conditions":[{"path":"data.intent_name","operator":"eq","value":"approve_plan"}],"actions":["think_request"]}'
 opal think task list --status queued
@@ -622,7 +622,7 @@ activation — say the words, hear the next voice immediately. Works because
 both services keep hot-swappable profiles.
 
 ```bash
-opal listen intents add next_voice --phrase "use a different voice" --phrase "change your voice"
+opal listen intent add next_voice --phrase "use a different voice" --phrase "change your voice"
 cat > /opt/opal/next_voice.sh <<'SH'
 #!/usr/bin/env bash
 opal talk profiles activate radio
@@ -641,12 +641,12 @@ opal event rules create --json \
 feed `opal think` for summarization and the digest comes back through talk.
 
 ```bash
-opal listen settings set stt_mode open
+opal listen setting set stt_mode open
 opal listen --json test listen --duration 600 --verbose > meeting.ndjson
 jq -sr '[.[].transcript] | join("\n")' meeting.ndjson \
   | opal think ask "Summarize this meeting transcript in three sentences:" --no-stream \
   | opal talk generate - -o summary.wav && aplay summary.wav
-opal listen settings set stt_mode grammar
+opal listen setting set stt_mode grammar
 ```
 
 ### 40. Whole-suite incident bundle

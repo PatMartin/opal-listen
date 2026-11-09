@@ -17,22 +17,22 @@ The server must therefore be running, either locally or on another machine.
 2. [Connecting to the server](#2-connecting-to-the-server)
 3. [Conventions](#3-conventions)
 4. [Command tree](#4-command-tree)
-5. [`wakewords`: wakeword management](#5-wakewords--wakeword-management)
-6. [`intents`: intents and training phrases](#6-intents--intents-and-training-phrases)
-7. [`slots`: slots, values and aliases](#7-slots--slots-values-and-aliases)
-8. [`profiles`: recognition profiles](#8-profiles--recognition-profiles)
-9. [`personas`: OPAL personas](#9-personas--opal-personas)
-10. [`settings`: global settings](#10-settings--global-settings)
+5. [`wakeword`: wakeword management](#5-wakeword--wakeword-management)
+6. [`intent`: intents and training phrases](#6-intent--intents-and-training-phrases)
+7. [`slot`: slots, values and aliases](#7-slot--slots-values-and-aliases)
+8. [`profile`: recognition profiles](#8-profile--recognition-profiles)
+9. [`persona`: OPAL personas](#9-persona--opal-personas)
+10. [`setting`: global settings](#10-setting--global-settings)
 11. [`test`: recognition testing](#11-test--recognition-testing)
 12. [`pipeline`: microphone pipeline control](#12-pipeline--microphone-pipeline-control)
 13. [`failed`: failed utterance review](#13-failed--failed-utterance-review)
 14. [`regression`: regression test management](#14-regression--regression-test-management)
-15. [`logs`: recognition logs](#15-logs--recognition-logs)
+15. [`log`: recognition logs](#15-log--recognition-logs)
 16. [`perf`: performance metrics](#16-perf--performance-metrics)
 17. [`config`: validation, backup, export and import](#17-config--validation-backup-export-and-import)
 18. [`system`: health and diagnostics](#18-system--health-and-diagnostics)
 19. [`event`: publish ZeroMQ events](#19-event--publish-zeromq-events)
-20. [`reactions`: intent-triggered shell commands](#20-reactions--intent-triggered-shell-commands)
+20. [`reaction`: intent-triggered shell commands](#20-reaction--intent-triggered-shell-commands)
 21. [Walkthroughs](#21-walkthroughs)
 22. [Scripting and automation](#22-scripting-and-automation)
 23. [Troubleshooting](#23-troubleshooting)
@@ -71,14 +71,14 @@ opal-listen-svc               # or: python -m opal_listener
 ```bash
 opal --help                        # top level (only the 'listen' group)
 opal listen --help                 # global options and all command groups
-opal listen wakewords --help       # commands in one group
-opal listen wakewords add --help   # arguments and options of one command
+opal listen wakeword --help       # commands in one group
+opal listen wakeword add --help   # arguments and options of one command
 ```
 
 Running a group without a command also prints its help:
 
 ```bash
-opal listen intents                # same as: opal listen intents --help
+opal listen intent                # same as: opal listen intent --help
 ```
 
 ### Shell completion
@@ -112,11 +112,11 @@ opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout SECOND
 
 ```bash
 # Correct: global options come right after 'listen'
-opal listen --json intents list
+opal listen --json intent list
 opal listen --api-url http://pi5.local:8000 --timeout 10 system doctor
 
 # Wrong: --json after the group is rejected as an unknown option (exit code 2)
-opal listen intents list --json
+opal listen intent list --json
 ```
 
 ### Environment variables
@@ -159,10 +159,10 @@ Start it with 'python -m opal_listener' or set OPAL_LISTEN_API_URL.
 Wherever a command takes a resource, you can pass its **name** or its numeric **id**:
 
 ```bash
-opal listen intents get get_time   # by name
-opal listen intents get 5          # by id
-opal listen profiles get 4         # profile with id 4
-opal listen profiles get kitchen   # profile named "kitchen"
+opal listen intent get get_time   # by name
+opal listen intent get 5          # by id
+opal listen profile get 4         # profile with id 4
+opal listen profile get kitchen   # profile named "kitchen"
 ```
 
 Child items can also be referenced by their text:
@@ -174,9 +174,9 @@ Child items can also be referenced by their text:
 | Alias | Alias id or alias text |
 
 ```bash
-opal listen intents remove-phrase test_intent "Test intent one"   # by exact text
-opal listen intents remove-phrase test_intent 57                  # by phrase id
-opal listen slots remove-alias room_name living_room lounge       # value and alias by text
+opal listen intent remove-phrase test_intent "Test intent one"   # by exact text
+opal listen intent remove-phrase test_intent 57                  # by phrase id
+opal listen slot remove-alias room_name living_room lounge       # value and alias by text
 ```
 
 Failed utterances, regression tests and log entries have no name. You always reference them by **id**.
@@ -196,9 +196,9 @@ With `--json`, every command prints the raw API response as JSON. This is the ou
 Confirmations become the created or updated object, or `{"status": "ok", "message": "..."}`.
 
 ```bash
-opal listen wakewords list                 # table
-opal listen --json wakewords list          # JSON array, suitable for jq
-opal listen --json wakewords add nabu      # JSON of the created wakeword
+opal listen wakeword list                 # table
+opal listen --json wakeword list          # JSON array, suitable for jq
+opal listen --json wakeword add nabu      # JSON of the created wakeword
 ```
 
 > In table output, empty values are shown as `-`, and nested lists and maps are shown as compact JSON.
@@ -223,8 +223,8 @@ Quote multi-word arguments and every training phrase. The phrase syntax uses cha
 interprets (`[`, `]`, `(`, `)`, `|`, `{`, `}`):
 
 ```bash
-opal listen wakewords add "hey opal"
-opal listen intents add-phrase light_turn_on "turn on [the] {room_name} (light | lights)"
+opal listen wakeword add "hey opal"
+opal listen intent add-phrase light_turn_on "turn on [the] {room_name} (light | lights)"
 ```
 
 ### Confirmation prompts
@@ -273,28 +273,28 @@ by introspection, so it always matches the installed CLI): mandatory options pri
 opal
 └── listen [--api-url] [--xpub] [--xsub] [--json] [--timeout]
     ├── tree
-    ├── wakewords   list | get | add | update | remove
-    ├── intents     list | get | add | update | remove | phrases | add-phrase | remove-phrase
-    ├── slots       list | get | add | update | remove
+    ├── wakeword    list | get | add | update | remove
+    ├── intent      list | get | add | update | remove | phrases | add-phrase | remove-phrase
+    ├── slot        list | get | add | update | remove
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
-    ├── profiles    list | get | add | update | activate | remove
-    ├── personas    list | get | add | update | remove | validate
-    ├── settings    list | get | set | patch | unset
+    ├── profile     list | get | add | update | activate | remove
+    ├── persona     list | get | add | update | remove | validate
+    ├── setting     list | get | set | patch | unset
     ├── test        text | audio | listen | listen-debug | regression
     ├── pipeline    start | stop | status
     ├── failed      list | get | add | update | remove | promote
     ├── regression  list | get | add | update | remove
-    ├── logs        list | get | count
+    ├── log         list | get | count
     ├── perf        last | summary | history
     ├── config      validate | backup | backups | download | restore | delete-backup | export | import
     ├── system      doctor | devices | live | ready | info | ping
     ├── event       publish
-    └── reactions   list | get | add | update | remove | enable | disable | test | log | path
+    └── reaction    list | get | add | update | remove | enable | disable | test | log | path
 ```
 
 ---
 
-## 5. `wakewords`: wakeword management
+## 5. `wakeword`: wakeword management
 
 A wakeword opens a command session, as in *"**computer**, turn on the kitchen light"*. Names are
 normalized to lowercase without punctuation.
@@ -317,37 +317,37 @@ normalized to lowercase without punctuation.
 
 ```bash
 # List wakewords (columns: id, name, enabled, confidence_threshold, updated_at)
-opal listen wakewords list
+opal listen wakeword list
 
 # Show one wakeword by name, or by id
-opal listen wakewords get computer
-opal listen wakewords get 1
+opal listen wakeword get computer
+opal listen wakeword get 1
 
 # Add a wakeword with a custom threshold, disabled for now
-opal listen wakewords add nabu --threshold 0.7 --disabled
+opal listen wakeword add nabu --threshold 0.7 --disabled
 
 # Multi-word wakewords must be quoted
-opal listen wakewords add "hey opal" --threshold 0.85
+opal listen wakeword add "hey opal" --threshold 0.85
 
 # Raise the threshold and enable it in one call
-opal listen wakewords update nabu --threshold 0.95 --enabled
+opal listen wakeword update nabu --threshold 0.95 --enabled
 
 # Rename a wakeword
-opal listen wakewords update "hey opal" --name "okay opal"
+opal listen wakeword update "hey opal" --name "okay opal"
 
 # Temporarily disable the default wakeword
-opal listen wakewords update computer --disabled
+opal listen wakeword update computer --disabled
 
 # Delete a wakeword
-opal listen wakewords remove nabu
+opal listen wakeword remove nabu
 ```
 
 > A higher threshold means fewer false triggers but more missed wakewords. A profile can raise it
-> further with `--threshold wakeword=F` (see [profiles](#8-profiles--recognition-profiles)).
+> further with `--threshold wakeword=F` (see [profiles](#8-profile--recognition-profiles)).
 
 ---
 
-## 6. `intents`: intents and training phrases
+## 6. `intent`: intents and training phrases
 
 An intent is a named action, for example `light_turn_on`. Each intent has one or more **training
 phrases**, which are templates the recognizer matches against the transcript.
@@ -389,56 +389,56 @@ and saves nothing. Typical mistakes are an unknown slot, unbalanced brackets, or
 
 ```bash
 # List intents (columns: id, name, enabled, confidence_threshold, phrase_count, description)
-opal listen intents list
+opal listen intent list
 
 # Show an intent: a key/value table followed by a table of its phrases
-opal listen intents get get_time
+opal listen intent get get_time
 
 # Add an intent with two literal phrases and a description
-opal listen intents add test_intent \
+opal listen intent add test_intent \
   --phrase "Test intent one" \
   --phrase "Test intent two" \
   --description "This is a test intent"
 
 # Add an intent using optional words and alternatives
-opal listen intents add play_music \
+opal listen intent add play_music \
   --description "Start music playback" \
   --threshold 0.75 \
   --phrase "play [some] music" \
   --phrase "(start | put on) [some] music"
 
 # Add an intent that uses an existing slot
-opal listen intents add light_dim \
+opal listen intent add light_dim \
   --description "Dim the lights in a room" \
   --phrase "dim [the] {room_name} (light | lights)"
 
 # Change the description only
-opal listen intents update test_intent --description "Updated description"
+opal listen intent update test_intent --description "Updated description"
 
 # Raise the threshold and disable the intent
-opal listen intents update cancel --threshold 0.9 --disabled
+opal listen intent update cancel --threshold 0.9 --disabled
 
 # Rename an intent
-opal listen intents update play_music --name music_play
+opal listen intent update play_music --name music_play
 ```
 
 ### Managing phrases
 
 ```bash
 # List phrases (columns: id, phrase, created_at)
-opal listen intents phrases test_intent
+opal listen intent phrases test_intent
 
 # Add a phrase. Always quote it.
-opal listen intents add-phrase light_turn_on "illuminate [the] {room_name}"
+opal listen intent add-phrase light_turn_on "illuminate [the] {room_name}"
 
 # Remove a phrase by its exact text...
-opal listen intents remove-phrase test_intent "Test intent one"
+opal listen intent remove-phrase test_intent "Test intent one"
 
 # ...or by its id, as shown by 'intents phrases'
-opal listen intents remove-phrase test_intent 57
+opal listen intent remove-phrase test_intent 57
 
 # Delete the whole intent, including its phrases
-opal listen intents remove test_intent
+opal listen intent remove test_intent
 ```
 
 > Use `opal listen test text "..."` right after you change phrases to check that the intent matches as
@@ -446,7 +446,7 @@ opal listen intents remove test_intent
 
 ---
 
-## 7. `slots`: slots, values and aliases
+## 7. `slot`: slots, values and aliases
 
 A slot is a typed parameter that is extracted from the utterance, such as `room_name` or `temperature`.
 
@@ -493,51 +493,51 @@ spoken as spaces.
 ```bash
 # List slots (columns: id, name, slot_type, values, description).
 # Values appear as "kitchen (cooking area), living_room (lounge, family room), ..."
-opal listen slots list
+opal listen slot list
 
 # Show one slot as JSON
-opal listen slots get temperature
+opal listen slot get temperature
 
 # Add a list slot with initial values
-opal listen slots add color --description "Bulb colors" \
+opal listen slot add color --description "Bulb colors" \
   --value red --value blue --value warm_white
 
 # Add a number slot (number slots have no values)
-opal listen slots add brightness --type number --description "Percent"
+opal listen slot add brightness --type number --description "Percent"
 
 # Add a list slot with no values yet
-opal listen slots add test_slot --description "Test slot"
+opal listen slot add test_slot --description "Test slot"
 
 # Change the description
-opal listen slots update test_slot --description "Updated test slot"
+opal listen slot update test_slot --description "Updated test slot"
 
 # Delete a slot. Remove or edit the phrases that use it first.
-opal listen slots remove test_slot
+opal listen slot remove test_slot
 ```
 
 ### Examples: values and aliases
 
 ```bash
 # List the values of a slot (columns: id, value, aliases)
-opal listen slots values room_name
+opal listen slot values room_name
 
 # Add a value
-opal listen slots add-value test_slot 42
+opal listen slot add-value test_slot 42
 
 # Add a value together with aliases
-opal listen slots add-value color green --alias lime --alias emerald
+opal listen slot add-value color green --alias lime --alias emerald
 
 # Remove a value by text (its aliases are removed too)
-opal listen slots remove-value test_slot 42
+opal listen slot remove-value test_slot 42
 
 # List the aliases of one value
-opal listen slots aliases room_name living_room
+opal listen slot aliases room_name living_room
 
 # Add an alias: "martin hall" now resolves to living_room
-opal listen slots add-alias room_name living_room martin_hall
+opal listen slot add-alias room_name living_room martin_hall
 
 # Remove the alias again
-opal listen slots remove-alias room_name living_room martin_hall
+opal listen slot remove-alias room_name living_room martin_hall
 ```
 
 > After you add a value or alias, run `opal listen system doctor`. The `vocabulary` check warns if a
@@ -545,7 +545,7 @@ opal listen slots remove-alias room_name living_room martin_hall
 
 ---
 
-## 8. `profiles`: recognition profiles
+## 8. `profile`: recognition profiles
 
 A profile is an environment preset. It selects wakewords, sets threshold floors, tunes voice activity
 detection (VAD), overrides model paths, and limits the enabled intents and slots. Exactly one profile is
@@ -600,14 +600,14 @@ The server rejects unknown keys and out-of-range values with HTTP `422`.
 ```bash
 # List profiles (columns: id, name, is_active, wakeword_names, confidence_thresholds,
 # enabled_intents, description)
-opal listen profiles list
+opal listen profile list
 
 # Show one profile by id or by name
-opal listen profiles get 4
-opal listen profiles get noisy_room
+opal listen profile get 4
+opal listen profile get noisy_room
 
 # Create a full profile and print the result as JSON
-opal listen --json profiles add test_profile \
+opal listen --json profile add test_profile \
   --description "Test Profile" \
   --wakeword nabu \
   --threshold wakeword=0.85 --threshold intent=0.8 --threshold stt=0.6 \
@@ -617,7 +617,7 @@ opal listen --json profiles add test_profile \
   --slot temperature
 
 # Create a profile and activate it immediately
-opal listen profiles add late_night --description "Quiet evenings" --activate \
+opal listen profile add late_night --description "Quiet evenings" --activate \
   --wakeword computer \
   --threshold wakeword=0.85 \
   --vad silence_end_ms=900 --vad energy_threshold_dbfs=-50 \
@@ -625,20 +625,20 @@ opal listen profiles add late_night --description "Quiet evenings" --activate \
   --slot room_name
 
 # Change only the description (other fields are unchanged)
-opal listen profiles update test_profile --description "Updated Test Profile"
+opal listen profile update test_profile --description "Updated Test Profile"
 
 # Replace the VAD map. Keys you leave out return to their defaults.
-opal listen profiles update late_night --vad silence_end_ms=1000 --vad energy_threshold_dbfs=-50
+opal listen profile update late_night --vad silence_end_ms=1000 --vad energy_threshold_dbfs=-50
 
 # Use a larger Vosk model for the default profile
-opal listen profiles update default --model vosk_model=/models/vosk-model-en-us-0.22-lgraph
+opal listen profile update default --model vosk_model=/models/vosk-model-en-us-0.22-lgraph
 
 # Switch profiles
-opal listen profiles activate test_profile
-opal listen profiles activate default
+opal listen profile activate test_profile
+opal listen profile activate default
 
 # Delete a profile
-opal listen profiles remove test_profile
+opal listen profile remove test_profile
 ```
 
 > You can't clear a list (for example, go back to "all intents") with `update`, because an option that
@@ -647,7 +647,7 @@ opal listen profiles remove test_profile
 
 ---
 
-## 9. `personas`: OPAL personas
+## 9. `persona`: OPAL personas
 
 A persona is a named speaker identity registered with the service, optionally bound to an
 OPAL Say `voice_id` so spoken feedback keeps a consistent voice. Personas are portable
@@ -665,9 +665,9 @@ configuration: they export/import with `config export`/`config import` (`persona
 ### Examples
 
 ```bash
-opal listen personas add amy --name "Amy" --voice en-gb-alan-low
-opal listen personas list --enabled
-opal listen personas validate amy
+opal listen persona add amy --name "Amy" --voice en-gb-alan-low
+opal listen persona list --enabled
+opal listen persona validate amy
 ```
 
 `--voice` names a voice in the OPAL Say catalog (e.g. `en-gb-alan-low`); this service only
@@ -675,7 +675,7 @@ checks that a declared voice id is well-formed — existence is OPAL Say's conce
 
 ---
 
-## 10. `settings`: global settings
+## 10. `setting`: global settings
 
 Settings are typed global key/value pairs. The server validates the type, range and allowed choices on
 every change. Per the OPAL standard, the collection `GET`/`PATCH /api/v1/setting/` is a single atomic
@@ -723,43 +723,43 @@ Booleans accept `true/false`, `1/0`, `yes/no` and `on/off`.
 
 ```bash
 # Show all settings
-opal listen settings list
+opal listen setting list
 
 # Switch the Whisper refiner model, then switch back
-opal listen settings set whisper_model medium.en
-opal listen settings set whisper_model tiny.en
+opal listen setting set whisper_model medium.en
+opal listen setting set whisper_model tiny.en
 
 # Enable the optional second-pass refiner (requires the [whisper] extra)
-opal listen settings set stt_refiner faster_whisper
+opal listen setting set stt_refiner faster_whisper
 
 # Choose the microphone by index or by name substring (see 'system devices')
-opal listen settings set audio_device 2
-opal listen settings set audio_device "USB"
+opal listen setting set audio_device 2
+opal listen setting set audio_device "USB"
 
 # Start the microphone pipeline automatically when the server starts
-opal listen settings set auto_start_listener true
+opal listen setting set auto_start_listener true
 
 # Shorten the cooldown between commands
-opal listen settings set cooldown_ms 1000
+opal listen setting set cooldown_ms 1000
 
 # ... or change several settings atomically in one PATCH
-opal listen settings patch cooldown_ms=1000 dedup_window_ms=3000
+opal listen setting patch cooldown_ms=1000 dedup_window_ms=3000
 
 # Inspect one setting's metadata (default, is_default, pending_restart)
-opal listen settings get cooldown_ms
+opal listen setting get cooldown_ms
 
 # Revert a key to its registry default
-opal listen settings unset cooldown_ms
+opal listen setting unset cooldown_ms
 
 # Add a sound-alike word that should never trigger the wakeword
-opal listen settings set wakeword_distractors "commuter,compute,computing,commute,commuting"
+opal listen setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
 
 # Invalid values are rejected
-opal listen settings set stt_mode fast
+opal listen setting set stt_mode fast
 # Error: HTTP 422: setting 'stt_mode' must be one of grammar, open
 
 # Go back to the default value
-opal listen settings set whisper_model tiny.en
+opal listen setting set whisper_model tiny.en
 ```
 
 ---
@@ -985,7 +985,7 @@ Important `status` fields:
 | `audio_restarts`, `last_error` | Watchdog and recovery activity |
 | `last_audio_level` | Most recent input level in dBFS |
 
-> Use `opal listen settings set auto_start_listener true` to start the pipeline every time the server
+> Use `opal listen setting set auto_start_listener true` to start the pipeline every time the server
 > starts.
 
 ---
@@ -1098,7 +1098,7 @@ opal listen test regression
 
 ---
 
-## 15. `logs`: recognition logs
+## 15. `log`: recognition logs
 
 Every recognition (microphone, audio file, or text with `--save`) is stored as a log entry. The number
 of rows kept is limited by `max_recognition_logs`. Listing uses OPAL v1.2 cursor pagination: each page
@@ -1121,19 +1121,19 @@ different filters.
 
 ```bash
 # The 100 newest entries
-opal listen logs list
+opal listen log list
 
 # The last 50 failures
-opal listen logs list --no-match --limit 50
+opal listen log list --no-match --limit 50
 
 # Next page (the CLI prints the --cursor to pass when has_more is true)
-opal listen logs list --intent light_turn_on --cursor <token-from-previous-page>
+opal listen log list --intent light_turn_on --cursor <token-from-previous-page>
 
 # One entry in full detail
-opal listen logs get 42
+opal listen log get 42
 
 # Totals
-opal listen logs count
+opal listen log count
 ```
 
 ---
@@ -1291,7 +1291,7 @@ opal listen system ready
 
 # Find the microphone index or name to use for the audio_device setting
 opal listen system devices
-opal listen settings set audio_device 2
+opal listen setting set audio_device 2
 ```
 
 Example `doctor` output:
@@ -1299,8 +1299,8 @@ Example `doctor` output:
 ```
 ✓ sqlite           var/opal_listener.db
 ✓ migrations       revision 0001 (head 0001)
-✓ slots            slots compile
-✓ intents          6 intents, 52 phrase variants
+✓ slot            slots compile
+✓ intent          6 intents, 52 phrase variants
 ✓ provider         vosk loaded
 ✓ vocabulary       all wakeword/phrase words are in the model vocabulary
 ! microphone       no audio input devices found
@@ -1356,26 +1356,26 @@ message has been handed to the socket, not once a subscriber has received it.
 
 ---
 
-## 20. `reactions`: intent-triggered shell commands
+## 20. `reaction`: intent-triggered shell commands
 
 Reactions run shell commands when a live-mic recognition matches an intent (see the User Guide §4.5
 for the full model: gating, condition grammar, stdin contract).
 
-Unlike every other group, `reactions` does **not** talk to the REST API — arming shell commands
+Unlike every other group, `reaction` does **not** talk to the REST API — arming shell commands
 through the API would be a remote-code-execution vector, so commands live only in
 `<config_dir>/reactions.yaml`. These commands manage that file on the local filesystem (honoring
 `OPAL_LISTENER_CONFIG_DIR` / `OPAL_LISTENER_DATA_DIR`); the running service picks up edits
-automatically on the next match. Use `reactions path` to see which files are managed.
+automatically on the next match. Use `reaction path` to see which files are managed.
 
 ```bash
 # Where are the managed files?
-opal listen reactions path
+opal listen reaction path
 
 # List armed reactions (name, enabled, #conditions, action summary)
-opal listen reactions list
+opal listen reaction list
 
 # Arm a reaction: fire hue.sh when "turn on the kitchen light" matches confidently
-opal listen reactions add kitchen_lights \
+opal listen reaction add kitchen_lights \
     --cond "intent_name eq light_turn_on" \
     --cond "slot_values.room_name eq kitchen" \
     --cond "intent_confidence gte 0.8" \
@@ -1383,48 +1383,48 @@ opal listen reactions add kitchen_lights \
     --timeout 15 --env HUE_BRIDGE=192.168.1.10
 
 # Show the full reaction
-opal listen reactions get kitchen_lights
+opal listen reaction get kitchen_lights
 
 # Rename it, retime every action, replace conditions wholesale
-opal listen reactions update kitchen_lights --name lights_kitchen --timeout 30
-opal listen reactions update lights_kitchen --cond "intent_name eq light_turn_on"
+opal listen reaction update kitchen_lights --name lights_kitchen --timeout 30
+opal listen reaction update lights_kitchen --cond "intent_name eq light_turn_on"
 # Fire on ANY matched intent:
-opal listen reactions update lights_kitchen --clear-conditions
+opal listen reaction update lights_kitchen --clear-conditions
 
 # Disable without deleting, re-enable, disarm entirely
-opal listen reactions disable lights_kitchen
-opal listen reactions enable lights_kitchen
-opal listen reactions remove lights_kitchen
+opal listen reaction disable lights_kitchen
+opal listen reaction enable lights_kitchen
+opal listen reaction remove lights_kitchen
 ```
 
 `--cond` takes `"path operator value"` (operators: `eq ne gt gte lt lte in not_in exists contains`;
 `exists` takes no value; values are YAML scalars, so `[a, b]` gives a list). `--run` is repeatable —
 each becomes one `command` action receiving the match JSON on stdin. `--env KEY=VALUE` is repeatable.
 
-`reactions test` dry-runs a payload against the armed reactions and shows which would fire and why
+`reaction test` dry-runs a payload against the armed reactions and shows which would fire and why
 not — nothing executes unless `--execute` is passed:
 
 ```bash
 # With a literal result payload
-opal listen reactions test --payload '{"intent_name":"light_turn_on","intent_confidence":0.9}'
+opal listen reaction test --payload '{"intent_name":"light_turn_on","intent_confidence":0.9}'
 
 # With a real utterance through the live pipeline (needs the service running)
-opal listen reactions test --text "turn on the kitchen light"
+opal listen reaction test --text "turn on the kitchen light"
 
 # Actually run the matching commands (debugging your scripts)
-opal listen reactions test --payload '{"intent_name":"light_turn_on"}' --execute
+opal listen reaction test --payload '{"intent_name":"light_turn_on"}' --execute
 ```
 
-`reactions log` tails the execution journal `<data_dir>/reaction_log.jsonl` (one JSON record per run:
+`reaction log` tails the execution journal `<data_dir>/reaction_log.jsonl` (one JSON record per run:
 timestamp, argv, exit code, duration, stderr tail). `--limit N` controls how many rows print; the
 `reactions_fired` / `reactions_failed` / `reactions_dropped` counters also appear in
 `pipeline status` metrics.
 
 ```bash
-opal listen reactions log --limit 5
+opal listen reaction log --limit 5
 ```
 
-Remember: armed reactions only fire when the feature is switched on — `opal listen settings set
+Remember: armed reactions only fire when the feature is switched on — `opal listen setting set
 reactions_enabled true`. The switch is a setting so it can be flipped at runtime without editing
 files.
 
@@ -1442,34 +1442,34 @@ opal listen system ping
 opal listen system doctor
 
 # --- wakewords ----------------------------------------------------------------------------
-opal listen wakewords list
-opal listen wakewords get computer
-opal listen wakewords add nabu --threshold 0.7 --disabled     # created disabled
-opal listen wakewords update nabu --threshold 0.95 --enabled   # now enabled, stricter
-opal listen wakewords get nabu
+opal listen wakeword list
+opal listen wakeword get computer
+opal listen wakeword add nabu --threshold 0.7 --disabled     # created disabled
+opal listen wakeword update nabu --threshold 0.95 --enabled   # now enabled, stricter
+opal listen wakeword get nabu
 
 # --- intents and phrases ------------------------------------------------------------------
-opal listen intents add test_intent \
+opal listen intent add test_intent \
   --phrase "Test intent one" --phrase "Test intent two" \
   --description "This is a test intent"
-opal listen intents update test_intent --description "Updated description"
-opal listen intents phrases test_intent
-opal listen intents remove-phrase test_intent "Test intent one"
-opal listen intents phrases test_intent                        # one phrase left
+opal listen intent update test_intent --description "Updated description"
+opal listen intent phrases test_intent
+opal listen intent remove-phrase test_intent "Test intent one"
+opal listen intent phrases test_intent                        # one phrase left
 
 # --- slots, values and aliases ------------------------------------------------------------
-opal listen slots add test_slot --description "Test slot"
-opal listen slots update test_slot --description "Updated test slot"
-opal listen slots add-value test_slot 42
-opal listen slots values test_slot
-opal listen slots remove-value test_slot 42
-opal listen slots aliases room_name living_room
-opal listen slots add-alias room_name living_room martin_hall
-opal listen slots aliases room_name living_room                # now includes martin_hall
-opal listen slots remove-alias room_name living_room martin_hall
+opal listen slot add test_slot --description "Test slot"
+opal listen slot update test_slot --description "Updated test slot"
+opal listen slot add-value test_slot 42
+opal listen slot values test_slot
+opal listen slot remove-value test_slot 42
+opal listen slot aliases room_name living_room
+opal listen slot add-alias room_name living_room martin_hall
+opal listen slot aliases room_name living_room                # now includes martin_hall
+opal listen slot remove-alias room_name living_room martin_hall
 
 # --- profiles -----------------------------------------------------------------------------
-opal listen --json profiles add test_profile \
+opal listen --json profile add test_profile \
   --description "Test Profile" \
   --wakeword nabu \
   --threshold wakeword=0.85 --threshold intent=0.8 --threshold stt=0.6 \
@@ -1477,14 +1477,14 @@ opal listen --json profiles add test_profile \
   --vad silence_end_ms=900 --vad max_utterance_ms=10000 --vad use_stt_endpoint=false \
   --intent cancel --intent set_temperature --intent get_time \
   --slot temperature
-opal listen profiles update test_profile --description "Updated Test Profile"
-opal listen profiles activate test_profile
-opal listen profiles activate default                          # switch back before removing
+opal listen profile update test_profile --description "Updated Test Profile"
+opal listen profile activate test_profile
+opal listen profile activate default                          # switch back before removing
 
 # --- settings -----------------------------------------------------------------------------
-opal listen settings list
-opal listen settings set whisper_model medium.en
-opal listen settings set whisper_model tiny.en
+opal listen setting list
+opal listen setting set whisper_model medium.en
+opal listen setting set whisper_model tiny.en
 
 # --- recognition --------------------------------------------------------------------------
 opal listen test text "computer, turn on the kitchen light"
@@ -1498,21 +1498,21 @@ opal listen test listen-debug --count 10 --duration 10 --no-start
 opal listen pipeline stop
 
 # --- clean up -----------------------------------------------------------------------------
-opal listen intents remove test_intent
-opal listen slots remove test_slot
-opal listen profiles remove test_profile
-opal listen wakewords remove nabu
+opal listen intent remove test_intent
+opal listen slot remove test_slot
+opal listen profile remove test_profile
+opal listen wakeword remove nabu
 ```
 
 ### 18.2 Add a new intent with a new slot
 
 ```bash
 # 1. Create the slot and its values
-opal listen slots add color --description "Bulb colors" --value red --value blue --value warm_white
-opal listen slots add-alias color warm_white cozy
+opal listen slot add color --description "Bulb colors" --value red --value blue --value warm_white
+opal listen slot add-alias color warm_white cozy
 
 # 2. Create the intent with phrases that use the slot
-opal listen intents add light_color \
+opal listen intent add light_color \
   --description "Change bulb color" \
   --phrase "make [the] {room_name} (light | lights) {color}" \
   --phrase "set [the] {room_name} (light | lights) to {color}"
@@ -1537,7 +1537,7 @@ opal listen system doctor
 opal listen test listen --duration 300
 
 # 2. Look at what failed
-opal listen logs count
+opal listen log count
 opal listen failed list --unreviewed
 
 # 3. Promote real commands that should have matched
@@ -1560,10 +1560,10 @@ opal listen perf summary
 opal listen test listen-debug --duration 20
 
 # 2. Activate the noisy_room profile, or tune it
-opal listen profiles update noisy_room \
+opal listen profile update noisy_room \
   --threshold wakeword=0.9 --threshold intent=0.8 \
   --vad energy_threshold_dbfs=-38 --vad noise_margin_db=14 --vad silence_end_ms=600
-opal listen profiles activate noisy_room
+opal listen profile activate noisy_room
 
 # 3. Test again
 opal listen test listen-debug -n 5
@@ -1591,17 +1591,17 @@ opal listen test regression
 
 ```bash
 # Names of all intents
-opal listen --json intents list | jq -r '.[].name'
+opal listen --json intent list | jq -r '.[].name'
 
 # Enabled wakewords and their thresholds
-opal listen --json wakewords list | jq -r '.[] | select(.enabled) | "\(.name)\t\(.confidence_threshold)"'
+opal listen --json wakeword list | jq -r '.[] | select(.enabled) | "\(.name)\t\(.confidence_threshold)"'
 
 # Only the intent and slots of a text test
 opal listen --json test text "set the temperature to twenty one degrees" --no-save \
   | jq '{intent_name, slot_values}'
 
 # The currently active profile
-opal listen --json profiles list | jq -r '.[] | select(.is_active) | .name'
+opal listen --json profile list | jq -r '.[] | select(.is_active) | .name'
 
 # Number of unreviewed failures
 opal listen --json failed list --unreviewed --limit 500 | jq length
@@ -1637,12 +1637,12 @@ opal listen test regression
 ```bash
 # Add many values to a slot
 for room in attic basement porch; do
-  opal listen slots add-value room_name "$room"
+  opal listen slot add-value room_name "$room"
 done
 
 # Add a phrase file line by line
 while IFS= read -r phrase; do
-  opal listen intents add-phrase light_turn_on "$phrase"
+  opal listen intent add-phrase light_turn_on "$phrase"
 done < phrases.txt
 
 # Disable all regression tests whose name starts with "wip_"
@@ -1661,15 +1661,15 @@ opal listen --json regression list \
 | Symptom | Cause / fix |
 |---|---|
 | `Error: cannot reach the opal listener API at ...` | The server isn't running, or the URL is wrong. Start `opal-listen-svc`, or set `OPAL_LISTEN_API_URL` / `--api-url`. |
-| `No such option: --json` | Global options must come right after `listen`: `opal listen --json intents list`. |
+| `No such option: --json` | Global options must come right after `listen`: `opal listen --json intent list`. |
 | `Error: 'xyz' not found in /api/v1/...` | No resource with that name or id exists. Check with `list`. Names are normalized, so try lowercase. |
 | `Error: nothing to update (pass at least one option)` | `update` was called without any change option. |
 | `Error: HTTP 422: ...` | The server rejected the input (bad phrase syntax, unknown slot, value out of range). The message names the field. |
 | `Error: HTTP 409: ...` | A resource with that name already exists. |
-| `slots remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
+| `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `system devices`, `settings list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
+| `test listen` shows nothing | Check `system devices`, `setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1689,44 +1689,44 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 
 | CLI (`opal listen ...`) | REST |
 |---|---|
-| `wakewords list` | `GET /api/v1/wakeword/` |
-| `wakewords add` | `POST /api/v1/wakeword/` |
-| `wakewords get` | `GET /api/v1/wakeword/{id}` |
-| `wakewords update` | `PATCH /api/v1/wakeword/{id}` (If-Match) |
-| `wakewords remove` | `DELETE /api/v1/wakeword/{id}` (If-Match) |
-| `intents list` | `GET /api/v1/intent/` |
-| `intents add` | `POST /api/v1/intent/` |
-| `intents get` | `GET /api/v1/intent/{id}` |
-| `intents update` | `PATCH /api/v1/intent/{id}` (If-Match) |
-| `intents remove` | `DELETE /api/v1/intent/{id}` (If-Match) |
-| `intents phrases` | `GET /api/v1/intent/{id}/phrase` |
-| `intents add-phrase` | `POST /api/v1/intent/{id}/phrase` |
-| `intents remove-phrase` | `DELETE /api/v1/intent/{id}/phrase/{phrase_id}` (If-Match) |
-| `slots list` | `GET /api/v1/slot/` |
-| `slots add` | `POST /api/v1/slot/` (+ `POST .../value` per `--value`) |
-| `slots get` | `GET /api/v1/slot/{id}` |
-| `slots update` | `PATCH /api/v1/slot/{id}` (If-Match) |
-| `slots remove` | `DELETE /api/v1/slot/{id}` (If-Match) |
-| `slots values` | `GET /api/v1/slot/{id}/value` |
-| `slots add-value` | `POST /api/v1/slot/{id}/value` (+ `POST .../alias` per `--alias`) |
-| `slots remove-value` | `DELETE /api/v1/slot/{id}/value/{value_id}` (If-Match) |
-| `slots aliases` | `GET /api/v1/slot/{id}/value/{value_id}/alias` |
-| `slots add-alias` | `POST /api/v1/slot/{id}/value/{value_id}/alias` |
-| `slots remove-alias` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |
-| `profiles list` | `GET /api/v1/profile/` |
-| `profiles add` | `POST /api/v1/profile/` |
-| `profiles get` | `GET /api/v1/profile/{id}` |
-| `profiles update` | `PATCH /api/v1/profile/{id}` (If-Match) |
-| `profiles remove` | `DELETE /api/v1/profile/{id}` (If-Match) |
-| `profiles activate` | `POST /api/v1/profile/{id}/activate` |
-| `personas list` | `GET /api/v1/persona/` |
-| `personas add` | `POST /api/v1/persona/` |
-| `personas get` | `GET /api/v1/persona/{persona_id}` |
-| `personas update` | `PATCH /api/v1/persona/{persona_id}` (If-Match) |
-| `personas remove` | `DELETE /api/v1/persona/{persona_id}` (If-Match) |
-| `personas validate` | `POST /api/v1/persona/{persona_id}/validate` |
-| `settings list` | `GET /api/v1/setting/` |
-| `settings set` | `PATCH /api/v1/setting/` (If-Match; atomic, may set several keys) |
+| `wakeword list` | `GET /api/v1/wakeword/` |
+| `wakeword add` | `POST /api/v1/wakeword/` |
+| `wakeword get` | `GET /api/v1/wakeword/{id}` |
+| `wakeword update` | `PATCH /api/v1/wakeword/{id}` (If-Match) |
+| `wakeword remove` | `DELETE /api/v1/wakeword/{id}` (If-Match) |
+| `intent list` | `GET /api/v1/intent/` |
+| `intent add` | `POST /api/v1/intent/` |
+| `intent get` | `GET /api/v1/intent/{id}` |
+| `intent update` | `PATCH /api/v1/intent/{id}` (If-Match) |
+| `intent remove` | `DELETE /api/v1/intent/{id}` (If-Match) |
+| `intent phrases` | `GET /api/v1/intent/{id}/phrase` |
+| `intent add-phrase` | `POST /api/v1/intent/{id}/phrase` |
+| `intent remove-phrase` | `DELETE /api/v1/intent/{id}/phrase/{phrase_id}` (If-Match) |
+| `slot list` | `GET /api/v1/slot/` |
+| `slot add` | `POST /api/v1/slot/` (+ `POST .../value` per `--value`) |
+| `slot get` | `GET /api/v1/slot/{id}` |
+| `slot update` | `PATCH /api/v1/slot/{id}` (If-Match) |
+| `slot remove` | `DELETE /api/v1/slot/{id}` (If-Match) |
+| `slot values` | `GET /api/v1/slot/{id}/value` |
+| `slot add-value` | `POST /api/v1/slot/{id}/value` (+ `POST .../alias` per `--alias`) |
+| `slot remove-value` | `DELETE /api/v1/slot/{id}/value/{value_id}` (If-Match) |
+| `slot aliases` | `GET /api/v1/slot/{id}/value/{value_id}/alias` |
+| `slot add-alias` | `POST /api/v1/slot/{id}/value/{value_id}/alias` |
+| `slot remove-alias` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |
+| `profile list` | `GET /api/v1/profile/` |
+| `profile add` | `POST /api/v1/profile/` |
+| `profile get` | `GET /api/v1/profile/{id}` |
+| `profile update` | `PATCH /api/v1/profile/{id}` (If-Match) |
+| `profile remove` | `DELETE /api/v1/profile/{id}` (If-Match) |
+| `profile activate` | `POST /api/v1/profile/{id}/activate` |
+| `persona list` | `GET /api/v1/persona/` |
+| `persona add` | `POST /api/v1/persona/` |
+| `persona get` | `GET /api/v1/persona/{persona_id}` |
+| `persona update` | `PATCH /api/v1/persona/{persona_id}` (If-Match) |
+| `persona remove` | `DELETE /api/v1/persona/{persona_id}` (If-Match) |
+| `persona validate` | `POST /api/v1/persona/{persona_id}/validate` |
+| `setting list` | `GET /api/v1/setting/` |
+| `setting set` | `PATCH /api/v1/setting/` (If-Match; atomic, may set several keys) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
 | `test listen`, `test listen-debug` | `GET /api/v1/recognition/stream` (SSE) |
@@ -1745,9 +1745,9 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `regression get` | `GET /api/v1/regression/{id}` |
 | `regression update` | `PATCH /api/v1/regression/{id}` |
 | `regression remove` | `DELETE /api/v1/regression/{id}` |
-| `logs list` | `GET /api/v1/log/` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
-| `logs count` | `GET /api/v1/log/count` |
-| `logs get` | `GET /api/v1/log/{id}` |
+| `log list` | `GET /api/v1/log/` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
+| `log count` | `GET /api/v1/log/count` |
+| `log get` | `GET /api/v1/log/{id}` |
 | `perf last` | `GET /api/v1/performance/last` |
 | `perf summary` | `GET /api/v1/performance/summary` |
 | `perf history` | `GET /api/v1/performance/history` (cursor-paginated: `items`/`next_cursor`/`has_more`) |

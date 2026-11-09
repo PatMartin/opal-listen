@@ -4,89 +4,89 @@ clear
 echo "Testing WAKEWORDS..."
 #opal --help
 #opal listen --help
-#opal listen wakewords --help
-#opal listen wakewords list
-#opal listen wakewords get --help
-#opal listen wakewords get computer
-#opal listen wakewords add --help
-#opal listen wakewords add nabu --threshold 0.7 --disabled
-#opal listen wakewords get nabu
-#opal listen wakewords update --help
-#opal listen wakewords update nabu --threshold 0.95 --enabled
-#opal listen wakewords get nabu
-#opal listen wakewords list
-#opal listen wakewords remove --help
-#opal listen wakewords remove nabu
-#opal listen wakewords list
+#opal listen wakeword --help
+#opal listen wakeword list
+#opal listen wakeword get --help
+#opal listen wakeword get computer
+#opal listen wakeword add --help
+#opal listen wakeword add nabu --threshold 0.7 --disabled
+#opal listen wakeword get nabu
+#opal listen wakeword update --help
+#opal listen wakeword update nabu --threshold 0.95 --enabled
+#opal listen wakeword get nabu
+#opal listen wakeword list
+#opal listen wakeword remove --help
+#opal listen wakeword remove nabu
+#opal listen wakeword list
 echo "Testing INTENTS..."
-#opal listen intents --help
-#opal listen intents list --help
-#opal listen intents list
-#opal listen intents get --help
-#opal listen intents get get_time
-#opal listen intents add --help
-opal listen intents add test_intent --phrase "Test intent one" --phrase "Test intent two" --description "This is a test intent"
-#opal listen intents list
-#opal listen intents update --help
-#opal listen intents update test_intent --description "Updated description"
-#opal listen intents list
-#opal listen intents remove --help
-#opal listen intents list
+#opal listen intent --help
+#opal listen intent list --help
+#opal listen intent list
+#opal listen intent get --help
+#opal listen intent get get_time
+#opal listen intent add --help
+opal listen intent add test_intent --phrase "Test intent one" --phrase "Test intent two" --description "This is a test intent"
+#opal listen intent list
+#opal listen intent update --help
+#opal listen intent update test_intent --description "Updated description"
+#opal listen intent list
+#opal listen intent remove --help
+#opal listen intent list
 
 echo "Testing INTENT PHRASES..."
-#opal listen intents phrases --help
-#opal listen intents phrases test_intent
-#opal listen intents remove-phrase --help
-#opal listen intents remove-phrase test_intent "Test intent one"
-#opal listen intents phrases test_intent
+#opal listen intent phrases --help
+#opal listen intent phrases test_intent
+#opal listen intent remove-phrase --help
+#opal listen intent remove-phrase test_intent "Test intent one"
+#opal listen intent phrases test_intent
 
 echo "Testing SLOTS..."
-#opal listen slots --help
-#opal listen slots list --help
-#opal listen slots list
-#opal listen slots get --help
-#opal listen slots get temperature
-#opal listen slots add --help
-#opal listen slots add test_slot --type number --value 25 --description "Test slot"
-#opal listen slots list
-#opal listen slots get test_slot
-#opal listen slots update --help
-#opal listen slots update test_slot --description "Updated test slot"
-#opal listen slots get test_slot
-#opal listen slots values --help
-#opal listen slots values room_name
-#opal listen slots add-value --help
-#opal listen slots values test_slot
-#opal listen slots add-value test_slot 42
-#opal listen slots values test_slot
-#opal listen slots remove-value --help
-#opal listen slots remove-value test_slot 42
-#opal listen slots values test_slot
-#opal listen slots aliases --help
-#opal listen slots aliases room_name living_room
-#opal listen slots add-alias --help
-#opal listen slots add-alias room_name living_room martin_hall
-#opal listen slots aliases room_name living_room
-#opal listen slots remove-alias --help
-#opal listen slots remove-alias room_name living_room martin_hall
-#opal listen slots aliases room_name living_room
+#opal listen slot --help
+#opal listen slot list --help
+#opal listen slot list
+#opal listen slot get --help
+#opal listen slot get temperature
+#opal listen slot add --help
+#opal listen slot add test_slot --type number --value 25 --description "Test slot"
+#opal listen slot list
+#opal listen slot get test_slot
+#opal listen slot update --help
+#opal listen slot update test_slot --description "Updated test slot"
+#opal listen slot get test_slot
+#opal listen slot values --help
+#opal listen slot values room_name
+#opal listen slot add-value --help
+#opal listen slot values test_slot
+#opal listen slot add-value test_slot 42
+#opal listen slot values test_slot
+#opal listen slot remove-value --help
+#opal listen slot remove-value test_slot 42
+#opal listen slot values test_slot
+#opal listen slot aliases --help
+#opal listen slot aliases room_name living_room
+#opal listen slot add-alias --help
+#opal listen slot add-alias room_name living_room martin_hall
+#opal listen slot aliases room_name living_room
+#opal listen slot remove-alias --help
+#opal listen slot remove-alias room_name living_room martin_hall
+#opal listen slot aliases room_name living_room
 
-#opal listen intents list
-opal listen intents remove test_intent
-#opal listen intents list
+#opal listen intent list
+opal listen intent remove test_intent
+#opal listen intent list
 
-#opal listen slots remove --help
-#opal listen slots list
-#opal listen slots remove test_slot
-#opal listen slots list
+#opal listen slot remove --help
+#opal listen slot list
+#opal listen slot remove test_slot
+#opal listen slot list
 
 echo "Testing PROFILES..."
-#opal listen profiles --help
-#opal listen profiles list --help
-#opal listen profiles list
-#opal listen profiles get --help
-#opal listen profiles get 4
-#opal listen profiles add --help
+#opal listen profile --help
+#opal listen profile list --help
+#opal listen profile list
+#opal listen profile get --help
+#opal listen profile get 4
+#opal listen profile add --help
 #opal listen --json profiles add test_profile \
 #  --description "Test Profile" \
 #  --wakeword nabu \
@@ -95,22 +95,22 @@ echo "Testing PROFILES..."
 #  --vad silence_end_ms=900 --vad max_utterance_ms=10000 --vad use_stt_endpoint=false \
 #  --intent cancel --intent set_temperature --intent get_time --intent cancel \#
 #  --slot temperature
-#opal listen profiles update test_profile --description "Updated Test Profile"
-#opal listen profiles activate test_profile
-#opal listen profiles remove --help
-#opal listen profiles list
-#opal listen profiles remove test_profile
-#opal listen profiles list
+#opal listen profile update test_profile --description "Updated Test Profile"
+#opal listen profile activate test_profile
+#opal listen profile remove --help
+#opal listen profile list
+#opal listen profile remove test_profile
+#opal listen profile list
 
 echo "Testing SETTINGS..."
-#opal listen settings --help
-#opal listen settings list
-#opal listen settings get --help
-#opal listen settings get whisper_model
-#opal listen settings set whisper_model medium.en
-#opal listen settings set whisper_model tiny.en
-#opal listen settings reset whisper_model
-#opal listen settings list
+#opal listen setting --help
+#opal listen setting list
+#opal listen setting get --help
+#opal listen setting get whisper_model
+#opal listen setting set whisper_model medium.en
+#opal listen setting set whisper_model tiny.en
+#opal listen setting reset whisper_model
+#opal listen setting list
 
 echo "Testing TEST..."
 #opal listen test --help
@@ -148,10 +148,10 @@ echo "Testing REGRESSION..."
 #opal listen regression remove --help
 
 echo "Testing LOGS..."
-#opal listen logs --help
-#opal listen logs list --help
-#opal listen logs get --help
-#opal listen logs count --help
+#opal listen log --help
+#opal listen log list --help
+#opal listen log get --help
+#opal listen log count --help
 
 echo "Testing PERF..."
 #opal listen perf --help

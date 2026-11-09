@@ -29,18 +29,18 @@ def command_paths() -> set[str]:
 
 
 REQUIRED_COMMANDS = {
-    "wakewords list", "wakewords add", "wakewords remove",
-    "intents list", "intents add", "intents remove", "intents add-phrase",
-    "slots list", "slots add", "slots add-value", "slots add-alias",
-    "profiles list", "profiles add",
-    "settings list", "settings get", "settings set", "settings patch", "settings unset",
+    "wakeword list", "wakeword add", "wakeword remove",
+    "intent list", "intent add", "intent remove", "intent add-phrase",
+    "slot list", "slot add", "slot add-value", "slot add-alias",
+    "profile list", "profile add",
+    "setting list", "setting get", "setting set", "setting patch", "setting unset",
     "test text", "test audio", "test listen", "test listen-debug", "test regression",
     "failed list", "failed promote",
     "perf last", "perf summary",
     "config validate", "config backup", "config restore", "config export", "config import",
     "system doctor",
-    "reactions list", "reactions get", "reactions add", "reactions update", "reactions remove",
-    "reactions enable", "reactions disable", "reactions test", "reactions log", "reactions path",
+    "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
+    "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
 }  # fmt: skip
 
 
@@ -53,71 +53,71 @@ def test_every_rest_mapping_points_to_a_real_command() -> None:
 
 
 def test_wakewords_commands(cli: CliHarness) -> None:
-    assert cli("wakewords", "add", "Jarvis", "--threshold", "0.7").exit_code == 0
-    names = [w["name"] for w in cli.json("wakewords", "list")]
+    assert cli("wakeword", "add", "Jarvis", "--threshold", "0.7").exit_code == 0
+    names = [w["name"] for w in cli.json("wakeword", "list")]
     assert names == ["computer", "jarvis"]
-    assert cli.json("wakewords", "get", "jarvis")["confidence_threshold"] == 0.7
-    assert cli("wakewords", "update", "jarvis", "--disabled").exit_code == 0
-    assert cli.json("wakewords", "get", "jarvis")["enabled"] is False
-    assert cli("wakewords", "remove", "jarvis").exit_code == 0
-    assert "Wakewords" in cli("wakewords", "list").output
-    missing = cli("wakewords", "remove", "nobody")
+    assert cli.json("wakeword", "get", "jarvis")["confidence_threshold"] == 0.7
+    assert cli("wakeword", "update", "jarvis", "--disabled").exit_code == 0
+    assert cli.json("wakeword", "get", "jarvis")["enabled"] is False
+    assert cli("wakeword", "remove", "jarvis").exit_code == 0
+    assert "Wakewords" in cli("wakeword", "list").output
+    missing = cli("wakeword", "remove", "nobody")
     assert missing.exit_code == 1 and "not found" in missing.output
 
 
 def test_intents_commands(cli: CliHarness) -> None:
-    result = cli("intents", "add", "music_play", "--phrase", "play music", "--description", "Music")
+    result = cli("intent", "add", "music_play", "--phrase", "play music", "--description", "Music")
     assert result.exit_code == 0, result.output
-    assert cli("intents", "add-phrase", "music_play", "play (some | the) music").exit_code == 0
-    assert len(cli.json("intents", "phrases", "music_play")) == 2
-    assert cli.json("intents", "get", "music_play")["description"] == "Music"
-    assert cli("intents", "remove-phrase", "music_play", "play music").exit_code == 0
-    assert cli("intents", "update", "music_play", "--threshold", "0.9").exit_code == 0
-    bad = cli("intents", "add-phrase", "music_play", "play {ghost}")
+    assert cli("intent", "add-phrase", "music_play", "play (some | the) music").exit_code == 0
+    assert len(cli.json("intent", "phrases", "music_play")) == 2
+    assert cli.json("intent", "get", "music_play")["description"] == "Music"
+    assert cli("intent", "remove-phrase", "music_play", "play music").exit_code == 0
+    assert cli("intent", "update", "music_play", "--threshold", "0.9").exit_code == 0
+    bad = cli("intent", "add-phrase", "music_play", "play {ghost}")
     assert bad.exit_code == 1 and "unknown slot" in bad.output
-    assert cli("intents", "remove", "music_play").exit_code == 0
-    assert "light_turn_on" in cli("intents", "list").output
-    assert cli("intents", "update", "get_time").exit_code == 1  # nothing to update
+    assert cli("intent", "remove", "music_play").exit_code == 0
+    assert "light_turn_on" in cli("intent", "list").output
+    assert cli("intent", "update", "get_time").exit_code == 1  # nothing to update
 
 
 def test_slots_commands(cli: CliHarness) -> None:
-    assert cli("slots", "add", "color", "--value", "red").exit_code == 0
-    assert cli("slots", "add-value", "color", "blue", "--alias", "navy").exit_code == 0
-    assert cli("slots", "add-alias", "color", "red", "crimson").exit_code == 0
-    values = cli.json("slots", "values", "color")
+    assert cli("slot", "add", "color", "--value", "red").exit_code == 0
+    assert cli("slot", "add-value", "color", "blue", "--alias", "navy").exit_code == 0
+    assert cli("slot", "add-alias", "color", "red", "crimson").exit_code == 0
+    values = cli.json("slot", "values", "color")
     assert [v["value"] for v in values] == ["red", "blue"]
-    assert [a["alias"] for a in cli.json("slots", "aliases", "color", "red")] == ["crimson"]
-    assert cli.json("slots", "get", "color")["values"][1]["aliases"][0]["alias"] == "navy"
-    assert cli("slots", "remove-alias", "color", "red", "crimson").exit_code == 0
-    assert cli("slots", "remove-value", "color", "blue").exit_code == 0
-    assert cli("slots", "update", "color", "--description", "Colours").exit_code == 0
-    assert "room_name" in cli("slots", "list").output
-    assert cli("slots", "remove", "color").exit_code == 0
-    in_use = cli("slots", "remove", "room_name")
+    assert [a["alias"] for a in cli.json("slot", "aliases", "color", "red")] == ["crimson"]
+    assert cli.json("slot", "get", "color")["values"][1]["aliases"][0]["alias"] == "navy"
+    assert cli("slot", "remove-alias", "color", "red", "crimson").exit_code == 0
+    assert cli("slot", "remove-value", "color", "blue").exit_code == 0
+    assert cli("slot", "update", "color", "--description", "Colours").exit_code == 0
+    assert "room_name" in cli("slot", "list").output
+    assert cli("slot", "remove", "color").exit_code == 0
+    in_use = cli("slot", "remove", "room_name")
     assert in_use.exit_code == 1
 
 
 def test_profiles_and_settings_commands(cli: CliHarness) -> None:
     result = cli(
-        "profiles", "add", "night", "--threshold", "intent=0.9", "--vad", "silence_end_ms=900",
+        "profile", "add", "night", "--threshold", "intent=0.9", "--vad", "silence_end_ms=900",
         "--intent", "get_time", "--wakeword", "computer",
     )  # fmt: skip
     assert result.exit_code == 0, result.output
-    profile = cli.json("profiles", "get", "night")
+    profile = cli.json("profile", "get", "night")
     assert profile["confidence_thresholds"] == {"intent": 0.9}
     assert profile["vad_settings"] == {"silence_end_ms": 900}
-    assert cli("profiles", "activate", "night").exit_code == 0
-    assert [p["name"] for p in cli.json("profiles", "list") if p["is_active"]] == ["night"]
-    assert cli("profiles", "update", "night", "--model", "vosk_model=/nope").exit_code == 1
-    assert cli("profiles", "activate", "default").exit_code == 0
-    assert cli("profiles", "remove", "night").exit_code == 0
-    assert "noisy_room" in cli("profiles", "list").output
+    assert cli("profile", "activate", "night").exit_code == 0
+    assert [p["name"] for p in cli.json("profile", "list") if p["is_active"]] == ["night"]
+    assert cli("profile", "update", "night", "--model", "vosk_model=/nope").exit_code == 1
+    assert cli("profile", "activate", "default").exit_code == 0
+    assert cli("profile", "remove", "night").exit_code == 0
+    assert "noisy_room" in cli("profile", "list").output
 
-    assert cli("settings", "set", "cooldown_ms", "900").exit_code == 0
-    assert cli.json("settings", "list")["cooldown_ms"] == "900"
-    assert cli("settings", "set", "cooldown_ms", "abc").exit_code == 1
-    assert cli("settings", "set", "cooldown_ms", "1500").exit_code == 0
-    assert cli.json("settings", "list")["cooldown_ms"] == "1500"
+    assert cli("setting", "set", "cooldown_ms", "900").exit_code == 0
+    assert cli.json("setting", "list")["cooldown_ms"] == "900"
+    assert cli("setting", "set", "cooldown_ms", "abc").exit_code == 1
+    assert cli("setting", "set", "cooldown_ms", "1500").exit_code == 0
+    assert cli.json("setting", "list")["cooldown_ms"] == "1500"
 
 
 def test_test_text_command(cli: CliHarness) -> None:
@@ -204,12 +204,12 @@ def test_logs_and_perf_commands(cli: CliHarness) -> None:
     assert "no recognitions yet" in cli("perf", "last").output
     cli("test", "text", "what time is it")
     cli("test", "text", "open the door")
-    assert cli.json("logs", "count") == {"total": 2, "matched": 1, "no_match": 1}
-    page = cli.json("logs", "list", "--no-match")
+    assert cli.json("log", "count") == {"total": 2, "matched": 1, "no_match": 1}
+    page = cli.json("log", "list", "--no-match")
     assert set(page) == {"items", "next_cursor", "has_more"}  # --json mirrors the REST page envelope
     logs = page["items"]
     assert logs[0]["normalized_transcript"] == "open the door"
-    assert cli.json("logs", "get", str(logs[0]["id"]))["matched"] is False
+    assert cli.json("log", "get", str(logs[0]["id"]))["matched"] is False
     assert cli.json("perf", "last")["matched"] is False
     assert cli.json("perf", "summary")["count"] == 2
     assert "Latency" in cli("perf", "summary").output
@@ -221,13 +221,13 @@ def test_json_pagination_lets_scripts_walk_every_page(cli: CliHarness) -> None:
     for i in range(5):
         cli("test", "text", f"what time is it {i}")
     seen: list[int] = []
-    args = ["logs", "list", "--limit", "2"]
+    args = ["log", "list", "--limit", "2"]
     while True:
         page = cli.json(*args)
         seen += [row["id"] for row in page["items"]]
         if not page["has_more"]:
             break
-        args = ["logs", "list", "--limit", "2", "--cursor", page["next_cursor"]]
+        args = ["log", "list", "--limit", "2", "--cursor", page["next_cursor"]]
     assert len(seen) == 5 and len(set(seen)) == 5
     history = cli.json("perf", "history", "--limit", "2")
     assert history["has_more"] is True and history["next_cursor"]
@@ -236,8 +236,8 @@ def test_json_pagination_lets_scripts_walk_every_page(cli: CliHarness) -> None:
 def test_cursor_hint_is_one_unwrapped_line(cli: CliHarness) -> None:
     for i in range(3):
         cli("test", "text", f"what time is it {i}")
-    page = cli.json("logs", "list", "--limit", "1")
-    out = cli("logs", "list", "--limit", "1").output
+    page = cli.json("log", "list", "--limit", "1")
+    out = cli("log", "list", "--limit", "1").output
     assert page["next_cursor"] in out.splitlines()  # whole token on its own line -> copy-pasteable
 
 
@@ -253,9 +253,9 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
 
     (out_dir / "wakewords.yaml").write_text("version: 1\nwakewords:\n  - name: jarvis\n")
     assert cli("config", "import", "--from-dir", str(out_dir), "--yes").exit_code == 0
-    assert [w["name"] for w in cli.json("wakewords", "list")] == ["jarvis"]
+    assert [w["name"] for w in cli.json("wakeword", "list")] == ["jarvis"]
     assert cli("config", "import", "--yes").exit_code == 0  # server config dir
-    assert [w["name"] for w in cli.json("wakewords", "list")] == ["computer"]
+    assert [w["name"] for w in cli.json("wakeword", "list")] == ["computer"]
     assert cli("config", "import", "--from-dir", str(out_dir), input="n\n").exit_code == 1  # aborted
 
     (out_dir / "intents.yaml").write_text("intents: [{name: x, phrases: ['{ghost}']}]")
@@ -266,9 +266,9 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
     assert backup in [b["filename"] for b in cli.json("config", "backups")]
     assert cli("config", "download", backup, "--out", str(tmp_path)).exit_code == 0
     assert (tmp_path / backup).read_bytes()[:6] == b"SQLite"
-    cli("wakewords", "add", "friday")
+    cli("wakeword", "add", "friday")
     assert cli("config", "restore", backup, "--yes").exit_code == 0
-    assert [w["name"] for w in cli.json("wakewords", "list")] == ["computer"]
+    assert [w["name"] for w in cli.json("wakeword", "list")] == ["computer"]
     assert cli("config", "delete-backup", backup, "--yes").exit_code == 0
 
 
@@ -369,7 +369,7 @@ def test_listen_tree_renders_live_command_tree(cli: CliHarness) -> None:
     out = result.output
     assert out.splitlines()[0].startswith("opal listen")
     # groups and leaf commands are present with ASCII branches
-    assert "+-- wakewords" in out and "+-- list" in out and "`-- " in out
+    assert "+-- wakeword" in out and "+-- list" in out and "`-- " in out
     # notation: required options bare, optional bracketed, positionals bare names
     assert "promote fu_id --intent" in out
     assert "add name [--threshold]" in out
@@ -403,7 +403,7 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
         return original(method, url, **kw)
 
     monkeypatch.setattr(client, "request", spy)
-    result = cli("settings", "patch", "cooldown_ms=2500", "filler_words=um")
+    result = cli("setting", "patch", "cooldown_ms=2500", "filler_words=um")
     assert result.exit_code == 0, result.output
     patches = [c for c in calls if c[0] == "PATCH"]
     assert len(patches) == 1
@@ -414,10 +414,10 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
     # the collection ETag was fetched first
     etag_gets = [c for c in calls[: calls.index(patches[0])] if c[0] == "GET" and c[1].endswith("/api/v1/setting/")]
     assert etag_gets, "expected a GET /api/v1/setting/ ETag probe before the PATCH"
-    assert cli.json("settings", "get", "cooldown_ms")["value"] == 2500
+    assert cli.json("setting", "get", "cooldown_ms")["value"] == 2500
     # atomicity: one invalid key means none are applied
-    assert cli("settings", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
-    assert cli.json("settings", "get", "cooldown_ms")["value"] == 2500
+    assert cli("setting", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
+    assert cli.json("setting", "get", "cooldown_ms")["value"] == 2500
 
 
 def test_logs_count_sends_contract_params(cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -430,7 +430,7 @@ def test_logs_count_sends_contract_params(cli: CliHarness, client: TestClient, m
         return original(method, url, **kw)
 
     monkeypatch.setattr(client, "request", spy)
-    result = cli("logs", "count")
+    result = cli("log", "count")
     assert result.exit_code == 0, result.output
     gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/log/count")]
     assert gets and not gets[0][2].get("params")

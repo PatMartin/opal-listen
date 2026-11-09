@@ -233,7 +233,7 @@ def run_action(
 ) -> dict[str, Any]:
     """Run one command action with the payload as JSON on stdin and journal the outcome.
 
-    Shared by the service worker (origin="service") and `opal listen reactions test
+    Shared by the service worker (origin="service") and `opal listen reaction test
     --execute` (origin="cli"), so both paths execute identically and land in the
     same journal; `origin` tells them apart."""
     started = time.monotonic()

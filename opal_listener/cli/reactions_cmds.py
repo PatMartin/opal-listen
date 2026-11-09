@@ -1,4 +1,4 @@
-"""opal listen reactions — manage file-provisioned intent reactions.
+"""opal listen reaction — manage file-provisioned intent reactions.
 
 These commands edit <config_dir>/reactions.yaml directly on the local filesystem —
 deliberately NOT through the REST API: an API-mutable shell command would be a remote-
@@ -39,9 +39,9 @@ reactions_app = typer.Typer(
 )
 
 _FILE_HEADER = """\
-# Managed by `opal listen reactions` — edits are safe but comments are not preserved.
+# Managed by `opal listen reaction` — edits are safe but comments are not preserved.
 # Reactions fire only on live-mic matches while `reactions_enabled` is true:
-#   opal listen settings set reactions_enabled true
+#   opal listen setting set reactions_enabled true
 # Schema: docs/USER_GUIDE.md section 4.5 (intent reactions).
 """
 
@@ -92,7 +92,7 @@ def _find(reactions: list[dict[str, Any]], name: str) -> dict[str, Any]:
     for r in reactions:
         if r.get("name") == name:
             return r
-    raise CliError(f"no reaction named '{name}' (see: reactions list)")
+    raise CliError(f"no reaction named '{name}' (see: reaction list)")
 
 
 def _parse_cond(raw: str) -> dict[str, Any]:

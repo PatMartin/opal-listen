@@ -102,19 +102,19 @@ Expected result:
 }
 ```
 
-Add `--json` before the group for raw API output, e.g. `opal listen --json intents list`.
+Add `--json` before the group for raw API output, e.g. `opal listen --json intent list`.
 
 ## 7. Teach it something new
 
 ```bash
 # New intent with a slot
-opal listen slots add color --value red --value blue
-opal listen slots add-alias color red crimson
-opal listen intents add light_color --phrase "make the [kitchen] lights {color}"
+opal listen slot add color --value red --value blue
+opal listen slot add-alias color red crimson
+opal listen intent add light_color --phrase "make the [kitchen] lights {color}"
 opal listen test text "make the lights crimson"          # -> slot_values: {"color": "red"}
 
 # Or add phrases to an existing intent
-opal listen intents add-phrase light_turn_on "illuminate the {room_name}"
+opal listen intent add-phrase light_turn_on "illuminate the {room_name}"
 ```
 
 Phrase syntax: `{slot}` placeholder, `[optional words]`, `(alternative | choices)`.
@@ -127,8 +127,8 @@ opal listen failed list                                  # no_match utterances c
 opal listen failed promote 3 --intent light_turn_on      # adds a phrase + regression test
 opal listen test regression                              # exit code 1 if anything broke
 opal listen perf summary                                 # latency, confidence, match rate
-opal listen profiles activate noisy_room                 # switch thresholds/VAD for the environment
-opal listen settings set cooldown_ms 1000
+opal listen profile activate noisy_room                 # switch thresholds/VAD for the environment
+opal listen setting set cooldown_ms 1000
 ```
 
 ## 9. Back up and move configuration
@@ -168,9 +168,9 @@ python scripts/cli_rest_test.py      # every REST operation through the real CLI
 |---|---|
 | `cannot reach the opal listener API` | Start the server, or set `OPAL_LISTEN_API_URL` / `--api-url` |
 | `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH` (or a profile's `model_paths.vosk_model`) at a directory containing `am/` and `conf/` |
-| Wakeword never triggers | Run `test listen-debug`; if levels stay near -90 dBFS pick another device with `opal listen system devices` and `opal listen settings set audio_device <index or name>` |
-| Triggers on similar words | Add them to `opal listen settings set wakeword_distractors "commuter,compute,..."` or raise the wakeword threshold |
-| Command cut off or ends too late | Tune the active profile's `vad_settings`, e.g. `opal listen profiles update default --vad silence_end_ms=900` |
+| Wakeword never triggers | Run `test listen-debug`; if levels stay near -90 dBFS pick another device with `opal listen system devices` and `opal listen setting set audio_device <index or name>` |
+| Triggers on similar words | Add them to `opal listen setting set wakeword_distractors "commuter,compute,..."` or raise the wakeword threshold |
+| Command cut off or ends too late | Tune the active profile's `vad_settings`, e.g. `opal listen profile update default --vad silence_end_ms=900` |
 | `vocabulary` warning in doctor | A phrase or alias uses a word the model does not know; rephrase it or use a larger model |
 
 More detail: [design.md](design.md) and [implementation_plan.md](implementation_plan.md).

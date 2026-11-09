@@ -1,4 +1,4 @@
-"""opal listen failed|regression|logs|perf"""
+"""opal listen failed|regression|log|perf"""
 
 from __future__ import annotations
 

@@ -190,7 +190,7 @@ opal
     │  --json                        raw JSON output
     │  --timeout SECONDS             HTTP timeout, default 60
     │
-    ├── wakewords
+    ├── wakeword
     │   ├── list
     │   ├── get WAKEWORD
     │   ├── add NAME                 [--threshold FLOAT] [--enabled/--disabled]
@@ -198,7 +198,7 @@ opal
     │   │                            [--enabled/--disabled]
     │   └── remove WAKEWORD
     │
-    ├── intents
+    ├── intent
     │   ├── list
     │   ├── get INTENT
     │   ├── add NAME                 [--description TEXT] [--threshold FLOAT]
@@ -210,7 +210,7 @@ opal
     │   ├── add-phrase INTENT PHRASE
     │   └── remove-phrase INTENT PHRASE_OR_ID
     │
-    ├── slots
+    ├── slot
     │   ├── list
     │   ├── get SLOT
     │   ├── add NAME                 [--type list|number|text]
@@ -225,7 +225,7 @@ opal
     │   ├── add-alias SLOT VALUE ALIAS
     │   └── remove-alias SLOT VALUE ALIAS
     │
-    ├── profiles
+    ├── profile
     │   ├── list
     │   ├── get PROFILE
     │   ├── add NAME                 [--description TEXT] [--activate]
@@ -239,7 +239,7 @@ opal
     │   ├── activate PROFILE
     │   └── remove PROFILE
     │
-    ├── settings
+    ├── setting
     │   ├── list
     │   └── set KEY VALUE
     │
@@ -281,7 +281,7 @@ opal
     │   │                            [--enabled/--disabled]
     │   └── remove ID
     │
-    ├── logs
+    ├── log
     │   ├── list                     [--limit N] [--cursor TOKEN] [--intent NAME]
     │   │                            [--matched/--no-match]
     │   ├── get ID
@@ -314,9 +314,9 @@ opal
         └── publish TOPIC MESSAGE     (direct ZeroMQ PUB; not REST)
 ~~~
 
-Try `opal listen --help`, `opal listen intents --help`, or `opal listen profiles update --help` for Typer's option details and shell completion.
+Try `opal listen --help`, `opal listen intent --help`, or `opal listen profile update --help` for Typer's option details and shell completion.
 
-**Global flags go right after `listen`:** `opal listen --json intents list` is correct; `opal listen intents list --json` is not.
+**Global flags go right after `listen`:** `opal listen --json intent list` is correct; `opal listen intent list --json` is not.
 
 ## In-depth CLI guide: make the microphone earn its keep
 
@@ -339,18 +339,18 @@ Most commands talk to the REST server; **`opal listen event publish` is the exce
 Begin with wakewords. The built-in `computer` wakeword is enabled after the first seed.
 
 ~~~bash
-opal listen wakewords list
-opal listen wakewords get computer
+opal listen wakeword list
+opal listen wakeword get computer
 
 # Add another, but don't enable it until you're ready.
-opal listen wakewords add "hey opal" --threshold 0.85 --disabled
+opal listen wakeword add "hey opal" --threshold 0.85 --disabled
 
 # Test/tune a wakeword when you choose to enable it.
-opal listen wakewords update "hey opal" --enabled --threshold 0.9
+opal listen wakeword update "hey opal" --enabled --threshold 0.9
 
 # See or adjust the sound-alike words that should NOT wake you.
-opal listen settings list
-opal listen settings set wakeword_distractors "commuter,compute,computing,commute"
+opal listen setting list
+opal listen setting set wakeword_distractors "commuter,compute,computing,commute"
 ~~~
 
 **Why it matters:** The Vosk wakeword path uses a fast candidate detector and confirmation stage with distractor words. `test listen-debug` displays candidates, confirmations, rejections, and sound levels. A higher threshold can lower false triggers at the cost of missed commands.
@@ -366,9 +366,9 @@ The live pipeline is **wakeword gated**. `test text` is an intentional diagnosti
 The seed catalogs already understand rooms, light switching, temperature, timers, and cancellation. Try them before writing any code:
 
 ~~~bash
-opal listen intents list
-opal listen intents get light_turn_on
-opal listen slots get room_name
+opal listen intent list
+opal listen intent get light_turn_on
+opal listen slot get room_name
 
 opal listen test text "computer, turn on the kitchen light" --expect-intent light_turn_on
 opal listen test text "computer, switch off the lounge lights" --expect-intent light_turn_off
@@ -387,15 +387,15 @@ Let's add a new `color` slot and a new `light_color` intent, then verify that it
 
 ~~~bash
 # The canonical color might be "warm_white", but users may say "cozy".
-opal listen slots add color \
+opal listen slot add color \
   --description "Colors understood by the light controller" \
   --value red --value blue --value warm_white
 
-opal listen slots add-alias color warm_white cozy
-opal listen slots values color
+opal listen slot add-alias color warm_white cozy
+opal listen slot values color
 
 # Reuse the built-in room_name slot.
-opal listen intents add light_color \
+opal listen intent add light_color \
   --description "Set the color of a room's lights" \
   --phrase "make [the] {room_name} (light | lights) {color}" \
   --phrase "set [the] {room_name} (light | lights) to {color}"
@@ -434,10 +434,10 @@ The doctor checks that the loaded speech model knows the new vocabulary. **A tex
 All referenced slots must already exist; invalid/ambiguous syntax is rejected. Keep templates focused—one template expands to at most 128 variants. Add new ways of saying something without creating a new intent every time:
 
 ~~~bash
-opal listen intents add-phrase light_turn_on \
+opal listen intent add-phrase light_turn_on \
   "illuminate [the] {room_name} (light | lights)"
 
-opal listen intents phrases light_turn_on
+opal listen intent phrases light_turn_on
 ~~~
 
 ### Use case 4: Make "the lounge" and "the living room" mean the same place
@@ -445,33 +445,33 @@ opal listen intents phrases light_turn_on
 Aliases turn messy human phrasing into clean machine values.
 
 ~~~bash
-opal listen slots values room_name
-opal listen slots aliases room_name living_room
+opal listen slot values room_name
+opal listen slot aliases room_name living_room
 
 # Add another name for the same physical room.
-opal listen slots add-alias room_name living_room "great room"
+opal listen slot add-alias room_name living_room "great room"
 
 opal listen test text "computer, turn on the great room light" \
   --expect-intent light_turn_on
 
 # Remove it if it causes collisions:
-opal listen slots remove-alias room_name living_room "great room"
+opal listen slot remove-alias room_name living_room "great room"
 ~~~
 
 Other slot types:
 
 ~~~bash
 # Numeric quantities: "twenty one" -> 21
-opal listen slots get temperature
+opal listen slot get temperature
 
 # A fresh numeric slot:
-opal listen slots add brightness_percent \
+opal listen slot add brightness_percent \
   --type number --description "Brightness percentage"
 
 # Text slots are for open recognition, not the bounded grammar mode.
-opal listen settings set stt_mode open
+opal listen setting set stt_mode open
 # Restore grammar-focused recognition after exploring:
-opal listen settings set stt_mode grammar
+opal listen setting set stt_mode grammar
 ~~~
 
 **Tip:** List slots constrain words to known values; numeric slots parse numbers; text slots require `stt_mode=open`. Changing modes can affect accuracy and vocabulary behavior—compare audio tests and run regressions afterwards.
@@ -481,25 +481,25 @@ opal listen settings set stt_mode grammar
 A kitchen and a car aren't acoustically the same. Profiles let you select the right thresholds and VAD timing without changing every intent.
 
 ~~~bash
-opal listen profiles list
-opal listen profiles get noisy_room
-opal listen profiles get car
+opal listen profile list
+opal listen profile get noisy_room
+opal listen profile get car
 
 # Monitor room noise first.
 opal listen test listen-debug --duration 20
 
 # Try the built-in TV/music profile.
-opal listen profiles activate noisy_room
+opal listen profile activate noisy_room
 opal listen test listen-debug --duration 30
 
 # Go back when you leave the noisy environment.
-opal listen profiles activate default
+opal listen profile activate default
 ~~~
 
 You can build a new profile, too:
 
 ~~~bash
-opal listen profiles add workshop \
+opal listen profile add workshop \
   --description "Workshop with fans running" \
   --wakeword computer \
   --threshold wakeword=0.9 \
@@ -508,17 +508,17 @@ opal listen profiles add workshop \
   --vad noise_margin_db=12 \
   --vad silence_end_ms=900
 
-opal listen profiles activate workshop
-opal listen profiles get workshop
+opal listen profile activate workshop
+opal listen profile get workshop
 
 # Return to ordinary listening, then remove the experiment.
-opal listen profiles activate default
-opal listen profiles remove workshop
+opal listen profile activate default
+opal listen profile remove workshop
 ~~~
 
 A profile can also select named intents/slots using repeatable `--intent` and `--slot` flags or override the model path with `--model vosk_model=/path/to/model`.
 
-**Watch out:** On profile **update**, provided lists/maps (`--wakeword`, `--intent`, `--slot`, `--threshold`, `--vad`, `--model`) **replace** the corresponding stored collection; they do not merge. Omitted collections remain unchanged. Check `profiles get` before a complicated update.
+**Watch out:** On profile **update**, provided lists/maps (`--wakeword`, `--intent`, `--slot`, `--threshold`, `--vad`, `--model`) **replace** the corresponding stored collection; they do not merge. Omitted collections remain unchanged. Check `profile get` before a complicated update.
 
 Useful VAD settings include `energy_threshold_dbfs` (minimum speech energy), `noise_margin_db` (how far above noise), `silence_end_ms` (how long silence ends a command), and `max_utterance_ms` (maximum command length). If your sentence is being chopped off, try increasing `silence_end_ms`; if it waits forever, consider decreasing it.
 
@@ -528,10 +528,10 @@ When recognition fails, it's easy to blame the AI. Usually the first question is
 
 ~~~bash
 opal listen system devices
-opal listen settings list
+opal listen setting list
 
 # Select an input device by index or a substring of its name.
-opal listen settings set audio_device "USB"
+opal listen setting set audio_device "USB"
 
 opal listen pipeline status
 opal listen pipeline start
@@ -562,7 +562,7 @@ opal listen test listen --no-start  # watch an already-running pipeline
 Want the service to start listening on every boot?
 
 ~~~bash
-opal listen settings set auto_start_listener true
+opal listen setting set auto_start_listener true
 opal listen pipeline status
 ~~~
 
@@ -600,8 +600,8 @@ opal listen test audio ./my-command.wav \
 Real humans say things you didn't anticipate. Instead of guessing which phrases to add, **look at what failed**.
 
 ~~~bash
-opal listen logs count
-opal listen logs list --no-match --limit 20
+opal listen log count
+opal listen log list --no-match --limit 20
 opal listen failed list --unreviewed
 opal listen failed list --not-promoted --limit 20
 
@@ -615,7 +615,7 @@ If failure `3` is genuinely another way to ask for lights on:
 # Promotes its transcript to a phrase; creates a regression case by default.
 opal listen failed promote 3 --intent light_turn_on
 
-opal listen intents phrases light_turn_on
+opal listen intent phrases light_turn_on
 opal listen test regression
 ~~~
 
@@ -672,8 +672,8 @@ opal listen perf summary
 opal listen perf summary --limit 500
 opal listen perf history --limit 30
 
-opal listen logs count
-opal listen logs list --intent light_turn_on --limit 20
+opal listen log count
+opal listen log list --intent light_turn_on --limit 20
 ~~~
 
 The performance summary includes match rate, average confidence, and stage timing (wakeword, STT, intent, total) with averages and percentiles. If the end-to-end experience is slow, identify the slow stage before adjusting settings.
@@ -682,16 +682,16 @@ Want to experiment with an optional second-pass STT model?
 
 ~~~bash
 # Requires having installed pip install -e ".[dev,whisper]".
-opal listen settings set stt_refiner faster_whisper
-opal listen settings set whisper_model tiny.en
-opal listen settings set whisper_compute_type int8
+opal listen setting set stt_refiner faster_whisper
+opal listen setting set whisper_model tiny.en
+opal listen setting set whisper_compute_type int8
 
 # Compare your saved audio examples and performance.
 opal listen perf summary
 opal listen test regression
 
 # Go back to the default Vosk-only path:
-opal listen settings set stt_refiner none
+opal listen setting set stt_refiner none
 ~~~
 
 The optional refiner runs **after** the first recognition pass; it is not the default wakeword detector. Model loading and inference consume resources, so benchmark it on the actual machine.
@@ -736,7 +736,7 @@ opal-listen-svc
 In another shell, enable external publication:
 
 ~~~bash
-opal listen settings set event_publication_enabled true
+opal listen setting set event_publication_enabled true
 opal listen pipeline start
 opal listen test listen-debug --no-start
 ~~~
@@ -815,14 +815,14 @@ The import requires confirmation and makes a safety backup. It **replaces** the 
 | "Why didn't that wake me?" | `opal listen test listen-debug` |
 | "Understand this sentence?" | `opal listen test text "..."` |
 | "Re-run recorded speech?" | `opal listen test audio recording.wav --require-wakeword` |
-| "What can I say?" | `opal listen intents list` |
-| "What did it hear?" | `opal listen logs list` |
+| "What can I say?" | `opal listen intent list` |
+| "What did it hear?" | `opal listen log list` |
 | "What failed?" | `opal listen failed list --unreviewed` |
 | "Train on a useful mistake?" | `opal listen failed promote ID --intent NAME` |
 | "Did I break anything?" | `opal listen test regression` |
 | "How fast?" | `opal listen perf summary` |
-| "Change one setting?" | `opal listen settings set KEY VALUE` |
-| "Switch environments?" | `opal listen profiles activate noisy_room` |
+| "Change one setting?" | `opal listen setting set KEY VALUE` |
+| "Switch environments?" | `opal listen profile activate noisy_room` |
 | "Save what works?" | `opal listen config backup` |
 
 ## Architecture, API, and configuration
@@ -854,7 +854,7 @@ The browser console at `/ui/opal-listen.html` is bundled with the service, not a
 
 ### Environment and settings
 
-Process-level settings come from environment variables or a local `.env` file. Mutable recognition settings live in SQLite and can be changed with `opal listen settings set`. Exportable YAML catalogs seed the database on a fresh install and can be imported later.
+Process-level settings come from environment variables or a local `.env` file. Mutable recognition settings live in SQLite and can be changed with `opal listen setting set`. Exportable YAML catalogs seed the database on a fresh install and can be imported later.
 
 | Setting | Default / notes |
 | --- | --- |
@@ -871,7 +871,7 @@ Process-level settings come from environment variables or a local `.env` file. M
 | `stt_refiner` | `none` by default; optional `faster_whisper` |
 | `auto_start_listener` | false, so the microphone pipeline starts on demand |
 
-The CLI's `settings set` updates a **single key**, reading the current strong ETag and sending a conditional update through REST. This guards against overwriting a concurrent settings change. Some process-level changes require restarting the service.
+The CLI's `setting set` updates a **single key**, reading the current strong ETag and sending a conditional update through REST. This guards against overwriting a concurrent settings change. Some process-level changes require restarting the service.
 
 ### Runtime components
 
