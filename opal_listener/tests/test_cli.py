@@ -37,7 +37,8 @@ REQUIRED_COMMANDS = {
     "intent list", "intent add", "intent remove", "intent add-phrase",
     "slot list", "slot add", "slot add-value", "slot add-alias",
     "profile list", "profile add",
-    "setting list", "setting get", "setting set", "setting patch", "setting unset",
+    "config setting list", "config setting show", "config setting set", "config setting update",
+    "config setting remove", "setting get", "setting unset",
     "test text", "test audio", "test listen", "test listen-debug", "test regression",
     "recognition test",
     "failed list", "failed promote",
@@ -118,11 +119,11 @@ def test_profiles_and_settings_commands(cli: CliHarness) -> None:
     assert cli("profile", "remove", "night").exit_code == 0
     assert "noisy_room" in cli("profile", "list").output
 
-    assert cli("setting", "set", "cooldown_ms", "900").exit_code == 0
-    assert cli.json("setting", "list")["cooldown_ms"] == "900"
-    assert cli("setting", "set", "cooldown_ms", "abc").exit_code == 1
-    assert cli("setting", "set", "cooldown_ms", "1500").exit_code == 0
-    assert cli.json("setting", "list")["cooldown_ms"] == "1500"
+    assert cli("config", "setting", "set", "cooldown_ms", "900").exit_code == 0
+    assert cli.json("config", "setting", "list")["cooldown_ms"] == "900"
+    assert cli("config", "setting", "set", "cooldown_ms", "abc").exit_code == 1
+    assert cli("config", "setting", "set", "cooldown_ms", "1500").exit_code == 0
+    assert cli.json("config", "setting", "list")["cooldown_ms"] == "1500"
 
 
 def test_test_text_command(cli: CliHarness) -> None:
@@ -285,9 +286,9 @@ def test_service_commands(cli: CliHarness) -> None:
 
 
 def test_service_stop_and_log_without_server(cli: CliHarness, tmp_path: Path, monkeypatch) -> None:
-    """service stop/log are local commands: no managed server -> clean no-op output."""
+    """service stop/log are REST-first with a local fallback: no managed server -> clean no-op."""
     monkeypatch.chdir(tmp_path)
-    assert "no managed server" in cli("service", "stop").output
+    assert "stopped" in cli("service", "stop").output
     assert "no log file" in cli("service", "log").output
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
@@ -419,7 +420,7 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
         return original(method, url, **kw)
 
     monkeypatch.setattr(client, "request", spy)
-    result = cli("setting", "patch", "cooldown_ms=2500", "filler_words=um")
+    result = cli("config", "setting", "patch", "cooldown_ms=2500", "filler_words=um")
     assert result.exit_code == 0, result.output
     patches = [c for c in calls if c[0] == "PATCH"]
     assert len(patches) == 1
@@ -430,9 +431,9 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
     # the collection ETag was fetched first
     etag_gets = [c for c in calls[: calls.index(patches[0])] if c[0] == "GET" and c[1].endswith("/api/v1/setting/")]
     assert etag_gets, "expected a GET /api/v1/setting/ ETag probe before the PATCH"
-    assert cli.json("setting", "get", "cooldown_ms")["value"] == 2500
+    assert cli.json("config", "setting", "show", "cooldown_ms")["value"] == 2500
     # atomicity: one invalid key means none are applied
-    assert cli("setting", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
-    assert cli.json("setting", "get", "cooldown_ms")["value"] == 2500
+    assert cli("config", "setting", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
+    assert cli.json("config", "setting", "show", "cooldown_ms")["value"] == 2500
 
 

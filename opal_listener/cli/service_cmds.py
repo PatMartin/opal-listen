@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import contextlib
-import os
-import signal
-import subprocess
-import sys
-import time
 from pathlib import Path
+from typing import Any
 
+import httpx
 import typer
 
+from opal_listener.app_settings import get_app_settings
 from opal_listener.cli.client import CliError
 from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state
 from opal_listener.models.config_schemas import ConfigBundle
 from opal_listener.service.config_store import ConfigFileError, bundle_to_files, load_config_dir
+from opal_listener.service.errors import NotFoundError
+from opal_listener.service.lifecycle import ServiceProcessManager, stop_pid
 
 BACKUP = "/api/v1/backup"
 HEALTH = "/api/v1/health"
@@ -215,93 +214,51 @@ def service_ready(ctx: typer.Context) -> None:
 
 
 # --- server process lifecycle --------------------------------------------------------------------
+#
+# `service start|stop|log` are REST-first (the kernel service ops act on the managed server
+# process server-side); when the API is unreachable they fall back to the same local
+# ServiceProcessManager the endpoints use — that is what lets `service start` cold-boot a
+# server that isn't running yet.
 
 LOG_DIR = Path("logs")
-LOG_FILE = LOG_DIR / "opal_listen.log"
-PID_FILE = LOG_DIR / "opal_listen.pid"
 
 
-def _pid_alive(pid: int) -> bool:
-    if os.name == "nt":
-        # os.kill(pid, 0) is unreliable on Windows (OpenProcess(PROCESS_ALL_ACCESS) fails with
-        # WinError 87); query the exit code with limited rights instead.
-        import ctypes
-
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return False
-        try:
-            code = ctypes.c_ulong()
-            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-            return code.value == 259  # STILL_ACTIVE
-        finally:
-            ctypes.windll.kernel32.CloseHandle(handle)
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True  # alive but not ours to signal
-    return True
-
-
-def _stop_pid(pid: int) -> None:
-    """Stop the recorded pid (the server writes its own pid, so this is the uvicorn process
-    itself, not the python-launcher shim). taskkill /T also takes any children."""
-    if os.name == "nt":
-        with contextlib.suppress(OSError):
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
-        return
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        return
-    for _ in range(40):  # ~4s to exit cleanly
-        if not _pid_alive(pid):
-            return
-        time.sleep(0.1)
-    with contextlib.suppress(OSError):
-        os.kill(pid, signal.SIGKILL)
-
-
-def _stop_tracked() -> int | None:
-    """Stop the server recorded in the pidfile, if it is still alive. Returns its pid."""
-    if not PID_FILE.exists():
-        return None
-    try:
-        pid = int(PID_FILE.read_text().strip())
-    except ValueError:
-        PID_FILE.unlink(missing_ok=True)
-        return None
-    if _pid_alive(pid):
-        _stop_pid(pid)
-    PID_FILE.unlink(missing_ok=True)
-    return pid
+def _manager(host: str | None = None, port: int | None = None, data_dir: Path | None = None) -> ServiceProcessManager:
+    settings = get_app_settings()
+    updates = {k: v for k, v in (("host", host), ("port", port), ("data_dir", data_dir)) if v is not None}
+    return ServiceProcessManager(settings.model_copy(update=updates) if updates else settings, LOG_DIR)
 
 
 def launch_server(host: str, port: int, data_dir: Path | None, replace: bool = True) -> tuple[int, int | None]:
-    """Spawn `python -m opal_listener` detached, logging to LOG_FILE (truncated). The server writes
-    its real pid to PID_FILE (see OPAL_LISTENER_PID_FILE). Returns (launcher pid, replaced pid)."""
-    replaced = _stop_tracked() if replace else None
-    LOG_DIR.mkdir(exist_ok=True)
-    env = {**os.environ, "OPAL_LISTENER_HOST": host, "OPAL_LISTENER_PORT": str(port)}
-    if data_dir is not None:
-        env["OPAL_LISTENER_DATA_DIR"] = str(data_dir)
-    log = LOG_FILE.open("wb")  # truncated on every start
-    kwargs: dict[str, object] = (
-        {"start_new_session": True}
-        if os.name != "nt"
-        else {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS}
-    )
-    PID_FILE.unlink(missing_ok=True)
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "opal_listener"],
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        env={**env, "OPAL_LISTENER_PID_FILE": str(PID_FILE.resolve())},
-        **kwargs,
-    )
-    return proc.pid, replaced
+    """Spawn `python -m opal_listener` detached via the shared process manager. Returns
+    (launcher pid, replaced pid). Used by `gui`; `service start` prefers the REST op."""
+    manager = _manager(host, port, data_dir)
+    previous = manager.tracked_pid() if replace else None
+    if previous is not None:
+        stop_pid(previous)
+    manager.pid_file.unlink(missing_ok=True)
+    proc = manager.launch()
+    return proc.pid, previous
+
+
+def _rest(ctx: typer.Context, method: str, path: str, **kwargs: Any) -> dict | None:
+    """Call the REST op; returns the JSON body on 2xx, raises CliError on API errors, and returns
+    None when the API is unreachable (caller falls back to local process management)."""
+    try:
+        response = state(ctx).api.http.request(method, path, **kwargs)
+    except httpx.HTTPError:
+        return None
+    if response.status_code == 404:
+        raise NotFoundError(path)
+    if response.status_code >= 400:
+        raise CliError(f"HTTP {response.status_code}: {response.text}")
+    return response.json()
+
+
+def _status_line(status: dict[str, Any]) -> str:
+    pid = f"pid {status['pid']}" if status.get("pid") else "no pid"
+    prev = f" (replaced pid {status['previous_pid']})" if status.get("previous_pid") else ""
+    return f"server {status['state']} ({pid}){prev} — log: {status['log_file']}"
 
 
 @service_app.command("start")
@@ -310,32 +267,38 @@ def service_start(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port", min=1, max=65535),
     data_dir: Path | None = typer.Option(None, "--data-dir", help="OPAL_LISTENER_DATA_DIR for the server"),
+    append: bool = typer.Option(False, "--append", help="Append to the log file instead of truncating it"),
 ) -> None:
-    """Start the server in the background (replaces a running one), logging to logs/opal_listen.log."""
-    pid, replaced = launch_server(host, port, data_dir)
-    note = f" (replaced pid {replaced})" if replaced else ""
-    done(ctx, f"server started (pid {pid}){note} — log: {LOG_FILE}", {"pid": pid})
+    """Start the managed server (restarts one already running), logging to logs/opal_listen.log."""
+    status = _rest(ctx, "POST", "/api/v1/service/start", json={"append": append})
+    if status is None:
+        status, _ = _manager(host, port, data_dir).start(append=append)
+    done(ctx, _status_line(status), status)
 
 
 @service_app.command("stop")
 def service_stop(ctx: typer.Context) -> None:
-    """Stop the background server started by `service start`, if it is running."""
-    pid = _stop_tracked()
-    if pid is None:
-        done(ctx, "no managed server running")
-    else:
-        done(ctx, f"server stopped (pid {pid})", {"pid": pid})
+    """Stop the managed server started by `service start`, if it is running."""
+    status = _rest(ctx, "POST", "/api/v1/service/stop")
+    if status is None:
+        status, _ = _manager().stop()
+    done(ctx, _status_line(status), status)
 
 
 @service_app.command("log")
 def service_log(ctx: typer.Context, lines: int = typer.Option(10, "--lines", "-n", min=1)) -> None:
-    """Show the last lines of logs/opal_listen.log (default 10)."""
-    if not LOG_FILE.exists():
-        done(ctx, f"no log file at {LOG_FILE}")
+    """Show the last lines of the managed server's log (default 10)."""
+    try:
+        body = _rest(ctx, "GET", "/api/v1/service/log", params={"lines": lines})
+    except NotFoundError:
+        body = None
+    if body is None:
+        body = _manager().tail_log(lines)
+    if body is None:
+        done(ctx, f"no log file at {LOG_DIR / 'opal_listen.log'}")
         return
-    tail = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
     if state(ctx).json_output:
-        print_json(tail)
+        print_json(body["lines"])
     else:
-        for line in tail:
+        for line in body["lines"]:
             console.print(line)

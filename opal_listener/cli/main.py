@@ -11,6 +11,7 @@ import webbrowser
 
 import typer
 
+from opal_listener.cli import catalog_cmds
 from opal_listener.cli.catalog_cmds import (
     intents_app,
     personas_app,
@@ -66,11 +67,11 @@ OPERATION_COMMANDS: dict[str, str] = {
     "opal_persona_patch": "persona update",
     "opal_persona_delete": "persona remove",
     "opal_persona_validate": "persona validate",
-    "opal_setting_list": "setting list",
-    "opal_setting_patch": "setting patch",
-    "opal_setting_get": "setting get",
-    "opal_setting_put": "setting set",
-    "opal_setting_delete": "setting unset",
+    "opal_setting_list": "config setting list",
+    "opal_setting_patch": "config setting update",
+    "opal_setting_get": "config setting show",
+    "opal_setting_put": "config setting set",
+    "opal_setting_delete": "config setting remove",
     "test_text": "test text",
     "test_audio": "test audio",
     "start_pipeline": "pipeline start",
@@ -139,6 +140,9 @@ for sub_app, name in (
     (event_app, "event"),
 ):
     listen_app.add_typer(sub_app, name=name)
+
+# Canonical `config setting ...` group; flat `setting` keeps the declared get/unset aliases.
+config_app.add_typer(catalog_cmds.config_setting_app, name="setting")
 
 register_tree(listen_app)
 

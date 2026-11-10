@@ -491,34 +491,42 @@ def profiles_remove(ctx: typer.Context, profile: str = typer.Argument(..., help=
 
 # --- settings --------------------------------------------------------------------------------
 
+# Canonical tree per the contract's x-opal-cli bindings: `config setting list|show|set|update|remove`
+# (+ hidden `config setting patch` alias of update); the flat `setting` group keeps only the two
+# declared alias spellings `setting get` and `setting unset`.
+config_setting_app = typer.Typer(help="Service-wide key/value settings.", no_args_is_help=True)
 
-@settings_app.command("list")
-def settings_list(ctx: typer.Context) -> None:
+
+def _settings_list(ctx: typer.Context) -> None:
     """List all settings."""
     render_kv(ctx, state(ctx).api.get(SETTINGS), "Settings")
 
 
-@settings_app.command("get")
-def settings_get(ctx: typer.Context, key: str) -> None:
+def _settings_show(ctx: typer.Context, key: str) -> None:
     """Read one setting with its default metadata."""
     render_kv(ctx, state(ctx).api.get(f"{SETTINGS}{key}"), f"Setting '{key}'")
 
 
-@settings_app.command("set")
-def settings_set(ctx: typer.Context, key: str, value: str) -> None:
+def _settings_set(ctx: typer.Context, key: str, value: str) -> None:
     """Atomically set a setting (validated server-side; fetches the settings ETag automatically)."""
     read = state(ctx).api.put_with_etag(f"{SETTINGS}{key}", etag_path=SETTINGS, json={"value": value})
     done(ctx, f"{key} = {read['value']}", read)
 
 
-@settings_app.command("patch")
-def settings_patch(
+def _settings_update(
     ctx: typer.Context,
     pairs: list[str] = typer.Argument(..., help="Setting key=value pairs (values parsed as YAML scalars)"),
 ) -> None:
     """Atomically set several settings in one collection PATCH (all-or-nothing validation)."""
     updated = state(ctx).api.patch_with_etag(SETTINGS, json=parse_pairs(pairs))
     render_kv(ctx, updated, "Settings updated")
+
+
+config_setting_app.command("list")(_settings_list)
+config_setting_app.command("show")(_settings_show)
+config_setting_app.command("set")(_settings_set)
+config_setting_app.command("update")(_settings_update)
+config_setting_app.command("patch", hidden=True)(_settings_update)
 
 
 # --- personas --------------------------------------------------------------------------------
@@ -616,8 +624,14 @@ def personas_validate(ctx: typer.Context, persona: str = typer.Argument(..., hel
         raise CliError("validation failed")
 
 
-@settings_app.command("unset")
-def settings_unset(ctx: typer.Context, key: str) -> None:
+def _settings_remove(ctx: typer.Context, key: str) -> None:
     """Revert a setting to its default."""
     state(ctx).api.delete_with_etag(f"{SETTINGS}{key}", etag_path=SETTINGS)
     done(ctx, f"{key} reverted to default", {"key": key})
+
+
+config_setting_app.command("remove")(_settings_remove)
+
+# Declared flat aliases: `setting get` and `setting unset`.
+settings_app.command("get")(_settings_show)
+settings_app.command("unset")(_settings_remove)
