@@ -25,7 +25,7 @@ from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, logs_app, perf_app, regression_app
 from opal_listener.cli.service_cmds import config_app, service_app
-from opal_listener.cli.test_cmds import pipeline_app, test_app
+from opal_listener.cli.test_cmds import pipeline_app, recognition_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
 
 # REST operation (FastAPI function name) -> CLI command. Checked by the parity test.
@@ -129,6 +129,7 @@ for sub_app, name in (
     (settings_app, "setting"),
     (personas_app, "persona"),
     (test_app, "test"),
+    (recognition_app, "recognition"),
     (pipeline_app, "pipeline"),
     (failed_app, "failed"),
     (regression_app, "regression"),

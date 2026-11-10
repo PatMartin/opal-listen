@@ -17,6 +17,42 @@ test_app = typer.Typer(
     help="Test recognition with text, audio files, the microphone or regression tests.", no_args_is_help=True
 )
 pipeline_app = typer.Typer(help="Control the live microphone pipeline.", no_args_is_help=True)
+recognition_app = typer.Typer(
+    help="Run recognition tests and control live recognition.", no_args_is_help=True
+)
+
+
+@recognition_app.command("test")
+def recognition_test(
+    ctx: typer.Context,
+    text: str | None = typer.Option(None, "--text", help="Utterance text, e.g. 'computer, turn on the light'"),
+    audio: Path | None = typer.Option(
+        None, "--audio", exists=True, dir_okay=False, readable=True, help="16-bit PCM .wav file"
+    ),
+    save: bool = typer.Option(True, "--save/--no-save", help="Store in recognition logs"),
+    require_wakeword: bool = typer.Option(
+        False, "--require-wakeword", help="no_match unless a wakeword is heard (audio only)"
+    ),
+    expect_intent: str | None = typer.Option(None, "--expect-intent", help="Exit 1 if the intent differs"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show the full result"),
+) -> None:
+    """One recognition test: --text or --audio (exactly one). Same operations as
+    `test text`/`test audio`, which remain available."""
+    if (text is None) == (audio is None):
+        raise CliError("pass exactly one of --text or --audio")
+    if require_wakeword and audio is None:
+        raise CliError("--require-wakeword only applies to --audio")
+    if text is not None:
+        result = state(ctx).api.post(f"{RECOGNITION}/test_text", json={"text": text}, params={"save_log": save})
+    else:
+        with audio.open("rb") as fh:
+            result = state(ctx).api.post(
+                f"{RECOGNITION}/test_audio",
+                files={"file": (audio.name, fh, "audio/wav")},
+                params={"save_log": save, "require_wakeword": require_wakeword},
+            )
+    _show_result(ctx, result, verbose)
+    _check_expectation(result, expect_intent)
 
 
 def _show_result(ctx: typer.Context, result: dict[str, Any], verbose: bool) -> None:

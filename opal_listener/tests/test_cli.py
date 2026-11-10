@@ -39,6 +39,7 @@ REQUIRED_COMMANDS = {
     "profile list", "profile add",
     "setting list", "setting get", "setting set", "setting patch", "setting unset",
     "test text", "test audio", "test listen", "test listen-debug", "test regression",
+    "recognition test",
     "failed list", "failed promote",
     "service perf last", "service perf summary",
     "config validate", "config backup", "config restore", "config export", "config import",
@@ -139,6 +140,25 @@ def test_test_audio_command(cli: CliHarness) -> None:
     result = cli.json("test", "audio", wav, "--require-wakeword")
     assert result["intent_name"] == "light_turn_on" and result["wakeword"] == "computer"
     assert cli("test", "audio", wav, "--expect-intent", "light_turn_on").exit_code == 0
+
+
+def test_recognition_test_command(cli: CliHarness, tmp_path) -> None:
+    result = cli.json("recognition", "test", "--text", "computer, turn on the kitchen light")
+    assert result["intent_name"] == "light_turn_on" and result["slot_values"] == {"room_name": "kitchen"}
+    # exactly one of --text/--audio
+    assert cli("recognition", "test").exit_code != 0
+    wav = tmp_path / "clip.wav"
+    wav.write_bytes(b"RIFF" + bytes(40))
+    assert cli("recognition", "test", "--text", "x", "--audio", str(wav)).exit_code != 0
+    # --require-wakeword is audio-only
+    assert cli("recognition", "test", "--text", "x", "--require-wakeword").exit_code != 0
+
+
+@pytest.mark.vosk
+def test_recognition_test_audio(cli: CliHarness) -> None:
+    wav = str(FIXTURES_DIR / "golden_kitchen_light_on.wav")
+    result = cli.json("recognition", "test", "--audio", wav, "--require-wakeword")
+    assert result["intent_name"] == "light_turn_on" and result["wakeword"] == "computer"
 
 
 def test_test_listen_commands(cli: CliHarness, monkeypatch: pytest.MonkeyPatch) -> None:
