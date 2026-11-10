@@ -385,13 +385,52 @@ def test_listen_tree_renders_live_command_tree(cli: CliHarness) -> None:
     assert result.exit_code == 0, result.output
     out = result.output
     assert out.splitlines()[0].startswith("opal listen")
-    # groups and leaf commands are present with ASCII branches
-    assert "+-- wakeword" in out and "+-- list" in out and "`-- " in out
+    # groups and leaf commands are present with Unicode box-drawing guides
+    assert "├── wakeword" in out and "── list" in out and "└── " in out
+    # piped output carries no ANSI escapes; styles only appear on a terminal
+    assert "\x1b[" not in out
     # notation: required options bare, optional bracketed, positionals bare names
     assert "promote fu_id --intent" in out
     assert "add name [--threshold]" in out
+    # the tree's own --ascii flag shows as an optional parameter
+    assert "tree [--ascii]" in out
     # built-in help and shell-completion plumbing are skipped
     assert "--help" not in out and "--install-completion" not in out
+
+
+def test_listen_tree_styles_when_on_a_terminal(cli: CliHarness) -> None:
+    """render_tree produces a styled rich Tree: ANSI escapes only when the console is a terminal."""
+    import io
+    import re
+
+    from rich.console import Console
+    from typer.main import get_command
+
+    from opal_listener.cli.main import listen_app
+    from opal_listener.cli.tree_cmds import render_tree
+
+    def render(force_terminal: bool) -> str:
+        con = Console(file=io.StringIO(), force_terminal=force_terminal, width=120)
+        con.print(render_tree(get_command(listen_app), "opal listen"))
+        return con.file.getvalue()
+
+    styled, plain = render(True), render(False)
+    assert "\x1b[" in styled and "\x1b[" not in plain
+    # stripping ANSI leaves the same Unicode box-drawing tree either way
+    assert re.sub(r"\x1b\[[0-9;]*m", "", styled) == plain
+    assert "├── wakeword" in plain and "└── " in plain
+
+
+def test_listen_tree_ascii(cli: CliHarness) -> None:
+    result = cli("tree", "--ascii")
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert out.splitlines()[0].startswith("opal listen")
+    # ASCII guides only — no Unicode box-drawing, no ANSI escapes
+    assert "|-- wakeword" in out and "`-- " in out
+    assert "├──" not in out and "└──" not in out and "│" not in out and "\x1b[" not in out
+    out.encode("ascii")
+    assert "tree [--ascii]" in out and "promote fu_id --intent" in out
 
 
 def test_listen_tree_tracks_command_changes(cli: CliHarness) -> None:
@@ -405,7 +444,7 @@ def test_listen_tree_tracks_command_changes(cli: CliHarness) -> None:
         def _tmp(newopt: str = typer.Option(...)) -> None:  # required option
             pass
 
-        assert f"+-- {marker} --newopt" in cli("tree").output
+        assert f"{marker} --newopt" in cli("tree").output
     finally:
         listen_app.registered_commands = [c for c in listen_app.registered_commands if c.name != marker]
 
@@ -435,5 +474,3 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
     # atomicity: one invalid key means none are applied
     assert cli("config", "setting", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
     assert cli.json("config", "setting", "show", "cooldown_ms")["value"] == 2500
-
-

@@ -268,11 +268,16 @@ server logs.
 `opal listen tree` launches the web console in a browser (`gui`), and prints the live command tree with each command's parameters (generated
 by introspection, so it always matches the installed CLI): mandatory options print as
 `--option`, optional options as `[--option]`, positional arguments as bare names.
+On a terminal the tree is color-coded (root green, guides blue, groups bold cyan,
+commands cyan, required parameters yellow, optional `[bracketed]` parameters dim);
+piped output keeps the plain Unicode guides. `opal listen tree --ascii` prints a
+color-free variant with `|--`, `` `-- `` and `|` guides for logs and non-UTF-8
+environments.
 
 ```
 opal
 └── listen [--api-url] [--xpub] [--xsub] [--json] [--timeout]
-    ├── tree
+    ├── tree [--ascii]
     ├── gui
     ├── wakeword    list | get | add | update | remove
     ├── intent      list | get | add | update | remove | phrases | add-phrase | remove-phrase
