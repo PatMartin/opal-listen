@@ -307,7 +307,7 @@ def get_persona(session: Session, persona_id: str) -> Persona:
     return obj
 
 
-def create_persona(session: Session, data: s.PersonaCreate) -> Persona:
+def create_persona(session: Session, data: s.OpalPersonaCreate) -> Persona:
     if session.get(Persona, data.persona_id) is not None:
         raise ConflictError(f"persona_id '{data.persona_id}' is already registered")
     obj = Persona(**data.model_dump())
@@ -316,7 +316,7 @@ def create_persona(session: Session, data: s.PersonaCreate) -> Persona:
     return obj
 
 
-def update_persona(session: Session, persona_id: str, data: s.PersonaUpdate) -> Persona:
+def update_persona(session: Session, persona_id: str, data: s.OpalPersonaUpdate) -> Persona:
     obj = get_persona(session, persona_id)
     _apply(obj, data.model_dump(exclude_unset=True, exclude_none=True))
     session.add(obj)

@@ -1,4 +1,4 @@
-"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v1.6.0.yaml; extra models/fields are additive."""
+"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v1.7.1.yaml; extra models/fields are additive."""
 
 from __future__ import annotations
 
@@ -473,12 +473,14 @@ class PersonaBase(BaseModel):
     enabled: bool = True
 
 
-class PersonaCreate(PersonaBase):
+class OpalPersonaCreate(PersonaBase):
+    """Kernel OpalPersonaCreate (contract `PersonaCreate` is a $ref alias of it)."""
+
     persona_id: str = Field(min_length=1, max_length=200, pattern=PERSONA_ID_PATTERN)
 
 
-class PersonaUpdate(BaseModel):
-    """Partial persona update; minProperties: 1 per the contract."""
+class OpalPersonaUpdate(BaseModel):
+    """Kernel OpalPersonaUpdate: partial persona update; minProperties: 1 per the contract."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -495,11 +497,14 @@ class PersonaUpdate(BaseModel):
         return data
 
 
-class PersonaRead(_Read):
+class OpalPersonaRead(_Read):
+    """Kernel OpalPersonaRead; `origin` marks provenance (owner-sync is not implemented yet)."""
+
     persona_id: str
     name: str
     description: str | None = None
     voice_id: str | None = None
     enabled: bool
+    origin: Literal["local", "owner"] = "local"
     created_at: datetime
     updated_at: datetime

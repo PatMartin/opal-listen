@@ -46,6 +46,14 @@ STATIC_DIR = PACKAGE_DIR / "view" / "static"
 # OpenAPI remains a superset of the contract.
 _ORPHAN_CONTRACT_SCHEMAS = (OpalConfigExport, OpalEngine)
 
+# Contract schema entries that are bare $refs to kernel components (v1.7.1): the generated
+# spec must carry the same alias names pointing at the kernel-named schemas.
+_ORPHAN_SCHEMA_REFS: dict[str, str] = {
+    "PersonaCreate": "OpalPersonaCreate",
+    "PersonaUpdate": "OpalPersonaUpdate",
+    "PersonaRead": "OpalPersonaRead",
+}
+
 # OPAL SUITE STANDARD response-header documentation (openapi/shared/opal_kernel.yaml components/headers).
 # OpalContextMiddleware stamps these on every response, so every operation documents them.
 _OPAL_HEADER_COMPONENTS: dict[str, Any] = {
@@ -260,6 +268,8 @@ def _is_missing_if_match(exc: RequestValidationError) -> bool:
 
 def _inject_orphan_schemas(schema: dict[str, Any]) -> None:
     components = schema.setdefault("components", {}).setdefault("schemas", {})
+    for name, target in _ORPHAN_SCHEMA_REFS.items():
+        components.setdefault(name, {"$ref": f"#/components/schemas/{target}"})
     for model in _ORPHAN_CONTRACT_SCHEMAS:
         name = model.__name__
         if name in components:
