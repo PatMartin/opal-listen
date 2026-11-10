@@ -213,9 +213,9 @@ const S = {
   base: localStorage.getItem("opal_api") || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000"),
   token: localStorage.getItem("opal_token") || "",
   timers: [], es: null, startedHere: false, lastResult: null,
-  logs: { limit: 25, intent: "", matched: "", cursor: null, back: [] },
-  failed: { limit: 25, offset: 0, reviewed: "", promoted: "" },
-  history: { limit: 50, cursor: null, back: [] },
+  logs: { limit: 25, intent: "", matched: "" },
+  failed: { limit: 25, reviewed: "", promoted: "" },
+  history: { limit: 50 },
 };
 
 // ---------------------------------------------------------------------------------------------------
@@ -611,7 +611,7 @@ VIEWS.test = async () => {
 
 VIEWS.failed = async () => {
   const f = S.failed;
-  const items = await api("GET", "/api/v1/failed_utterance/", { query: { limit: f.limit, offset: f.offset, reviewed: f.reviewed, promoted: f.promoted } });
+  const items = await api("GET", "/api/v1/failed_utterance/", { query: { limit: f.limit, reviewed: f.reviewed, promoted: f.promoted } });
   const sel = (name, value) => `<select data-filter="failed.${name}"><option value="" ${value === "" ? "selected" : ""}>any</option>
     <option value="true" ${value === "true" ? "selected" : ""}>yes</option><option value="false" ${value === "false" ? "selected" : ""}>no</option></select>`;
   return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here. Promote them to training phrases (slot values become placeholders) and a regression test.</div>
@@ -626,12 +626,10 @@ VIEWS.failed = async () => {
       <input name="notes" placeholder="notes" style="flex:1"><button type="submit">Add</button></form>`)}`;
 };
 
-function pager(key, count, hasMore = true) {
+function pager(key, count) {
   const p = S[key];
-  const base = p.cursor !== undefined ? p.back.length * p.limit : p.offset;
-  const next = p.cursor !== undefined && !hasMore ? "" : btn("Next ›", "page", { key, dir: 1 }, "ghost small");
-  return `<div class="pager">${btn("‹ Prev", "page", { key, dir: -1 }, "ghost small")}<span class="muted">rows ${base + 1}–${base + count}</span>
-    ${next} <label class="muted">per page <select data-filter="${key}.limit">${[10, 25, 50, 100, 500]
+  return `<div class="pager"><span class="muted">${count} rows</span>
+    <label class="muted">per page <select data-filter="${key}.limit">${[10, 25, 50, 100, 500]
       .map(n => `<option ${n === p.limit ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>`;
 }
 
@@ -655,11 +653,10 @@ VIEWS.regression = async () => {
 VIEWS.logs = async () => {
   const l = S.logs;
   const [page, count, intents] = await Promise.all([
-    api("GET", "/api/v1/log/", { query: { limit: l.limit, cursor: l.cursor, intent_name: l.intent, matched: l.matched } }),
+    api("GET", "/api/v1/log/", { query: { limit: l.limit, intent_name: l.intent, matched: l.matched } }),
     api("GET", "/api/v1/log/count"), api("GET", "/api/v1/intent/"),
   ]);
-  l._next = page.next_cursor;
-  const logs = page.items;
+  const logs = page;
   const intentSel = `<select data-filter="logs.intent"><option value="">any intent</option>${["no_match", ...intents.map(i => i.name)]
     .map(n => `<option ${n === l.intent ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
   const matchedSel = `<select data-filter="logs.matched"><option value="">matched + no_match</option><option value="true" ${l.matched === "true" ? "selected" : ""}>matched</option>
@@ -669,17 +666,16 @@ VIEWS.logs = async () => {
     ${card("Counts", ["count_logs"], `<div class="row"><span class="badge">total ${count.total}</span><span class="badge ok">matched ${count.matched}</span><span class="badge warn">no_match ${count.no_match}</span></div>`)}
     ${card("Logs", ["list_logs"], `<div class="row">${intentSel} ${matchedSel}</div>` + table(logs, [["id", "id"], ["created_at", "time"], ["source", "source"],
       ["wakeword", "wakeword"], ["normalized_transcript", "transcript"], ["intent_name", "intent"], ["slot_values", "slots"], ["intent_confidence", "conf"],
-      ["matched", "matched"], ["no_match_reason", "reason"], ["total_latency_ms", "ms"]], { rowAct: r => `data-act="logShow" data-id="${r.id}"` }) + pager("logs", logs.length, page.has_more))}`;
+      ["matched", "matched"], ["no_match_reason", "reason"], ["total_latency_ms", "ms"]], { rowAct: r => `data-act="logShow" data-id="${r.id}"` }) + pager("logs", logs.length))}`;
 };
 
 VIEWS.perf = async () => {
   const h = S.history;
   const [last, summary, page] = await Promise.all([
     api("GET", "/api/v1/performance/last"), api("GET", "/api/v1/performance/summary", { query: { limit: 100 } }),
-    api("GET", "/api/v1/performance/history", { query: { limit: h.limit, cursor: h.cursor } }),
+    api("GET", "/api/v1/performance/history", { query: { limit: h.limit } }),
   ]);
-  h._next = page.next_cursor;
-  const history = page.items;
+  const history = page;
   const flat = Object.fromEntries(Object.entries(summary).filter(([, v]) => typeof v !== "object" || v === null));
   const latency = Object.entries(summary).filter(([, v]) => v && typeof v === "object").map(([k, v]) => ({ metric: k, ...v }));
   return `<h2>Performance</h2><div class="sub">Latency (ms), confidence and match rate. Summary covers the last 100 recognitions.</div>
@@ -690,7 +686,7 @@ VIEWS.perf = async () => {
     </div>
     ${card("History", ["get_performance_history"], chart(history) + table(history, [["id", "id"], ["created_at", "time"], ["recognition_log_id", "log"],
       ["wakeword_latency_ms", "wake ms"], ["stt_latency_ms", "stt ms"], ["intent_latency_ms", "intent ms"], ["total_latency_ms", "total ms"],
-      ["wakeword_confidence", "wake conf"], ["intent_confidence", "intent conf"], ["matched", "matched"]]) + pager("history", history.length, page.has_more))}`;
+      ["wakeword_confidence", "wake conf"], ["intent_confidence", "intent conf"], ["matched", "matched"]]) + pager("history", history.length))}`;
 };
 
 function chart(rows) {
@@ -798,14 +794,7 @@ const ACT = {
   go: d => { location.hash = d.to; },
   refresh: () => render(),
   closeModal: () => closeModal(),
-  page: d => {
-    const p = S[d.key];
-    if (p.cursor !== undefined) {  // cursor-paginated views (contract: opaque next_cursor, no offsets)
-      if (Number(d.dir) > 0) { if (!p._next) return; p.back.push(p.cursor); p.cursor = p._next; }
-      else p.cursor = p.back.pop() ?? null;
-    } else p.offset = Math.max(0, p.offset + Number(d.dir) * p.limit);
-    render();
-  },
+
 
   pipeStart: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/start")).status}`),
   pipeStop: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/stop")).status}`),
@@ -1154,7 +1143,6 @@ document.addEventListener("change", ev => {
   if (filter) {
     const [key, field] = filter.split(".");
     S[key][field] = field === "limit" ? Number(ev.target.value) : ev.target.value;
-    S[key].offset = 0; S[key].cursor = null; S[key].back = [];
     render();
   }
   if (ev.target.id === "bundleFile" && ev.target.files[0]) ev.target.files[0].text().then(t => { $("#bundleText").value = t; });

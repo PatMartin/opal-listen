@@ -413,24 +413,20 @@ def test_logs_and_performance(client: TestClient) -> None:
     assert client.get("/api/v1/log/count").json() == {"total": 3, "matched": 2, "no_match": 1}
 
     page = client.get("/api/v1/log/", params={"limit": 2}).json()
-    logs = page["items"]
+    assert isinstance(page, list)
+    logs = page
     assert len(logs) == 2 and logs[0]["normalized_transcript"] == "what time is it"
-    assert page["has_more"] is True and page["next_cursor"]
-    next_page = client.get("/api/v1/log/", params={"limit": 2, "cursor": page["next_cursor"]}).json()
-    assert len(next_page["items"]) == 1 and next_page["has_more"] is False and next_page["next_cursor"] is None
-    assert client.get("/api/v1/log/", params={"intent_name": "light_turn_on"}).json()["items"][0]["source"] == "text"
+    full = client.get("/api/v1/log/", params={"limit": 10}).json()
+    assert len(full) == 3 and full[:2] == logs
+    assert client.get("/api/v1/log/", params={"intent_name": "light_turn_on"}).json()[0]["source"] == "text"
     assert client.get(f"/api/v1/log/{logs[0]['id']}").json()["id"] == logs[0]["id"]
     assert client.get("/api/v1/log/999").status_code == 404
     assert client.get("/api/v1/log/", params={"limit": 501}).status_code == 422
-    assert client.get("/api/v1/log/", params={"cursor": "not-a-real-cursor"}).status_code == 422
-    # a cursor minted under a different filter set must be rejected
-    mismatched = client.get("/api/v1/log/", params={"intent_name": "light_turn_on", "cursor": page["next_cursor"]})
-    assert mismatched.status_code == 422
 
     summary = client.get("/api/v1/performance/summary").json()
     assert summary["count"] == 3 and summary["match_rate"] == round(2 / 3, 4)
     assert summary["intent_latency_ms"]["avg"] is not None
-    assert len(client.get("/api/v1/performance/history").json()["items"]) == 3
+    assert len(client.get("/api/v1/performance/history").json()) == 3
     assert client.get("/api/v1/performance/last").json()["matched"] is True
 
 

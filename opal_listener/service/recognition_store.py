@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import statistics
-from datetime import datetime
 from typing import Any, TypeVar
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import func
 from sqlmodel import Session, SQLModel, col, delete, select
 
 from opal_listener.models import schemas as s
@@ -75,56 +74,19 @@ def prune_logs(session: Session, keep: int) -> None:
 
 
 def list_logs(
-    session: Session, limit: int, offset: int, intent_name: str | None, matched: bool | None
+    session: Session,
+    limit: int,
+    intent_name: str | None,
+    matched: bool | None,
 ) -> list[RecognitionLog]:
+    """Stable descending (created_at, id) bounded list; ``limit`` caps items."""
     query = select(RecognitionLog)
     if intent_name is not None:
         query = query.where(RecognitionLog.intent_name == intent_name)
     if matched is not None:
         query = query.where(RecognitionLog.matched == matched)
-    query = query.order_by(col(RecognitionLog.id).desc()).offset(offset).limit(limit)
+    query = query.order_by(col(RecognitionLog.created_at).desc(), col(RecognitionLog.id).desc()).limit(limit)
     return list(session.exec(query).all())
-
-
-def _cursor_page(
-    session: Session,
-    model: type[T],
-    *,
-    filters: list[Any],
-    limit: int,
-    cursor_tuple: tuple[datetime, int] | None,
-) -> tuple[list[T], bool]:
-    """Stable descending (created_at, id) page; returns (items, has_more)."""
-    query = select(model)
-    for condition in filters:
-        query = query.where(condition)
-    if cursor_tuple is not None:
-        last_created_at, last_id = cursor_tuple
-        query = query.where(
-            or_(
-                col(model.created_at) < last_created_at,
-                and_(col(model.created_at) == last_created_at, col(model.id) < last_id),
-            )
-        )
-    query = query.order_by(col(model.created_at).desc(), col(model.id).desc()).limit(limit + 1)
-    rows = list(session.exec(query).all())
-    has_more = len(rows) > limit
-    return rows[:limit], has_more
-
-
-def list_logs_page(
-    session: Session,
-    limit: int,
-    cursor_tuple: tuple[datetime, int] | None,
-    intent_name: str | None,
-    matched: bool | None,
-) -> tuple[list[RecognitionLog], bool]:
-    filters: list[Any] = []
-    if intent_name is not None:
-        filters.append(RecognitionLog.intent_name == intent_name)
-    if matched is not None:
-        filters.append(RecognitionLog.matched == matched)
-    return _cursor_page(session, RecognitionLog, filters=filters, limit=limit, cursor_tuple=cursor_tuple)
 
 
 def count_logs(session: Session) -> dict[str, int]:
@@ -139,14 +101,14 @@ def count_logs(session: Session) -> dict[str, int]:
 
 
 def list_failed(
-    session: Session, reviewed: bool | None, promoted: bool | None, limit: int, offset: int
+    session: Session, reviewed: bool | None, promoted: bool | None, limit: int
 ) -> list[FailedUtterance]:
     query = select(FailedUtterance)
     if reviewed is not None:
         query = query.where(FailedUtterance.reviewed == reviewed)
     if promoted is not None:
         query = query.where(FailedUtterance.promoted_to_phrase == promoted)
-    query = query.order_by(col(FailedUtterance.id).desc()).offset(offset).limit(limit)
+    query = query.order_by(col(FailedUtterance.id).desc()).limit(limit)
     return list(session.exec(query).all())
 
 
@@ -177,15 +139,9 @@ def last_performance(session: Session) -> PerformanceResult | None:
     return session.exec(select(PerformanceResult).order_by(col(PerformanceResult.id).desc()).limit(1)).first()
 
 
-def performance_history(session: Session, limit: int, offset: int) -> list[PerformanceResult]:
-    query = select(PerformanceResult).order_by(col(PerformanceResult.id).desc()).offset(offset).limit(limit)
+def performance_history(session: Session, limit: int) -> list[PerformanceResult]:
+    query = select(PerformanceResult).order_by(col(PerformanceResult.id).desc()).limit(limit)
     return list(session.exec(query).all())
-
-
-def performance_history_page(
-    session: Session, limit: int, cursor_tuple: tuple[datetime, int] | None
-) -> tuple[list[PerformanceResult], bool]:
-    return _cursor_page(session, PerformanceResult, filters=[], limit=limit, cursor_tuple=cursor_tuple)
 
 
 def _stats(values: list[Any]) -> s.LatencyStats:
@@ -204,7 +160,7 @@ def _mean(values: list[Any]) -> float | None:
 
 
 def performance_summary(session: Session, limit: int) -> s.PerformanceSummary:
-    rows = performance_history(session, limit, 0)
+    rows = performance_history(session, limit)
     matched = sum(1 for r in rows if r.matched)
     return s.PerformanceSummary(
         count=len(rows),

@@ -18,7 +18,6 @@ from opal_listener.app_settings import PACKAGE_DIR, AppSettings, get_app_setting
 from opal_listener.data.db import Database
 from opal_listener.models.opal_standard import (
     OpalConfigExport,
-    OpalCursorPageMetadata,
     OpalEngine,
 )
 from opal_listener.service.errors import (
@@ -45,7 +44,7 @@ STATIC_DIR = PACKAGE_DIR / "view" / "static"
 
 # Schemas referenced by the contract but not produced by any route; kept so the generated
 # OpenAPI remains a superset of the contract.
-_ORPHAN_CONTRACT_SCHEMAS = (OpalCursorPageMetadata, OpalConfigExport, OpalEngine)
+_ORPHAN_CONTRACT_SCHEMAS = (OpalConfigExport, OpalEngine)
 
 # OPAL SUITE STANDARD response-header documentation (openapi/shared/opal_kernel.yaml components/headers).
 # OpalContextMiddleware stamps these on every response, so every operation documents them.

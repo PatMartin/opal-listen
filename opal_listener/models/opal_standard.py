@@ -1,6 +1,6 @@
 """Shared schemas for the OPAL SUITE STANDARD v1.3 (correlation errors, health probes, cursor pages).
 
-OpalError and OpalCursorPageMetadata override __get_pydantic_json_schema__ to emit the exact inline
+OpalError overrides __get_pydantic_json_schema__ to emit the exact inline
 shape the OPAL standard mandates (nested "error" object, JSON Schema 2020-12 ``type: [string, null]``
 unions) instead of pydantic's default ``$ref``/``anyOf`` forms.
 """
@@ -89,20 +89,6 @@ class LivenessRead(BaseModel):
     status: Literal["ok"]
 
 
-class OpalCursorPageMetadata(BaseModel):
-    next_cursor: str | None
-    has_more: bool
-
-    @classmethod
-    def __get_pydantic_json_schema__(cls, core_schema: CoreSchema, handler: Any) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "required": ["next_cursor", "has_more"],
-            "properties": {
-                "next_cursor": {"type": ["string", "null"]},
-                "has_more": {"type": "boolean"},
-            },
-        }
 
 
 # Reusable OpenAPI response overrides.

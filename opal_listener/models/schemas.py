@@ -10,13 +10,6 @@ from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import CoreSchema
 
 
-def _cursor_union_schema(cls: type, core_schema: CoreSchema, handler: Any) -> dict[str, Any]:
-    """Emit the contract's JSON-Schema union form for next_cursor (``type: [string, null]``)
-    instead of pydantic's ``anyOf``."""
-    schema = handler(core_schema)
-    schema["properties"]["next_cursor"] = {"type": ["string", "null"]}
-    return schema
-
 
 NO_MATCH = "no_match"
 
@@ -304,16 +297,6 @@ class RecognitionLogRead(_Read):
     created_at: datetime
 
 
-class LogPage(BaseModel):
-    """Cursor-paginated recognition log history."""
-
-    items: list[RecognitionLogRead]
-    next_cursor: str | None
-    has_more: bool
-
-    __get_pydantic_json_schema__ = classmethod(_cursor_union_schema)
-
-
 class FailedUtteranceBase(BaseModel):
     transcript: str = Field(max_length=1000)
     expected_intent: str | None = Field(default=None, max_length=100)
@@ -428,16 +411,6 @@ class PerformanceSummary(BaseModel):
     stt_latency_ms: LatencyStats
     intent_latency_ms: LatencyStats
     total_latency_ms: LatencyStats
-
-
-class PerformancePage(BaseModel):
-    """Cursor-paginated performance result history."""
-
-    items: list[PerformanceResultRead]
-    next_cursor: str | None
-    has_more: bool
-
-    __get_pydantic_json_schema__ = classmethod(_cursor_union_schema)
 
 
 # --- health / backup / config ----------------------------------------------------------------

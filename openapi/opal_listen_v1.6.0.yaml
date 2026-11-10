@@ -21,10 +21,8 @@ info:
     \ /api/v1/health/ready. Settings: GET and PATCH /api/v1/settings/ exclusively;\
     \ PATCH is atomic. Mutable configuration uses strong ETags and mandatory If-Match\
     \ with 428 missing, 412 stale. For bounded configuration catalogs return full\
-    \ arrays (subject to explicit deployment caps); for growing histories use cursor\
-    \ pagination with stable deterministic ordering, opaque next_cursor and has_more.\
-    \ Cursors are scoped to the exact filter set and invalidate on mismatch (422);\
-    \ cursor values expire explicitly. Standard HTTP creation 201 Location, async\
+    \ arrays (subject to explicit deployment caps and `limit`); ordering is stable,\
+    \ deterministic (newest first). Standard HTTP creation 201 Location, async\
     \ admission 202, empty deletion 204. Streaming keeps media-specific transports\
     \ but exposes correlation headers, defined failure behavior, and no unsupported\
     \ replay guarantee. Configuration export/import/validation excludes secrets and\
@@ -1386,8 +1384,8 @@ paths:
       tags:
       - logs
       summary: List Logs
-      description: Use cursor pagination, stable descending time-plus-ID ordering;
-        filters are bound into the cursor.
+      description: Bounded list, stable descending time-plus-ID ordering;
+        `limit` caps the returned items.
       operationId: list_logs_api_v1_logs__get
       parameters:
       - name: limit
@@ -1401,15 +1399,6 @@ paths:
           default: 100
           title: Limit
         description: Maximum items per page.
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-          minLength: 1
-          description: Opaque continuation token returned from the preceding page.
-          title: Cursor
-        description: Opaque continuation token returned from the preceding page.
       - name: intent_name
         in: query
         required: false
@@ -1436,7 +1425,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LogPage'
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecognitionLogRead'
           headers:
             X-Opal-Session-Id:
               $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
@@ -1561,14 +1552,6 @@ paths:
           maximum: 500
           default: 50
           title: Limit
-      - name: offset
-        in: query
-        required: false
-        schema:
-          type: integer
-          minimum: 0
-          default: 0
-          title: Offset
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -2104,8 +2087,8 @@ paths:
       tags:
       - performance
       summary: Get Performance History
-      description: Use cursor pagination, stable descending time-plus-ID ordering;
-        filters are bound into the cursor.
+      description: Bounded list, stable descending time-plus-ID ordering;
+        `limit` caps the returned items.
       operationId: get_performance_history_api_v1_performance_history_get
       parameters:
       - name: limit
@@ -2119,15 +2102,6 @@ paths:
           default: 100
           title: Limit
         description: Maximum items per page.
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-          minLength: 1
-          description: Opaque continuation token returned from the preceding page.
-          title: Cursor
-        description: Opaque continuation token returned from the preceding page.
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -2138,7 +2112,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PerformancePage'
+                type: array
+                items:
+                  $ref: '#/components/schemas/PerformanceResultRead'
           headers:
             X-Opal-Session-Id:
               $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
@@ -2888,42 +2864,6 @@ components:
       - p95
       - max
       title: LatencyStats
-    LogPage:
-      type: object
-      description: Cursor-paginated recognition log history.
-      required:
-      - items
-      - next_cursor
-      - has_more
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/RecognitionLogRead'
-        next_cursor:
-          type:
-          - string
-          - 'null'
-        has_more:
-          type: boolean
-    PerformancePage:
-      type: object
-      description: Cursor-paginated performance result history.
-      required:
-      - items
-      - next_cursor
-      - has_more
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/PerformanceResultRead'
-        next_cursor:
-          type:
-          - string
-          - 'null'
-        has_more:
-          type: boolean
     PerformanceResultRead:
       properties:
         id:
@@ -3994,7 +3934,7 @@ x-opal-context-standard:
     $ref: './shared/opal_kernel.yaml#/x-opal-event-envelope'
     metadata_schema_version: '2.0'
   pagination:
-    history: cursor
+    history: none
     configuration: none
     default_limit: 100
     max_limit: 500

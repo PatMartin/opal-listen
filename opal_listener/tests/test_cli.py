@@ -210,39 +210,25 @@ def test_logs_and_perf_commands(cli: CliHarness) -> None:
     cli("test", "text", "open the door")
     assert cli.json("log", "count") == {"total": 2, "matched": 1, "no_match": 1}
     page = cli.json("log", "list", "--no-match")
-    assert set(page) == {"items", "next_cursor", "has_more"}  # --json mirrors the REST page envelope
-    logs = page["items"]
+    assert isinstance(page, list)  # --json mirrors the REST array
+    logs = page
     assert logs[0]["normalized_transcript"] == "open the door"
     assert cli.json("log", "get", str(logs[0]["id"]))["matched"] is False
     assert cli.json("service", "perf", "last")["matched"] is False
     assert cli.json("service", "perf", "summary")["count"] == 2
     assert "Latency" in cli("service", "perf", "summary").output
-    assert len(cli.json("service", "perf", "history")["items"]) == 2
+    assert len(cli.json("service", "perf", "history")) == 2
 
 
-def test_json_pagination_lets_scripts_walk_every_page(cli: CliHarness) -> None:
-    """Regression: --json used to print only `items`, dropping next_cursor/has_more."""
+def test_json_list_returns_bounded_array(cli: CliHarness) -> None:
     for i in range(5):
         cli("test", "text", f"what time is it {i}")
-    seen: list[int] = []
-    args = ["log", "list", "--limit", "2"]
-    while True:
-        page = cli.json(*args)
-        seen += [row["id"] for row in page["items"]]
-        if not page["has_more"]:
-            break
-        args = ["log", "list", "--limit", "2", "--cursor", page["next_cursor"]]
-    assert len(seen) == 5 and len(set(seen)) == 5
+    page = cli.json("log", "list", "--limit", "2")
+    assert isinstance(page, list) and len(page) == 2
+    full = cli.json("log", "list", "--limit", "10")
+    assert len(full) == 5 and full[:2] == page
     history = cli.json("service", "perf", "history", "--limit", "2")
-    assert history["has_more"] is True and history["next_cursor"]
-
-
-def test_cursor_hint_is_one_unwrapped_line(cli: CliHarness) -> None:
-    for i in range(3):
-        cli("test", "text", f"what time is it {i}")
-    page = cli.json("log", "list", "--limit", "1")
-    out = cli("log", "list", "--limit", "1").output
-    assert page["next_cursor"] in out.splitlines()  # whole token on its own line -> copy-pasteable
+    assert isinstance(history, list) and len(history) == 2
 
 
 def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:

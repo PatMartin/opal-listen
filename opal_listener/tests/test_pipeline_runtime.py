@@ -227,7 +227,7 @@ def test_live_runtime_produces_logged_result(client: TestClient, fake_provider: 
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["results"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
-    log = client.get("/api/v1/log/").json()["items"][0]
+    log = client.get("/api/v1/log/").json()[0]
     assert (log["source"], log["intent_name"], log["slot_values"]) == ("mic", "light_turn_on", {"room_name": "kitchen"})
     assert log["wakeword"] == "computer" and log["wakeword_confidence"] == 0.9
     status = client.get("/api/v1/recognition/status").json()

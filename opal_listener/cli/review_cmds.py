@@ -181,16 +181,12 @@ def regression_remove(ctx: typer.Context, test_id: int) -> None:
     done(ctx, f"regression test {test_id} removed")
 
 
-def _render_page(ctx: typer.Context, page: dict[str, Any], columns: tuple[str, ...], title: str) -> None:
-    """Cursor page: --json prints the REST envelope (items, next_cursor, has_more) so scripts
-    can paginate; humans get the table plus an unwrapped, copy-pasteable cursor hint."""
+def _render_list(ctx: typer.Context, items: list[dict[str, Any]], columns: tuple[str, ...], title: str) -> None:
+    """Bounded list: --json prints the REST array; humans get the table."""
     if state(ctx).json_output:
-        print_json(page)
+        print_json(items)
         return
-    render(ctx, page["items"], columns, title)
-    if page["has_more"]:
-        console.print("[dim]more results: pass --cursor[/dim]")
-        console.print(page["next_cursor"], soft_wrap=True, markup=False, highlight=False)
+    render(ctx, items, columns, title)
 
 
 # --- logs ------------------------------------------------------------------------------------
@@ -200,14 +196,13 @@ def _render_page(ctx: typer.Context, page: dict[str, Any], columns: tuple[str, .
 def logs_list(
     ctx: typer.Context,
     limit: int = typer.Option(100, "--limit", max=500),
-    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation token from a previous page"),
     intent: str | None = typer.Option(None, "--intent"),
     matched: bool | None = typer.Option(None, "--matched/--no-match"),
 ) -> None:
     """Recent recognition logs (newest first)."""
-    params = {"limit": limit, "cursor": cursor, "intent_name": intent, "matched": matched}
-    page = state(ctx).api.get(LOGS, params={k: v for k, v in params.items() if v is not None})
-    _render_page(ctx, page, LOG_COLUMNS, "Recognition logs")
+    params = {"limit": limit, "intent_name": intent, "matched": matched}
+    items = state(ctx).api.get(LOGS, params={k: v for k, v in params.items() if v is not None})
+    _render_list(ctx, items, LOG_COLUMNS, "Recognition logs")
 
 
 @logs_app.command("get")
@@ -252,9 +247,7 @@ def perf_summary(ctx: typer.Context, limit: int = typer.Option(100, "--limit", m
 def perf_history(
     ctx: typer.Context,
     limit: int = typer.Option(100, "--limit", max=500),
-    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation token from a previous page"),
 ) -> None:
     """Per-recognition performance rows (newest first)."""
-    params = {"limit": limit, "cursor": cursor}
-    page = state(ctx).api.get(f"{PERF}/history", params={k: v for k, v in params.items() if v is not None})
-    _render_page(ctx, page, PERF_COLUMNS, "Performance history")
+    items = state(ctx).api.get(f"{PERF}/history", params={"limit": limit})
+    _render_list(ctx, items, PERF_COLUMNS, "Performance history")
