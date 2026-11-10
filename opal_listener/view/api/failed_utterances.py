@@ -28,11 +28,11 @@ def list_failed_utterances(
     reviewed: bool | None = None,
     promoted: bool | None = None,
     limit: int = Query(default=50, le=500),
-
+    offset: int = Query(default=0, ge=0),
     svc: ListenerService = Depends(get_service),
 ) -> list[FailedUtteranceRead]:
     with svc.db.session() as session:
-        rows = recognition_store.list_failed(session, reviewed, promoted, limit)
+        rows = recognition_store.list_failed(session, reviewed, promoted, limit, offset)
         return [FailedUtteranceRead.model_validate(r) for r in rows]
 
 

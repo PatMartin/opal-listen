@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import CoreSchema
 
@@ -368,6 +368,10 @@ class PerformanceResultRead(_Read):
     matched: bool
     audio_level: float | None = None
     created_at: datetime
+
+
+class PerformanceHistory(RootModel[list[PerformanceResultRead]]):
+    """Bounded list of performance results, newest first; `limit` caps the returned items."""
 
 
 class LatencyStats(BaseModel):

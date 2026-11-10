@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from opal_listener.models.opal_standard import OPAL_422_RESPONSE
-from opal_listener.models.schemas import PerformanceResultRead, PerformanceSummary
+from opal_listener.models.schemas import PerformanceHistory, PerformanceResultRead, PerformanceSummary
 from opal_listener.service import recognition_store
 from opal_listener.service.errors import InvalidRequestError
 from opal_listener.service.listener_service import ListenerService
@@ -31,12 +31,12 @@ def get_performance_summary(
         return recognition_store.performance_summary(session, limit)
 
 
-@router.get("/history", response_model=list[PerformanceResultRead])
+@router.get("/history", response_model=PerformanceHistory)
 def get_performance_history(
-    limit: int = Query(default=100, ge=1, le=500, description="Maximum items returned."),
+    limit: int = Query(default=100, ge=1, le=500, description="Maximum items to return."),
     svc: ListenerService = Depends(get_service),
-) -> list[PerformanceResultRead]:
-    """Bounded list, stable descending time-plus-ID ordering; `limit` caps the returned items."""
+) -> PerformanceHistory:
+    """Bounded list in stable descending time-plus-ID order; `limit` caps the returned items."""
     with svc.db.session() as session:
         rows = recognition_store.performance_history(session, limit)
-        return [PerformanceResultRead.model_validate(r) for r in rows]
+        return PerformanceHistory([PerformanceResultRead.model_validate(r) for r in rows])

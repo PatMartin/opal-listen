@@ -101,14 +101,14 @@ def count_logs(session: Session) -> dict[str, int]:
 
 
 def list_failed(
-    session: Session, reviewed: bool | None, promoted: bool | None, limit: int
+    session: Session, reviewed: bool | None, promoted: bool | None, limit: int, offset: int = 0
 ) -> list[FailedUtterance]:
     query = select(FailedUtterance)
     if reviewed is not None:
         query = query.where(FailedUtterance.reviewed == reviewed)
     if promoted is not None:
         query = query.where(FailedUtterance.promoted_to_phrase == promoted)
-    query = query.order_by(col(FailedUtterance.id).desc()).limit(limit)
+    query = query.order_by(col(FailedUtterance.id).desc()).offset(offset).limit(limit)
     return list(session.exec(query).all())
 
 
