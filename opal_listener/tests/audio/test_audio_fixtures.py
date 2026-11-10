@@ -9,6 +9,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from opal_listener.tests.conftest import get_log_row
+
 HERE = Path(__file__).resolve().parent
 MANIFEST = yaml.safe_load((HERE / "manifest.yaml").read_text())["fixtures"]
 
@@ -90,9 +92,9 @@ def test_audio_results_are_logged_with_performance(client: TestClient) -> None:
     post_audio(client, HERE / "fixtures" / "golden_kitchen_light_on.wav")
     last = client.get("/api/v1/performance/last").json()
     assert last["matched"] is True
-    log = client.get(f"/api/v1/log/{last['recognition_log_id']}").json()
-    assert log["source"] == "audio"
-    assert log["intent_name"] == "light_turn_on"
+    log = get_log_row(client, last["recognition_log_id"])
+    assert log.source == "audio"
+    assert log.intent_name == "light_turn_on"
 
 
 def test_negative_audio_is_captured_as_failure(client: TestClient) -> None:

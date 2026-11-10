@@ -271,30 +271,7 @@ class PipelineStatus(BaseModel):
     metrics: dict[str, float] = {}
 
 
-# --- logs / failures / regression ------------------------------------------------------------
-
-
-class RecognitionLogRead(_Read):
-    id: int
-    session_id: str | None
-    source: str = "mic"
-    profile_name: str | None = None
-    wakeword: str | None
-    transcript: str | None
-    normalized_transcript: str | None
-    intent_name: str | None
-    slot_values: dict[str, Any]
-    wakeword_confidence: float | None
-    stt_confidence: float | None = None
-    intent_confidence: float | None
-    matched: bool
-    no_match_reason: str | None = None
-    total_latency_ms: int | None
-    wakeword_latency_ms: int | None
-    stt_latency_ms: int | None
-    intent_latency_ms: int | None
-    audio_level: float | None
-    created_at: datetime
+# --- failures / regression -------------------------------------------------------------------
 
 
 class FailedUtteranceBase(BaseModel):

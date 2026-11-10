@@ -23,7 +23,7 @@ from opal_listener.cli.client import ApiClient, api_url_from_env, xpub_url_from_
 from opal_listener.cli.event_cmds import event_app
 from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
-from opal_listener.cli.review_cmds import failed_app, logs_app, perf_app, regression_app
+from opal_listener.cli.review_cmds import failed_app, perf_app, regression_app
 from opal_listener.cli.service_cmds import config_app, service_app
 from opal_listener.cli.test_cmds import pipeline_app, recognition_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
@@ -77,9 +77,6 @@ OPERATION_COMMANDS: dict[str, str] = {
     "stop_pipeline": "pipeline stop",
     "get_status": "pipeline status",
     "stream_results": "test listen",
-    "list_logs": "log list",
-    "count_logs": "log count",
-    "get_log": "log get",
     "list_failed_utterances": "failed list",
     "create_failed_utterance": "failed add",
     "get_failed_utterance": "failed get",
@@ -133,7 +130,6 @@ for sub_app, name in (
     (pipeline_app, "pipeline"),
     (failed_app, "failed"),
     (regression_app, "regression"),
-    (logs_app, "log"),
     (reactions_app, "reaction"),
     (config_app, "config"),
     (service_app, "service"),

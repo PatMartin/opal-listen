@@ -156,9 +156,6 @@ const ROUTES = [
   ["stop_pipeline", "POST", "/api/v1/recognition/stop", "pipeline stop", "pipeline"],
   ["get_status", "GET", "/api/v1/recognition/status", "pipeline status", "pipeline"],
   ["stream_results", "GET", "/api/v1/recognition/stream", "test listen / listen-debug", "test"],
-  ["list_logs", "GET", "/api/v1/log/", "log list", "logs"],
-  ["count_logs", "GET", "/api/v1/log/count", "log count", "logs"],
-  ["get_log", "GET", "/api/v1/log/{log_id}", "log get", "logs"],
   ["list_failed_utterances", "GET", "/api/v1/failed_utterance/", "failed list", "failed"],
   ["create_failed_utterance", "POST", "/api/v1/failed_utterance/", "failed add", "failed"],
   ["get_failed_utterance", "GET", "/api/v1/failed_utterance/{fu_id}", "failed get", "failed"],
@@ -201,7 +198,7 @@ const ROUTE = Object.fromEntries(ROUTES.map(r => [r[0], { name: r[0], method: r[
 const NAV = [
   ["Overview", [["system", "System"], ["pipeline", "Pipeline"]]],
   ["Configure", [["wakewords", "Wakewords"], ["intents", "Intents"], ["slots", "Slots"], ["profiles", "Profiles"], ["personas", "Personas"], ["settings", "Settings"]]],
-  ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["regression", "Regression"], ["logs", "Logs"], ["perf", "Performance"]]],
+  ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["regression", "Regression"], ["perf", "Performance"]]],
   ["Admin", [["config", "Config & backups"], ["api", "API & parity"]]],
 ];
 const VAD_KEYS = { energy_threshold_dbfs: -45, noise_margin_db: 10, speech_start_ms: 150, silence_end_ms: 700,
@@ -213,7 +210,6 @@ const S = {
   base: localStorage.getItem("opal_api") || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000"),
   token: localStorage.getItem("opal_token") || "",
   timers: [], es: null, startedHere: false, lastResult: null,
-  logs: { limit: 25, intent: "", matched: "" },
   failed: { limit: 25, reviewed: "", promoted: "" },
   history: { limit: 50 },
 };
@@ -650,25 +646,6 @@ VIEWS.regression = async () => {
       <button type="submit">Add test</button></form>`)}`;
 };
 
-VIEWS.logs = async () => {
-  const l = S.logs;
-  const [page, count, intents] = await Promise.all([
-    api("GET", "/api/v1/log/", { query: { limit: l.limit, intent_name: l.intent, matched: l.matched } }),
-    api("GET", "/api/v1/log/count"), api("GET", "/api/v1/intent/"),
-  ]);
-  const logs = page;
-  const intentSel = `<select data-filter="logs.intent"><option value="">any intent</option>${["no_match", ...intents.map(i => i.name)]
-    .map(n => `<option ${n === l.intent ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
-  const matchedSel = `<select data-filter="logs.matched"><option value="">matched + no_match</option><option value="true" ${l.matched === "true" ? "selected" : ""}>matched</option>
-    <option value="false" ${l.matched === "false" ? "selected" : ""}>no_match</option></select>`;
-  return `<h2>Recognition logs</h2><div class="sub">Every recognition (mic, audio, text) with transcripts, slots, confidences and latencies. Click a row for details.</div>
-    ${opsLine(["list_logs", "count_logs", "get_log"])}
-    ${card("Counts", ["count_logs"], `<div class="row"><span class="badge">total ${count.total}</span><span class="badge ok">matched ${count.matched}</span><span class="badge warn">no_match ${count.no_match}</span></div>`)}
-    ${card("Logs", ["list_logs"], `<div class="row">${intentSel} ${matchedSel}</div>` + table(logs, [["id", "id"], ["created_at", "time"], ["source", "source"],
-      ["wakeword", "wakeword"], ["normalized_transcript", "transcript"], ["intent_name", "intent"], ["slot_values", "slots"], ["intent_confidence", "conf"],
-      ["matched", "matched"], ["no_match_reason", "reason"], ["total_latency_ms", "ms"]], { rowAct: r => `data-act="logShow" data-id="${r.id}"` }) + pager("logs", logs.length))}`;
-};
-
 VIEWS.perf = async () => {
   const h = S.history;
   const [last, summary, page] = await Promise.all([
@@ -869,12 +846,6 @@ const ACT = {
   failedFromResult: async d => {
     const f = await api("POST", "/api/v1/failed_utterance/", { body: { transcript: d.text, recognition_log_id: d.log ? Number(d.log) : null } });
     toast(`recorded as failed utterance ${f.id}`);
-  },
-
-  logShow: async d => {
-    const log = await api("GET", `/api/v1/log/${d.id}`);
-    const failBtn = log.transcript ? btn("Record as failed utterance", "failedFromResult", { text: log.transcript, log: log.id }, "ghost") : "";
-    modal(`<h3>Recognition log ${log.id}</h3>${op("get_log")}${kv(log)}<p class="row">${failBtn} ${btn("Close", "closeModal")}</p>`);
   },
 
   configValidate: async () => {

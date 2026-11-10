@@ -224,31 +224,25 @@ def test_regression_and_failed_commands(cli: CliHarness) -> None:
     assert cli("failed", "remove", str(added["id"])).exit_code == 0
 
 
-def test_logs_and_perf_commands(cli: CliHarness) -> None:
+def test_perf_commands(cli: CliHarness) -> None:
+    # v1.7.1 removed the `log` command group; recognition history is covered by `service perf`.
     assert "no recognitions yet" in cli("service", "perf", "last").output
     cli("test", "text", "what time is it")
     cli("test", "text", "open the door")
-    assert cli.json("log", "count") == {"total": 2, "matched": 1, "no_match": 1}
-    page = cli.json("log", "list", "--no-match")
-    assert isinstance(page, list)  # --json mirrors the REST array
-    logs = page
-    assert logs[0]["normalized_transcript"] == "open the door"
-    assert cli.json("log", "get", str(logs[0]["id"]))["matched"] is False
     assert cli.json("service", "perf", "last")["matched"] is False
     assert cli.json("service", "perf", "summary")["count"] == 2
     assert "Latency" in cli("service", "perf", "summary").output
-    assert len(cli.json("service", "perf", "history")) == 2
+    history = cli.json("service", "perf", "history")
+    assert len(history) == 2 and history[0]["matched"] is False
 
 
 def test_json_list_returns_bounded_array(cli: CliHarness) -> None:
     for i in range(5):
         cli("test", "text", f"what time is it {i}")
-    page = cli.json("log", "list", "--limit", "2")
+    page = cli.json("service", "perf", "history", "--limit", "2")
     assert isinstance(page, list) and len(page) == 2
-    full = cli.json("log", "list", "--limit", "10")
+    full = cli.json("service", "perf", "history", "--limit", "10")
     assert len(full) == 5 and full[:2] == page
-    history = cli.json("service", "perf", "history", "--limit", "2")
-    assert isinstance(history, list) and len(history) == 2
 
 
 def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
@@ -442,17 +436,3 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
     assert cli.json("setting", "get", "cooldown_ms")["value"] == 2500
 
 
-def test_logs_count_sends_contract_params(cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`logs count` takes no params — the contract dropped the decorative limit/cursor."""
-    calls: list[tuple[str, str, dict[str, Any]]] = []
-    original = client.request
-
-    def spy(method: str, url: str, **kw: Any) -> Any:
-        calls.append((method, str(url), kw))
-        return original(method, url, **kw)
-
-    monkeypatch.setattr(client, "request", spy)
-    result = cli("log", "count")
-    assert result.exit_code == 0, result.output
-    gets = [c for c in calls if c[0] == "GET" and c[1].endswith("/api/v1/log/count")]
-    assert gets and not gets[0][2].get("params")

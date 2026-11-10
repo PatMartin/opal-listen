@@ -1,4 +1,4 @@
-"""opal listen failed|regression|log|perf"""
+"""opal listen failed|regression|perf"""
 
 from __future__ import annotations
 
@@ -11,12 +11,10 @@ from opal_listener.cli.output import console, done, print_json, render, render_k
 
 FAILED = "/api/v1/failed_utterance/"
 REGRESSION = "/api/v1/regression/"
-LOGS = "/api/v1/log/"
 PERF = "/api/v1/performance"
 
 failed_app = typer.Typer(help="Review failed utterances and promote them to training phrases.", no_args_is_help=True)
 regression_app = typer.Typer(help="Manage saved regression tests.", no_args_is_help=True)
-logs_app = typer.Typer(help="Browse recognition logs.", no_args_is_help=True)
 perf_app = typer.Typer(help="Performance metrics.", no_args_is_help=True)
 
 FAILED_COLUMNS = (
@@ -29,8 +27,6 @@ FAILED_COLUMNS = (
     "created_at",
 )
 REGRESSION_COLUMNS = ("id", "name", "phrase", "expected_intent", "expected_slots", "enabled", "last_result")
-LOG_COLUMNS = ("id", "source", "wakeword", "normalized_transcript", "intent_name", "slot_values", "intent_confidence",
-               "matched", "no_match_reason", "total_latency_ms", "created_at")  # fmt: skip
 PERF_COLUMNS = ("id", "recognition_log_id", "wakeword_latency_ms", "stt_latency_ms", "intent_latency_ms",
                 "total_latency_ms", "wakeword_confidence", "intent_confidence", "matched")  # fmt: skip
 
@@ -187,34 +183,6 @@ def _render_list(ctx: typer.Context, items: list[dict[str, Any]], columns: tuple
         print_json(items)
         return
     render(ctx, items, columns, title)
-
-
-# --- logs ------------------------------------------------------------------------------------
-
-
-@logs_app.command("list")
-def logs_list(
-    ctx: typer.Context,
-    limit: int = typer.Option(100, "--limit", max=500),
-    intent: str | None = typer.Option(None, "--intent"),
-    matched: bool | None = typer.Option(None, "--matched/--no-match"),
-) -> None:
-    """Recent recognition logs (newest first)."""
-    params = {"limit": limit, "intent_name": intent, "matched": matched}
-    items = state(ctx).api.get(LOGS, params={k: v for k, v in params.items() if v is not None})
-    _render_list(ctx, items, LOG_COLUMNS, "Recognition logs")
-
-
-@logs_app.command("get")
-def logs_get(ctx: typer.Context, log_id: int) -> None:
-    """Show one recognition log."""
-    render_kv(ctx, state(ctx).api.get(f"{LOGS}{log_id}"))
-
-
-@logs_app.command("count")
-def logs_count(ctx: typer.Context) -> None:
-    """Count logs (total / matched / no_match)."""
-    render_kv(ctx, state(ctx).api.get(f"{LOGS}count"), "Recognition logs")
 
 
 # --- perf ------------------------------------------------------------------------------------

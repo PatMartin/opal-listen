@@ -92,6 +92,36 @@ def etag_of(client: TestClient, path: str) -> str:
     return client.get(path).headers["etag"]
 
 
+def log_counts(client: TestClient) -> dict[str, int]:
+    """Recognition-log totals read straight from the DB (v1.7.1 dropped the /api/v1/log routes)."""
+    from opal_listener.service import recognition_store
+    from opal_listener.service.listener_service import ListenerService
+
+    svc: ListenerService = client.app.state.listener  # type: ignore[attr-defined]
+    with svc.db.session() as session:
+        return recognition_store.count_logs(session)
+
+
+def list_logs(client: TestClient, limit: int = 100, intent_name: str | None = None, matched: bool | None = None) -> list[Any]:
+    """Recognition-log rows (newest first) read straight from the DB."""
+    from opal_listener.service import recognition_store
+    from opal_listener.service.listener_service import ListenerService
+
+    svc: ListenerService = client.app.state.listener  # type: ignore[attr-defined]
+    with svc.db.session() as session:
+        return recognition_store.list_logs(session, limit, intent_name, matched)
+
+
+def get_log_row(client: TestClient, log_id: int) -> Any:
+    """One recognition-log row by id, straight from the DB."""
+    from opal_listener.models.tables import RecognitionLog
+    from opal_listener.service.listener_service import ListenerService
+
+    svc: ListenerService = client.app.state.listener  # type: ignore[attr-defined]
+    with svc.db.session() as session:
+        return session.get(RecognitionLog, log_id)
+
+
 @pytest.fixture
 def fake_provider(client: TestClient) -> Iterator[type[FakeListenerProvider]]:
     """Switch the running service to the deterministic fake provider."""

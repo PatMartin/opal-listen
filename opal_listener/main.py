@@ -190,7 +190,7 @@ _OPAL_HEADER_PARAMS: list[dict[str, Any]] = [
 
 
 def _inject_opal_header_params(schema: dict[str, Any]) -> None:
-    """Document the X-Opal-* request headers on every operation (v1.6.0 declares them path-wide)."""
+    """Document the X-Opal-* request headers on every operation (the contract declares them path-wide)."""
     for item in schema.get("paths", {}).values():
         for operation in item.values():
             if not isinstance(operation, dict) or "responses" not in operation:
@@ -207,7 +207,7 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
 
     OpalContextMiddleware stamps the four X-Opal-* correlation headers on every response
     (success, error, and streaming alike); ETag-bearing reads and Location-bearing creates
-    are annotated per operation, matching openapi/opal_listen_v1.6.0.yaml.
+    are annotated per operation, matching openapi/opal_listen_v1.7.1.yaml.
     """
     components = schema.setdefault("components", {})
     components.setdefault("headers", {}).update(_OPAL_HEADER_COMPONENTS)
@@ -289,7 +289,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="1.6.0",
+        version="1.7.1",
         lifespan=lifespan,
     )
     app.state.listener = service

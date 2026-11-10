@@ -9,6 +9,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from opal_listener.tests.conftest import list_logs
+
 CASES = yaml.safe_load((Path(__file__).resolve().parent / "negative_phrases.yaml").read_text())["negative"]
 
 
@@ -27,6 +29,6 @@ def test_negative_phrase_is_no_match(client: TestClient, case: dict[str, Any]) -
 
 def test_no_match_results_are_logged_as_failures_only_for_audio_sources(client: TestClient) -> None:
     client.post("/api/v1/recognition/test_text", json={"text": "open the front door"})
-    logs = client.get("/api/v1/log/", params={"matched": False}).json()["items"]
-    assert logs and logs[0]["intent_name"] == "no_match"
+    logs = list_logs(client, matched=False)
+    assert logs and logs[0].intent_name == "no_match"
     assert client.get("/api/v1/failed_utterance/").json() == []

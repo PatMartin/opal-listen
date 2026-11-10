@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from opal_listener.app_settings import PACKAGE_DIR
 from opal_listener.service.config_store import load_config_dir
-from opal_listener.tests.conftest import etag_of, patch_settings
+from opal_listener.tests.conftest import etag_of, log_counts, patch_settings
 
 
 def _config_etag(client: TestClient) -> str:
@@ -90,7 +90,7 @@ def test_restore_while_listener_running(client: TestClient, fake_provider: type)
         assert client.get("/api/v1/setting/").json()["cooldown_ms"] == "1500"
         assert service.snapshot.settings["cooldown_ms"] == 1500
         fake_provider.script.append("what time is it")
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
 
@@ -104,11 +104,11 @@ def test_restore_during_active_recognition(client: TestClient, fake_provider: ty
     filename = client.post("/api/v1/backup/create").json()["filename"]
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
         result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
         assert result["status"] == "restored"
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
 

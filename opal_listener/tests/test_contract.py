@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings
 from opal_listener.main import create_app
 
-CONTRACT_PATH = PACKAGE_DIR.parent / "openapi" / "opal_listen_v1.6.0.yaml"
+CONTRACT_PATH = PACKAGE_DIR.parent / "openapi" / "opal_listen_v1.7.1.yaml"
 METHODS = ("get", "post", "put", "patch", "delete")
 CONSTRAINTS = ("maxLength", "minLength", "maximum", "minimum", "default", "format", "contentMediaType")
 
@@ -111,7 +111,9 @@ def _resolve_contract(path: Path) -> tuple[dict[str, Any], set[str]]:
 
     def resolve_param(param: Any) -> Any:
         name = _ref_name(param) if isinstance(param, dict) else None
-        return copy.deepcopy(doc["components"]["parameters"][name]) if name else param
+        resolved = copy.deepcopy(doc["components"]["parameters"][name]) if name else param
+        # Component parameters may themselves be refs (v1.7.1: PersonaId -> OpalPersonaIdParameter).
+        return resolve_param(resolved) if _ref_name(resolved) else resolved
 
     # Dereference parameter and response entries so op-level assertions see real objects.
     for item in doc["paths"].values():

@@ -15,7 +15,7 @@ from opal_listener.service.audio.vad import VadSettings
 from opal_listener.service.pipeline import RecognitionPipeline
 from opal_listener.service.providers.base import Transcript, WakewordEvent, WakewordEventKind
 from opal_listener.service.providers.fake_provider import FakeListenerProvider, FakeWakewordDetector
-from opal_listener.tests.conftest import etag_of, patch_settings, silence_frame, tone_frame
+from opal_listener.tests.conftest import etag_of, list_logs, log_counts, patch_settings, silence_frame, tone_frame
 
 COMMAND = [silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 10
 
@@ -227,9 +227,9 @@ def test_live_runtime_produces_logged_result(client: TestClient, fake_provider: 
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["results"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
-    log = client.get("/api/v1/log/").json()[0]
-    assert (log["source"], log["intent_name"], log["slot_values"]) == ("mic", "light_turn_on", {"room_name": "kitchen"})
-    assert log["wakeword"] == "computer" and log["wakeword_confidence"] == 0.9
+    log = list_logs(client)[0]
+    assert (log.source, log.intent_name, log.slot_values) == ("mic", "light_turn_on", {"room_name": "kitchen"})
+    assert log.wakeword == "computer" and log.wakeword_confidence == 0.9
     status = client.get("/api/v1/recognition/status").json()
     assert status["wakeword_detections"] == 1 and status["sessions"] == 1
 
@@ -269,13 +269,13 @@ def test_event_publication_enable_disable(client: TestClient, fake_provider: typ
         service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
         client.post("/api/v1/recognition/start")
         try:
-            wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= expected_log_total)
+            wait_for(lambda: log_counts(client)["total"] >= expected_log_total)
         finally:
             client.post("/api/v1/recognition/stop")
 
     run_once(1)
     assert publisher.events == []  # disabled: the match was logged but not published externally
-    assert client.get("/api/v1/log/count").json()["total"] == 1
+    assert log_counts(client)["total"] == 1
 
     # dedup_window_ms=0 keeps this test focused on the publication toggle (dedup is tested separately)
     updated = patch_settings(client, event_publication_enabled="true", dedup_window_ms="0")
@@ -331,7 +331,7 @@ def test_live_runtime_repeat_after_dedup_window_publishes_again(client: TestClie
         service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
         client.post("/api/v1/recognition/start")
         try:
-            wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= expected_logs)
+            wait_for(lambda: log_counts(client)["total"] >= expected_logs)
         finally:
             client.post("/api/v1/recognition/stop")
 
@@ -350,7 +350,7 @@ def test_live_runtime_different_slots_publish_distinct_events(client: TestClient
     service._source_factory = lambda settings: ScriptedSource(COMMAND + COMMAND)
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 2)
+        wait_for(lambda: log_counts(client)["total"] >= 2)
     finally:
         client.post("/api/v1/recognition/stop")
     rooms = [e[1]["slot_values"]["room_name"] for e in publisher.events]
@@ -626,7 +626,7 @@ def test_capture_restart_waits_for_session_end(client: TestClient, fake_provider
     try:
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "capturing")
         patch_settings(client, audio_block_ms="200")  # lands mid-session
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
         wait_for(lambda: len(sources) >= 2)
         # the session played out on the old source before the restart: only post-session trailing
         # silence frames remain unread (a mid-session swap would leave ~20 of the 25 frames)
@@ -695,7 +695,7 @@ def test_provider_inspection_during_recognition(client: TestClient, fake_provide
         # repeated inspection creates nothing new and loads nothing
         assert service.provider_status()[0] is active
         assert len(service._providers) == 1  # type: ignore[attr-defined]
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
 
@@ -716,7 +716,7 @@ def test_test_audio_does_not_disturb_live_listener(client: TestClient, fake_prov
         worker.join(timeout=15)
         # the diagnostic audio test completed while the live pipeline kept producing results
         assert results and results[0].transcript is not None
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 2)
+        wait_for(lambda: log_counts(client)["total"] >= 2)
         assert service._providers["fake"][1].is_loaded()  # type: ignore[attr-defined]
     finally:
         client.post("/api/v1/recognition/stop")
@@ -768,8 +768,8 @@ def test_slow_refiner_does_not_block_capture(client: TestClient, fake_provider: 
         # all frames are consumed while the first slow refine still runs on the worker
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["frames_processed"] >= 50)
         # each command is finalized exactly once, in capture order, after refinement completes
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 2, timeout=15)
-        assert client.get("/api/v1/log/count").json()["total"] == 2
+        wait_for(lambda: log_counts(client)["total"] >= 2, timeout=15)
+        assert log_counts(client)["total"] == 2
         assert len(refiner.calls) == 2
     finally:
         client.post("/api/v1/recognition/stop")
@@ -784,7 +784,7 @@ def test_refiner_error_falls_back_to_draft(client: TestClient, fake_provider: ty
     service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
         wait_for(lambda: len(finalized) >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
@@ -802,7 +802,7 @@ def test_refiner_timeout_falls_back_to_draft(client: TestClient, fake_provider: 
     client.post("/api/v1/recognition/start")
     try:
         wait_for(lambda: len(finalized) >= 1)
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
     finally:
         client.post("/api/v1/recognition/stop")
     _, _, refined, error, _ms = finalized[0]
@@ -836,7 +836,7 @@ def test_shutdown_drains_pending_refinement(client: TestClient, fake_provider: t
     client.post("/api/v1/recognition/start")
     wait_for(lambda: len(refiner.calls) >= 1)  # refine in flight; result not yet finalized
     service.shutdown()  # must drain the pending refinement, not discard it
-    assert client.get("/api/v1/log/count").json()["total"] == 1
+    assert log_counts(client)["total"] == 1
     assert finalized and finalized[0][3] is None  # refined result was finalized during shutdown
 
 
@@ -846,7 +846,7 @@ def test_status_reports_capture_and_pipeline_metrics(client: TestClient, fake_pr
     service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 1)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
         metrics = client.get("/api/v1/recognition/status").json()["metrics"]
     finally:
         client.post("/api/v1/recognition/stop")
@@ -877,7 +877,7 @@ def test_status_metrics_with_refiner_and_recovery(client: TestClient, fake_provi
     service._source_factory = lambda settings: ScriptedSource(COMMAND * 2)
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/log/count").json()["total"] >= 2, timeout=15)
+        wait_for(lambda: log_counts(client)["total"] >= 2, timeout=15)
         metrics = client.get("/api/v1/recognition/status").json()["metrics"]
         assert metrics["refinement_completed"] == 2 and metrics["refinement_failed"] == 0
         assert metrics["refine_latency_ms"] >= 300  # slow refine recorded, off the capture loop

@@ -7,7 +7,7 @@ import json
 from fastapi.testclient import TestClient
 
 from opal_listener.service.audio.pcm import write_wav_bytes
-from opal_listener.tests.conftest import patch_settings, silence_frame, tone_frame
+from opal_listener.tests.conftest import list_logs, log_counts, patch_settings, silence_frame, tone_frame
 
 
 def _by_name(client: TestClient, path: str, name: str) -> dict:
@@ -369,14 +369,14 @@ def test_diagnostic_text_results_are_not_published_to_the_event_bus(client: Test
     assert patch_settings(client, event_publication_enabled="true").status_code == 200
 
     for save_log in (True, False):
-        before = client.get("/api/v1/log/count").json()["total"]
+        before = log_counts(client)["total"]
         matched = client.post(
             "/api/v1/recognition/test_text",
             json={"text": "turn on the kitchen light"},
             params={"save_log": save_log},
         ).json()
         assert matched["matched"] is True
-        assert client.get("/api/v1/log/count").json()["total"] == before + int(save_log)
+        assert log_counts(client)["total"] == before + int(save_log)
         no_match = client.post(
             "/api/v1/recognition/test_text", json={"text": "order a pizza"}, params={"save_log": save_log}
         ).json()
@@ -391,37 +391,33 @@ def test_diagnostic_audio_results_are_not_published_to_the_event_bus(client: Tes
     fake_provider.script.append("turn on the kitchen light")
     wav = write_wav_bytes(b"".join([silence_frame()] * 5 + [tone_frame()] * 10 + [silence_frame()] * 15))
 
-    before = client.get("/api/v1/log/count").json()["total"]
+    before = log_counts(client)["total"]
     matched = client.post("/api/v1/recognition/test_audio", files={"file": ("command.wav", wav, "audio/wav")}).json()
     assert matched["matched"] is True and matched["source"] == "audio"
-    assert client.get("/api/v1/log/count").json()["total"] == before + 1
+    assert log_counts(client)["total"] == before + 1
     no_match = client.post(
         "/api/v1/recognition/test_audio",
         files={"file": ("command.wav", wav, "audio/wav")},
         params={"save_log": False},
     ).json()
     assert no_match["matched"] is False
-    assert client.get("/api/v1/log/count").json()["total"] == before + 1
+    assert log_counts(client)["total"] == before + 1
     assert publisher.events == []
 
 
 def test_logs_and_performance(client: TestClient) -> None:
+    # v1.7.1 removed the /api/v1/log read surface; recognition logs are asserted at the store layer.
     assert client.get("/api/v1/performance/last").json() is None
     for text in ("turn on the kitchen light", "open the pod bay doors", "what time is it"):
         client.post("/api/v1/recognition/test_text", json={"text": text})
     client.post("/api/v1/recognition/test_text", json={"text": "not saved"}, params={"save_log": False})
-    assert client.get("/api/v1/log/count").json() == {"total": 3, "matched": 2, "no_match": 1}
+    assert log_counts(client) == {"total": 3, "matched": 2, "no_match": 1}
 
-    page = client.get("/api/v1/log/", params={"limit": 2}).json()
-    assert isinstance(page, list)
-    logs = page
-    assert len(logs) == 2 and logs[0]["normalized_transcript"] == "what time is it"
-    full = client.get("/api/v1/log/", params={"limit": 10}).json()
-    assert len(full) == 3 and full[:2] == logs
-    assert client.get("/api/v1/log/", params={"intent_name": "light_turn_on"}).json()[0]["source"] == "text"
-    assert client.get(f"/api/v1/log/{logs[0]['id']}").json()["id"] == logs[0]["id"]
-    assert client.get("/api/v1/log/999").status_code == 404
-    assert client.get("/api/v1/log/", params={"limit": 501}).status_code == 422
+    logs = list_logs(client, limit=2)
+    assert len(logs) == 2 and logs[0].normalized_transcript == "what time is it"
+    full = list_logs(client, limit=10)
+    assert len(full) == 3 and [r.id for r in full[:2]] == [r.id for r in logs]
+    assert list_logs(client, intent_name="light_turn_on")[0].source == "text"
 
     summary = client.get("/api/v1/performance/summary").json()
     assert summary["count"] == 3 and summary["match_rate"] == round(2 / 3, 4)
