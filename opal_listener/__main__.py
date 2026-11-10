@@ -11,6 +11,13 @@ from opal_listener.app_settings import get_app_settings
 
 
 def main() -> None:
+    # A managed-server restart (`POST /api/v1/service/start` on the tracked pid) asks the
+    # replacement child to hold off binding until the outgoing process has exited.
+    wait_for = os.environ.get("OPAL_LISTENER_WAIT_FOR_PID")
+    if wait_for:
+        from opal_listener.service.lifecycle import wait_for_pids
+
+        wait_for_pids(wait_for.split(","))
     # `opal listen service start` passes this so the pidfile records the *server's* pid, not the
     # python-launcher shim's pid (the shim is not the parent of the uvicorn worker on Windows).
     pid_file = os.environ.get("OPAL_LISTENER_PID_FILE")

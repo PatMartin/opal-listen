@@ -192,6 +192,9 @@ const ROUTES = [
   ["opal_persona_validate", "POST", "/api/v1/persona/{persona_id}/validate", "persona validate", "personas"],
   ["opal_info_get", "GET", "/api/v1/info/", "service info", "system"],
   ["opal_info_ping", "GET", "/api/v1/info/ping", "service ping", "system"],
+  ["opal_service_start", "POST", "/api/v1/service/start", "service start", "system"],
+  ["opal_service_stop", "POST", "/api/v1/service/stop", "service stop", "system"],
+  ["opal_service_log", "GET", "/api/v1/service/log", "service log", "system"],
 ];
 const ROUTE = Object.fromEntries(ROUTES.map(r => [r[0], { name: r[0], method: r[1], path: r[2], cli: r[3], view: r[4] }]));
 
@@ -399,9 +402,9 @@ function statusBadge(s) {
 const VIEWS = {};
 
 VIEWS.system = async () => {
-  const [info, ping, health, devices, live, ready] = await Promise.allSettled([
+  const [info, ping, health, devices, live, ready, svclog] = await Promise.allSettled([
     api("GET", "/api/v1/info/"), api("GET", "/api/v1/info/ping"), api("GET", "/api/v1/health/"), api("GET", "/api/v1/health/audio_devices"),
-    api("GET", "/api/v1/health/live"), api("GET", "/api/v1/health/ready"),
+    api("GET", "/api/v1/health/live"), api("GET", "/api/v1/health/ready"), api("GET", "/api/v1/service/log", { query: { lines: 20 } }),
   ]);
   const val = p => p.status === "fulfilled" ? p.value : null;
   const err = p => p.status === "rejected" ? `<p class="err">${esc(p.reason.message)}</p>` : "";
@@ -420,7 +423,11 @@ VIEWS.system = async () => {
       table(h.checks, [["name", "check"], ["status", "status", r => statusBadge(r.status)], ["detail", "detail"]]) : ""),
       btn("Re-run", "refresh", {}, "ghost small"))}
     ${card("Audio input devices", ["get_audio_devices"], err(devices) +
-      table(val(devices), [["index", "index"], ["name", "name"], ["max_input_channels", "channels"], ["default_sample_rate", "default rate"], ["is_default", "default"]], { empty: "No input devices." }))}`;
+      table(val(devices), [["index", "index"], ["name", "name"], ["max_input_channels", "channels"], ["default_sample_rate", "default rate"], ["is_default", "default"]], { empty: "No input devices." }))}
+    ${card("Server process", ["opal_service_start", "opal_service_stop", "opal_service_log"],
+      `<div class="row">${btn("Start / restart", "svcStart")} ${btn("Stop", "svcStop", {}, "danger")}
+        <label class="muted"><input type="checkbox" id="svcAppend"> append to log</label></div>` +
+      err(svclog) + (val(svclog) ? `<pre class="mono">${esc(val(svclog).lines.join("\n"))}</pre>` : ""))}`;
 };
 
 VIEWS.pipeline = async () => {
@@ -775,6 +782,17 @@ const ACT = {
 
   pipeStart: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/start")).status}`),
   pipeStop: async () => toast(`pipeline ${(await api("POST", "/api/v1/recognition/stop")).status}`),
+  svcStart: async () => {
+    const append = $("#svcAppend")?.checked ?? false;
+    const r = await api("POST", "/api/v1/service/start", { body: { append } });
+    toast(`server ${r.state}${r.pid ? ` (pid ${r.pid})` : ""}`);
+    render();
+  },
+  svcStop: async () => {
+    confirmOr("Stop the managed server process? The console will lose its connection.");
+    const r = await api("POST", "/api/v1/service/stop");
+    toast(`server ${r.state}`);
+  },
 
   wwSave: async d => {
     const body = { name: $(`[data-ww="${d.id}"]`).value, confidence_threshold: Number($(`[data-ww-th="${d.id}"]`).value), enabled: $(`[data-ww-en="${d.id}"]`).checked };

@@ -32,6 +32,13 @@ class ServiceUnavailableError(DomainError):
     error_code = "service_unavailable"
 
 
+class OperationFailedError(DomainError):
+    """500: the operation was accepted but failed during execution."""
+
+    status_code = 500
+    error_code = "operation_failed"
+
+
 class PreconditionRequiredError(DomainError):
     """428: a mandatory strong If-Match header was missing or empty."""
 

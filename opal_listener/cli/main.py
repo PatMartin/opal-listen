@@ -107,6 +107,9 @@ OPERATION_COMMANDS: dict[str, str] = {
     "opal_info_ping": "service ping",
     "opal_health_live_get": "service live",
     "opal_health_ready_get": "service ready",
+    "opal_service_start": "service start",
+    "opal_service_stop": "service stop",
+    "opal_service_log": "service log",
 }
 
 app = typer.Typer(help="Opal command line.", no_args_is_help=True, pretty_exceptions_enable=False)

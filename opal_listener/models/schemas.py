@@ -459,6 +459,37 @@ class OpalImportResult(BaseModel):
     warnings: list[str | dict[str, Any]] | None = None
 
 
+# --- service lifecycle -----------------------------------------------------------------------
+
+
+class OpalServiceStartOptions(BaseModel):
+    """Kernel OpalServiceStartOptions: open body; only `append` is portable."""
+
+    model_config = ConfigDict(extra="allow")
+
+    append: bool = False
+
+
+class OpalServiceStatus(BaseModel):
+    """Kernel OpalServiceStatus for service start/stop."""
+
+    model_config = ConfigDict(extra="allow")
+
+    state: Literal["running", "stopped"]
+    pid: int | None = None
+    previous_pid: int | None = None
+    log_file: str | None = None
+
+
+class OpalServiceLogTail(BaseModel):
+    """Kernel OpalServiceLogTail for service log."""
+
+    model_config = ConfigDict(extra="allow")
+
+    log_file: str | None = None
+    lines: list[str]
+
+
 # --- personas --------------------------------------------------------------------------------
 
 PERSONA_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"

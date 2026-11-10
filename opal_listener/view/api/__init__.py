@@ -15,6 +15,7 @@ from opal_listener.view.api import (
     profiles,
     recognition,
     regression,
+    service,
     settings,
     slots,
     wakewords,
@@ -33,5 +34,6 @@ ROUTERS: list[APIRouter] = [
     health.router,
     backup.router,
     personas.router,
+    service.router,
     info.router,
 ]
