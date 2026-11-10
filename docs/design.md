@@ -151,7 +151,7 @@ Retention: `max_recognition_logs` (default 10 000) pruned every 100 results.
 
 ## 4. API contract
 
-`openapi/opal_listen_v1.6.0.yaml` is the source of truth (REST contract 1.6.0 on the OPAL SUITE STANDARD
+`openapi/opal_listen_v1.7.1.yaml` is the source of truth (REST contract 1.6.0 on the OPAL SUITE STANDARD
 v1.3).
 `tests/test_contract.py` asserts that the generated OpenAPI is a compatible superset: same paths,
 methods, operationIds, tags, parameters, request bodies, response codes, schemas, field types,
@@ -181,9 +181,9 @@ their own `GET` (phrases, slot values, aliases) are gated on the parent collecti
 exposed as a single atomic resource — `GET`/`PATCH /api/v1/setting/` exclusively, no per-key routes —
 and `PATCH` applies all supplied keys in one transaction (rolled back entirely on any invalid value).
 
-Growing histories (`GET /api/v1/log/`, `GET /performance/history`) use opaque cursor pagination (stable
-descending `created_at`+`id` ordering, `items`/`next_cursor`/`has_more`); cursors are scoped to their
-exact filter set and rejected (`422`) if reused with different filters or after corruption.
+`GET /api/v1/performance/history` is a bounded list in stable descending `created_at`+`id` order
+(`limit` caps the returned items; v1.7.1 dropped cursor pagination along with the `/api/v1/log`
+recognition-log read API — recognition rows remain internal to the database).
 `/api/v1/health/live` and `/api/v1/health/ready` add standard liveness/readiness probes
 (`OpalHealthProbe`: `status`, `ready`, `details`; `503` when unavailable) alongside the existing
 `GET /api/v1/health/` doctor report. Configuration export/import/validation excludes history (logs,

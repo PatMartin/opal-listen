@@ -42,7 +42,7 @@ WHAT IS VERIFIED (per group)
                 re-activate the original profile, remove
     recognition test audio (WAV through wakeword + STT + intent; skipped without a Vosk model),
                 pipeline status/start/stop, SSE stream via `test listen` and `test listen-debug`
-    logs/perf   logs list/get/count, service perf last/summary/history
+    perf        service perf last/summary/history
     failures    add, list, get, update, promote (phrase is delexicalized and then matches), remove
     regression  add, list, get, update, run (only this run's tests are judged), remove
     cleanup     remove alias/value/intent/slot/wakeword created above (the DELETE operations)
@@ -366,46 +366,46 @@ def _safety_backup(t: CliRestTest) -> str:
     return f"safety backup {result['filename']}"
 
 
-@step("setting list", "opal_setting_list")
+@step("config setting list", "opal_setting_list")
 def _settings_list(t: CliRestTest) -> str:
-    settings = t.ok("setting", "list")
+    settings = t.ok("config", "setting", "list")
     expect("cooldown_ms" in settings, "cooldown_ms missing from settings")
     return f"{len(settings)} settings (cooldown_ms={settings['cooldown_ms']})"
 
 
-@step("setting set", "opal_setting_put")
+@step("config setting set", "opal_setting_put")
 def _settings_set(t: CliRestTest) -> str:
-    updated = t.ok("setting", "set", "cooldown_ms", "1234")
+    updated = t.ok("config", "setting", "set", "cooldown_ms", "1234")
     expect(updated["value"] == 1234, f"cooldown_ms not stored: {updated}")
-    t.rejected("setting", "set", "cooldown_ms", "soon", contains="cooldown_ms")
-    t.rejected("setting", "set", "not_a_setting", "1", contains="not_a_setting")
-    restored = t.ok("setting", "set", "cooldown_ms", "1500")
+    t.rejected("config", "setting", "set", "cooldown_ms", "soon", contains="cooldown_ms")
+    t.rejected("config", "setting", "set", "not_a_setting", "1", contains="not_a_setting")
+    restored = t.ok("config", "setting", "set", "cooldown_ms", "1500")
     expect(restored["value"] == 1500, f"cooldown_ms not restored: {restored}")
     return "put 1234, invalid value + unknown key rejected, restored 1500"
 
 
-@step("setting get", "opal_setting_get", requires=("setting set",))
+@step("config setting show", "opal_setting_get", requires=("config setting set",))
 def _settings_get(t: CliRestTest) -> str:
-    read = t.ok("setting", "get", "cooldown_ms")
+    read = t.ok("config", "setting", "show", "cooldown_ms")
     expect(read["key"] == "cooldown_ms" and read["value"] == 1500, f"unexpected SettingRead: {read}")
     expect(read["is_default"] is True and read["pending_restart"] is False, f"missing metadata: {read}")
     return f"cooldown_ms={read['value']} (default={read['default']})"
 
 
-@step("setting patch", "opal_setting_patch", requires=("setting get",))
+@step("config setting update", "opal_setting_patch", requires=("config setting show",))
 def _settings_patch(t: CliRestTest) -> str:
-    updated = t.ok("setting", "patch", "cooldown_ms=2345", "dedup_window_ms=1000")
+    updated = t.ok("config", "setting", "update", "cooldown_ms=2345", "dedup_window_ms=1000")
     expect(updated["cooldown_ms"] == "2345" and updated["dedup_window_ms"] == "1000", f"not patched: {updated}")
-    t.rejected("setting", "patch", "not_a_setting=1", contains="not_a_setting")
-    t.ok("setting", "patch", "cooldown_ms=1500", "dedup_window_ms=2000")
+    t.rejected("config", "setting", "update", "not_a_setting=1", contains="not_a_setting")
+    t.ok("config", "setting", "update", "cooldown_ms=1500", "dedup_window_ms=2000")
     return "atomic multi-key patch, unknown key rejected, restored"
 
 
-@step("setting unset", "opal_setting_delete", requires=("setting patch",))
+@step("config setting remove", "opal_setting_delete", requires=("config setting update",))
 def _settings_unset(t: CliRestTest) -> str:
-    t.ok("setting", "set", "cooldown_ms", "999")
-    t.ok("setting", "unset", "cooldown_ms")
-    read = t.ok("setting", "get", "cooldown_ms")
+    t.ok("config", "setting", "set", "cooldown_ms", "999")
+    t.ok("setting", "unset", "cooldown_ms")  # declared flat alias of `config setting remove`
+    read = t.ok("setting", "get", "cooldown_ms")  # declared flat alias of `config setting show`
     expect(read["value"] == 1500 and read["is_default"] is True, f"not reverted: {read}")
     return "999 reverted to default 1500"
 
@@ -664,26 +664,22 @@ def _test_listen_debug(t: CliRestTest) -> str:
     return "received the initial 'status' event"
 
 
-@step("log list", "list_logs", requires=("test text",))
-def _logs_list(t: CliRestTest) -> str:
-    logs = t.ok("log", "list", "--limit", "5")["items"]
-    expect(len(logs) >= 1, "no recognition logs")
-    t.state["log_id"] = logs[0]["id"]
-    return f"latest log id {logs[0]['id']}: {logs[0]['normalized_transcript']!r}"
+@step("service start", "opal_service_start")
+def _service_start(t: CliRestTest) -> str:
+    # The op restarts (or cold-boots) the managed server process — unsafe to run against the
+    # server under test; covered as skipped so the coverage check still sees the op.
+    raise Skip("restarting the managed server would disrupt the test server")
 
 
-@step("log get", "get_log", requires=("log list",))
-def _logs_get(t: CliRestTest) -> str:
-    log = t.ok("log", "get", str(t.state["log_id"]))
-    expect(log["id"] == t.state["log_id"], f"unexpected log {log}")
-    return f"source {log['source']}, matched {log['matched']}"
+@step("service stop", "opal_service_stop")
+def _service_stop(t: CliRestTest) -> str:
+    raise Skip("stopping the managed server would disrupt the test server")
 
 
-@step("log count", "count_logs", requires=("test text",))
-def _logs_count(t: CliRestTest) -> str:
-    counts = t.ok("log", "count")
-    expect(counts["total"] >= 1 and counts["total"] == counts["matched"] + counts["no_match"], f"bad {counts}")
-    return f"{counts}"
+@step("service log", "opal_service_log")
+def _service_log(t: CliRestTest) -> str:
+    output = t.ok("service", "log", "--lines", "3", json_output=False)
+    return f"log tail ok ({len(output.splitlines())} line(s) shown)"
 
 
 @step("service service perf last", "get_last_performance", requires=("test text",))

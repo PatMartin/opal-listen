@@ -137,14 +137,14 @@ BACKUP="$(json_get 'd["filename"]')"
 # --- setting -------------------------------------------------------------------------------------
 
 # all setting as key/value pairs
-t "setting list" "GET /api/v1/setting/" '"cooldown_ms"' setting list
+t "config setting list" "GET /api/v1/setting/" '"cooldown_ms"' config setting list
 # change a setting (the CLI fetches the If-Match ETag automatically)
-t "setting set" "PATCH /api/v1/setting/" '"cooldown_ms": "1234"' setting set cooldown_ms 1234
+t "config setting set" "PATCH /api/v1/setting/" '"cooldown_ms": "1234"' config setting set cooldown_ms 1234
 # invalid values and unknown keys are rejected
-tf "setting set rejects bad value" "PATCH /api/v1/setting/" 'cooldown_ms' setting set cooldown_ms soon
-tf "setting set rejects unknown key" "PATCH /api/v1/setting/" 'not_a_setting' setting set not_a_setting 1
+tf "setting set rejects bad value" "PATCH /api/v1/setting/" 'cooldown_ms' config setting set cooldown_ms soon
+tf "setting set rejects unknown key" "PATCH /api/v1/setting/" 'not_a_setting' config setting set not_a_setting 1
 # back to the default
-t "setting restore" "PATCH /api/v1/setting/" '"cooldown_ms": "1500"' setting set cooldown_ms 1500
+t "setting restore" "PATCH /api/v1/setting/" '"cooldown_ms": "1500"' config setting set cooldown_ms 1500
 
 # --- wakeword ------------------------------------------------------------------------------------
 
@@ -259,15 +259,9 @@ t "test listen" "GET /api/v1/recognition/stream" '' test listen --no-start --dur
 # SSE stream in debug mode: the first event is the pipeline status
 RAW=1 t "test listen-debug" "GET /api/v1/recognition/stream" 'status:' test listen-debug --no-start --duration 2
 
-# --- log and performance --------------------------------------------------------------------------
+# --- performance ------------------------------------------------------------------------------
 
-# recent recognition logs
-t "log list" "GET /api/v1/log/" '"normalized_transcript"' log list --limit 5
-LOG_ID="$(json_get 'd[0]["id"]')"
-# one log entry
-t "log get" "GET /api/v1/log/{log_id}" "\"id\": $LOG_ID" log get "$LOG_ID"
-# counts of matched / no_match
-t "log count" "GET /api/v1/log/count" '"total"' log count
+# (v1.7.1 removed the /api/v1/log recognition-log read API; `service perf` is the supported view)
 # performance of the latest recognition
 t "service service perf last" "GET /api/v1/performance/last" '"total_latency_ms"' service perf last
 # averages, percentiles and match rate

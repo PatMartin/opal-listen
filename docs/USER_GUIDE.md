@@ -250,7 +250,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable --now opal-listen-svc
 journalctl -u opal-listen-svc -f
-opal listen setting set auto_start_listener true   # start the microphone on every boot
+opal listen config setting set auto_start_listener true   # start the microphone on every boot
 ```
 
 ### 2.9 Docker
@@ -724,7 +724,7 @@ fires), it was not deduplicated (repeat utterances inside `dedup_window_ms` don'
 from the live microphone (`test text` / `test audio` never fire), and `reactions_enabled` is `true`:
 
 ```bash
-opal listen setting set reactions_enabled true
+opal listen config setting set reactions_enabled true
 ```
 
 ```yaml
@@ -1359,8 +1359,8 @@ settings-map `If-Match`.
 curl -s -X DELETE $API/api/v1/setting/cooldown_ms -H "If-Match: $ETAG" -w '%{http_code}\n'
 ```
 
-CLI equivalents: `opal listen setting get <key>`, `opal listen setting set <key> <value>` (per-key PUT),
-`opal listen setting unset <key>` (DELETE → default).
+CLI equivalents: `opal listen config setting show <key>`, `opal listen config setting set <key> <value>` (per-key PUT),
+`opal listen config setting remove <key>` (DELETE → default).
 
 ---
 
@@ -1513,41 +1513,51 @@ See [section 6](#6-live-results-server-sent-events).
 
 ---
 
-### 5.11 Recognition logs — `/api/v1/log`
+### 5.11 Service process — `/api/v1/service`
 
-#### `GET /api/v1/log/` — list logs (newest first, cursor-paginated)
+Kernel lifecycle ops act on "the service's server process" — the managed, pidfile-tracked
+detached server (`logs/opal_listen.pid`, `logs/opal_listen.log`). A server started through
+`opal listen service start` can therefore stop and restart *itself* via these endpoints;
+the response is sent before the old process terminates.
+
+#### `POST /api/v1/service/start` — start or restart the managed server
+
+Body (optional): `{"append": false}` — append to the log file instead of truncating.
+
+```bash
+curl -s -X POST $API/api/v1/service/start -H 'Content-Type: application/json' -d '{"append": false}'
+```
+```json
+{"state": "running", "pid": 4242, "previous_pid": null, "log_file": "logs/opal_listen.log"}
+```
+
+#### `POST /api/v1/service/stop` — stop the managed server
+
+```bash
+curl -s -X POST $API/api/v1/service/stop
+```
+```json
+{"state": "stopped", "pid": null, "previous_pid": 4242, "log_file": "logs/opal_listen.log"}
+```
+
+#### `GET /api/v1/service/log` — tail the managed server's log
 
 | Query | Default | Meaning |
 |---|---|---|
-| `limit` | `100` (max 500) | Page size |
-| `cursor` | | Opaque continuation token from the previous page's `next_cursor` |
-| `intent_name` | | Filter by intent (use `no_match` for failures) |
-| `matched` | | `true` / `false` |
-
-The response is `{"items": [...], "next_cursor": "...", "has_more": true}`; ordering is a stable
-descending `(created_at, id)`. Cursors are scoped to the exact filter set used to mint them — reusing
-one with different `intent_name`/`matched` filters, or an otherwise invalid cursor, returns `422`.
+| `lines` | `10` (max 1000) | Trailing lines, oldest first |
 
 ```bash
-curl -s "$API/api/v1/log/?limit=5&matched=false" | jq '.items[] | {id, source, normalized_transcript, no_match_reason}'
-curl -s "$API/api/v1/log/?intent_name=light_turn_on&limit=20" | jq -r .next_cursor
-curl -s "$API/api/v1/log/?intent_name=light_turn_on&limit=20&cursor=<next_cursor-from-previous-call>"
-```
-
-#### `GET /api/v1/log/count` — totals
-
-```bash
-curl -s $API/api/v1/log/count
+curl -s "$API/api/v1/service/log?lines=5"
 ```
 ```json
-{"total": 1284, "matched": 1190, "no_match": 94}
+{"log_file": "logs/opal_listen.log", "lines": ["..."]}
 ```
 
-#### `GET /api/v1/log/{log_id}` — one log
+Returns `404` when no managed log file exists.
 
-```bash
-curl -s $API/api/v1/log/42
-```
+> v1.7.1 removed the `/api/v1/log` recognition-log read API (`list`/`count`/`get`). Recognition
+> rows are still stored internally; browse equivalents are `/api/v1/performance/*` and
+> `/api/v1/failed_utterance/`.
 
 ---
 
@@ -1743,18 +1753,17 @@ curl -s "$API/api/v1/performance/summary?limit=200"
 }
 ```
 
-#### `GET /api/v1/performance/history` — per-recognition rows (newest first, cursor-paginated)
+#### `GET /api/v1/performance/history` — per-recognition rows (newest first)
 
 | Query | Default | Max |
 |---|---|---|
 | `limit` | `100` | `500` |
-| `cursor` | | opaque continuation token from the previous page's `next_cursor` |
 
-The response is `{"items": [...], "next_cursor": "...", "has_more": true}` (same cursor contract as
-[recognition logs](#510-recognition-logs--apiv1logs)).
+The response is a `PerformanceHistory` JSON array (schema), at most `limit` rows in stable
+descending `(created_at, id)` order.
 
 ```bash
-curl -s "$API/api/v1/performance/history?limit=10" | jq -r '.items[] | "\(.id)\t\(.total_latency_ms)ms\t\(.matched)"'
+curl -s "$API/api/v1/performance/history?limit=10" | jq -r '.[] | "\(.id)\t\(.total_latency_ms)ms\t\(.matched)"'
 ```
 
 ---
@@ -2236,21 +2245,26 @@ opal listen persona add amy --name "Amy" --voice en-gb-alan-low
 opal listen persona validate amy
 ```
 
-### 7.7 `setting`
+### 7.7 `config setting`
 
 | Command | Description |
 |---|---|
 | `list` | All settings |
+| `show KEY` | One setting's value, default and `pending_restart` |
 | `set KEY VALUE` | Atomically set one setting (fetches the ETag and sends `If-Match` automatically) |
+| `update K=V ...` | Atomically set several settings in one PATCH (`patch` is a hidden alias) |
+| `remove KEY` | Revert a key to its default |
+
+Flat aliases: `setting get` = `config setting show`, `setting unset` = `config setting remove`.
 
 ```bash
-opal listen setting list
-opal listen setting set cooldown_ms 1000
-opal listen setting set audio_device 2                 # device index
-opal listen setting set audio_device "USB"             # or name substring
-opal listen setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
-opal listen setting set auto_start_listener true
-opal listen setting set stt_refiner faster_whisper     # requires the [whisper] extra
+opal listen config setting list
+opal listen config setting set cooldown_ms 1000
+opal listen config setting set audio_device 2                 # device index
+opal listen config setting set audio_device "USB"             # or name substring
+opal listen config setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
+opal listen config setting set auto_start_listener true
+opal listen config setting set stt_refiner faster_whisper     # requires the [whisper] extra
 ```
 
 ### 7.8 `test`
@@ -2365,14 +2379,16 @@ opal listen regression update 3 --disabled
 opal listen test regression
 ```
 
-### 7.12 `log`
+### 7.12 `service` lifecycle
+
+REST-first (acts on the managed server via `/api/v1/service/*`), with a local fallback when the
+API is unreachable.
 
 ```bash
-opal listen log list                              # 100 newest
-opal listen log list --no-match --limit 50
-opal listen log list --intent light_turn_on --cursor <token-from-previous-page>
-opal listen log get 42
-opal listen log count
+opal listen service start                # detached; logs to logs/opal_listen.log
+opal listen service start --append       # keep the existing log instead of truncating
+opal listen service log --lines 20
+opal listen service stop
 ```
 
 ### 7.13 `service perf`
@@ -2691,9 +2707,9 @@ opal listen profile update default --model vosk_model=/models/vosk-model-en-us-0
 opal listen service doctor                 # the provider check loads the model
 
 # faster-whisper second pass (pip install -e ".[whisper]")
-opal listen setting set stt_refiner faster_whisper
-opal listen setting set whisper_model tiny.en
-opal listen setting set whisper_compute_type int8
+opal listen config setting set stt_refiner faster_whisper
+opal listen config setting set whisper_model tiny.en
+opal listen config setting set whisper_compute_type int8
 opal listen service perf summary                  # stt_latency_ms goes up, accuracy should too
 ```
 
@@ -2704,7 +2720,7 @@ Model changes are checked before they are applied. A non-existent path is reject
 ```bash
 opal listen slot add message --type text
 opal listen intent add send_note --phrase "(note | remember) that {message}"
-opal listen setting set stt_mode open
+opal listen config setting set stt_mode open
 opal listen test text "remember that the milk is in the fridge"
 #   -> send_note {"message": "the milk is in the fridge"}
 ```
@@ -2831,7 +2847,7 @@ myengine = "my_package.provider:MyListenerProvider"
 ```
 
 ```bash
-opal listen setting set listener_provider myengine
+opal listen config setting set listener_provider myengine
 ```
 
 ---
@@ -2854,7 +2870,7 @@ python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixture
 | Negative phrases | `tests/negative/negative_phrases.yaml` | Must be `no_match` with a reason |
 | Audio fixtures | `tests/audio/manifest.yaml`, `fixtures/*.wav` | Full pipeline via REST, wakeword false positives and negatives |
 | Noise | `tests/noise/test_noise.py` (`slow`) | Golden WAVs with white/pink noise at 20/10 dB SNR |
-| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v1.6.0.yaml` |
+| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v1.7.1.yaml` |
 | CLI | `test_cli.py`, `test_e2e_server.py` | Every command, parity map, real server + SSE |
 | Config / backup | `test_config_schema.py`, `test_backup_and_config.py` | YAML schemas, validate-before-apply, rollback |
 | Migrations | `test_migrations.py` | Upgrade/downgrade, drift, foreign keys |
@@ -2955,11 +2971,11 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | PATCH | `/api/v1/profile/{profile_id}` | `opal_profile_patch` | `profile update` | Profiles |
 | DELETE | `/api/v1/profile/{profile_id}` | `opal_profile_delete` | `profile remove` | Profiles |
 | POST | `/api/v1/profile/{profile_id}/activate` | `opal_profile_activate` | `profile activate` | Profiles |
-| GET | `/api/v1/setting/` | `opal_setting_list` | `setting list` | Settings |
-| PATCH | `/api/v1/setting/` | `opal_setting_patch` | `setting patch` | Settings |
-| GET | `/api/v1/setting/{key}` | `opal_setting_get` | `setting get` | Settings |
-| PUT | `/api/v1/setting/{key}` | `opal_setting_put` | `setting set` | Settings |
-| DELETE | `/api/v1/setting/{key}` | `opal_setting_delete` | `setting unset` | Settings |
+| GET | `/api/v1/setting/` | `opal_setting_list` | `config setting list` | Settings |
+| PATCH | `/api/v1/setting/` | `opal_setting_patch` | `config setting update` | Settings |
+| GET | `/api/v1/setting/{key}` | `opal_setting_get` | `config setting show` | Settings |
+| PUT | `/api/v1/setting/{key}` | `opal_setting_put` | `config setting set` | Settings |
+| DELETE | `/api/v1/setting/{key}` | `opal_setting_delete` | `config setting remove` | Settings |
 | GET | `/api/v1/persona/` | `opal_persona_list` | `persona list` | Personas |
 | POST | `/api/v1/persona/` | `opal_persona_create` | `persona add` | Personas |
 | GET | `/api/v1/persona/{persona_id}` | `opal_persona_get` | `persona get` | Personas |
@@ -2972,9 +2988,9 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/recognition/stop` | `stop_pipeline` | `pipeline stop` | Pipeline |
 | GET | `/api/v1/recognition/status` | `get_status` | `pipeline status` | Pipeline |
 | GET | `/api/v1/recognition/stream` | `stream_results` | `test listen` / `listen-debug` | Test |
-| GET | `/api/v1/log/` | `list_logs` | `log list` | Logs |
-| GET | `/api/v1/log/count` | `count_logs` | `log count` | Logs |
-| GET | `/api/v1/log/{log_id}` | `get_log` | `log get` | Logs |
+| POST | `/api/v1/service/start` | `opal_service_start` | `service start` | Service |
+| POST | `/api/v1/service/stop` | `opal_service_stop` | `service stop` | Service |
+| GET | `/api/v1/service/log` | `opal_service_log` | `service log` | Service |
 | GET | `/api/v1/failed_utterance/` | `list_failed_utterances` | `failed list` | Failed utterances |
 | POST | `/api/v1/failed_utterance/` | `create_failed_utterance` | `failed add` | Failed utterances |
 | GET | `/api/v1/failed_utterance/{fu_id}` | `get_failed_utterance` | `failed get` | Failed utterances |
@@ -3005,4 +3021,4 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/backup/validate` | `opal_backup_validate` | `config validate --from-dir` | Config & backups |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v1.6.0.yaml](../openapi/opal_listen_v1.6.0.yaml).
+REST contract [opal_listen_v1.7.1.yaml](../openapi/opal_listen_v1.7.1.yaml).

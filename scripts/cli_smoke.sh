@@ -18,7 +18,7 @@ opal listen wakeword list
 opal listen intent list
 opal listen slot list
 opal listen profile list
-opal listen setting list
+opal listen config setting list
 
 # --- A wakeword write round-trip (ETag-backed PATCH + DELETE) ---
 # Multi-word wakewords must be quoted — names are normalized to spoken form
@@ -29,9 +29,9 @@ opal listen wakeword remove "smoke test word"
 opal listen test text "what time is it" --no-save
 opal listen test text "turn on the kitchen light" --no-save
 
-# --- Recognition logs written by the calls above and earlier traffic ---
-opal listen log count
-opal listen log list --limit 3
+# --- Recognition performance written by the calls above and earlier traffic ---
+opal listen service perf summary
+opal listen service perf history --limit 3
 
 # --- Reactions: file-managed commands fired on intent match ---
 
@@ -72,9 +72,9 @@ opal listen reaction enable lights_kitchen
 
 # Turn firing on for the running service (a mic match would now run the command),
 # confirm, then switch it back off
-opal listen setting set reactions_enabled true
-opal listen setting get reactions_enabled
-opal listen setting set reactions_enabled false
+opal listen config setting set reactions_enabled true
+opal listen config setting show reactions_enabled
+opal listen config setting set reactions_enabled false
 
 # Disarm the reaction so the smoke run leaves no state behind
 opal listen reaction remove lights_kitchen

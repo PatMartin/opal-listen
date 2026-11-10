@@ -128,7 +128,7 @@ opal listen failed promote 3 --intent light_turn_on      # adds a phrase + regre
 opal listen test regression                              # exit code 1 if anything broke
 opal listen service perf summary                                 # latency, confidence, match rate
 opal listen profile activate noisy_room                 # switch thresholds/VAD for the environment
-opal listen setting set cooldown_ms 1000
+opal listen config setting set cooldown_ms 1000
 ```
 
 ## 9. Back up and move configuration
@@ -168,8 +168,8 @@ python scripts/cli_rest_test.py      # every REST operation through the real CLI
 |---|---|
 | `cannot reach the opal listener API` | Start the server, or set `OPAL_LISTEN_API_URL` / `--api-url` |
 | `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH` (or a profile's `model_paths.vosk_model`) at a directory containing `am/` and `conf/` |
-| Wakeword never triggers | Run `test listen-debug`; if levels stay near -90 dBFS pick another device with `opal listen service devices` and `opal listen setting set audio_device <index or name>` |
-| Triggers on similar words | Add them to `opal listen setting set wakeword_distractors "commuter,compute,..."` or raise the wakeword threshold |
+| Wakeword never triggers | Run `test listen-debug`; if levels stay near -90 dBFS pick another device with `opal listen service devices` and `opal listen config setting set audio_device <index or name>` |
+| Triggers on similar words | Add them to `opal listen config setting set wakeword_distractors "commuter,compute,..."` or raise the wakeword threshold |
 | Command cut off or ends too late | Tune the active profile's `vad_settings`, e.g. `opal listen profile update default --vad silence_end_ms=900` |
 | `vocabulary` warning in doctor | A phrase or alias uses a word the model does not know; rephrase it or use a larger model |
 

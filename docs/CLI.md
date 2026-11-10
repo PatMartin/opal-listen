@@ -280,15 +280,15 @@ opal
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
     ├── profile     list | get | add | update | activate | remove
     ├── persona     list | get | add | update | remove | validate
-    ├── setting     list | get | set | patch | unset
+    ├── setting     get | unset        (aliases for `config setting show` / `config setting remove`)
     ├── test        text | audio | listen | listen-debug | regression
     ├── pipeline    start | stop | status
     ├── failed      list | get | add | update | remove | promote
     ├── regression  list | get | add | update | remove
-    ├── log         list | get | count
     ├── service     start | stop | log | doctor | devices | live | ready | info | ping
     │               └── perf  last | summary | history
     ├── config      validate | backup | backups | download | restore | delete-backup | export | import
+    │               └── setting   list | show | set | update | remove   (`patch` = hidden alias of `update`)
     ├── event       publish
     └── reaction    list | get | add | update | remove | enable | disable | test | log | path
 ```
@@ -676,7 +676,7 @@ checks that a declared voice id is well-formed — existence is OPAL Say's conce
 
 ---
 
-## 10. `setting`: global settings
+## 10. `config setting`: global settings
 
 Settings are typed global key/value pairs. The server validates the type, range and allowed choices on
 every change. Per the OPAL standard, the collection `GET`/`PATCH /api/v1/setting/` is a single atomic
@@ -685,13 +685,16 @@ commands fetch the current strong `ETag` and send it back as `If-Match` automati
 atomically and safely even if another client changed settings concurrently (a stale `If-Match` is
 rejected with `412`, a missing one with `428`).
 
+The canonical commands live under `config setting`; the contract also declares two flat aliases,
+`opal listen setting get` (= `show`) and `opal listen setting unset` (= `remove`).
+
 | Command | Description |
 |---|---|
-| `list` | Show all settings with their effective values |
-| `get KEY` | Show one setting's value, registry default, `is_default` and `pending_restart` |
-| `set KEY VALUE` | Set one setting (`PUT /settings/{key}`; sends the settings-map `If-Match`) |
-| `patch KEY=VALUE ...` | Set several settings atomically in one collection `PATCH` (all-or-nothing) |
-| `unset KEY` | Revert a setting to its registry default (`DELETE /settings/{key}`) |
+| `config setting list` | Show all settings with their effective values |
+| `config setting show KEY` | Show one setting's value, registry default, `is_default` and `pending_restart` |
+| `config setting set KEY VALUE` | Set one setting (`PUT /settings/{key}`; sends the settings-map `If-Match`) |
+| `config setting update KEY=VALUE ...` | Set several settings atomically in one collection `PATCH` (all-or-nothing; `patch` is a hidden alias) |
+| `config setting remove KEY` | Revert a setting to its registry default (`DELETE /settings/{key}`) |
 
 ### Known keys
 
@@ -724,43 +727,43 @@ Booleans accept `true/false`, `1/0`, `yes/no` and `on/off`.
 
 ```bash
 # Show all settings
-opal listen setting list
+opal listen config setting list
 
 # Switch the Whisper refiner model, then switch back
-opal listen setting set whisper_model medium.en
-opal listen setting set whisper_model tiny.en
+opal listen config setting set whisper_model medium.en
+opal listen config setting set whisper_model tiny.en
 
 # Enable the optional second-pass refiner (requires the [whisper] extra)
-opal listen setting set stt_refiner faster_whisper
+opal listen config setting set stt_refiner faster_whisper
 
 # Choose the microphone by index or by name substring (see 'system devices')
-opal listen setting set audio_device 2
-opal listen setting set audio_device "USB"
+opal listen config setting set audio_device 2
+opal listen config setting set audio_device "USB"
 
 # Start the microphone pipeline automatically when the server starts
-opal listen setting set auto_start_listener true
+opal listen config setting set auto_start_listener true
 
 # Shorten the cooldown between commands
-opal listen setting set cooldown_ms 1000
+opal listen config setting set cooldown_ms 1000
 
 # ... or change several settings atomically in one PATCH
-opal listen setting patch cooldown_ms=1000 dedup_window_ms=3000
+opal listen config setting patch cooldown_ms=1000 dedup_window_ms=3000
 
 # Inspect one setting's metadata (default, is_default, pending_restart)
-opal listen setting get cooldown_ms
+opal listen config setting show cooldown_ms
 
 # Revert a key to its registry default
-opal listen setting unset cooldown_ms
+opal listen config setting remove cooldown_ms
 
 # Add a sound-alike word that should never trigger the wakeword
-opal listen setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
+opal listen config setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
 
 # Invalid values are rejected
-opal listen setting set stt_mode fast
+opal listen config setting set stt_mode fast
 # Error: HTTP 422: setting 'stt_mode' must be one of grammar, open
 
 # Go back to the default value
-opal listen setting set whisper_model tiny.en
+opal listen config setting set whisper_model tiny.en
 ```
 
 ---
@@ -986,7 +989,7 @@ Important `status` fields:
 | `audio_restarts`, `last_error` | Watchdog and recovery activity |
 | `last_audio_level` | Most recent input level in dBFS |
 
-> Use `opal listen setting set auto_start_listener true` to start the pipeline every time the server
+> Use `opal listen config setting set auto_start_listener true` to start the pipeline every time the server
 > starts.
 
 ---
@@ -1099,42 +1102,20 @@ opal listen test regression
 
 ---
 
-## 15. `log`: recognition logs
+## 15. Recognition history
 
-Every recognition (microphone, audio file, or text with `--save`) is stored as a log entry. The number
-of rows kept is limited by `max_recognition_logs`. Listing uses OPAL v1.2 cursor pagination: each page
-reports `has_more`; pass `--cursor` with the opaque token from the previous page to continue. Cursors
-are scoped to the exact filter set (`--intent`/`--matched`) and are rejected with `422` if reused with
-different filters.
-
-| Command | Description |
-|---|---|
-| `list [--limit N] [--cursor TOKEN] [--intent I] [--matched/--no-match]` | Recent logs, newest first |
-| `get ID` | Show one log entry with all fields |
-| `count` | Totals: `total`, `matched`, `no_match` |
-
-| Option | Default | Meaning |
-|---|---|---|
-| `--limit N` | `100` | Page size (max 500) |
-| `--cursor TOKEN` | | Continue from the previous page's `next_cursor` |
-| `--intent I` | | Only entries for this intent |
-| `--matched/--no-match` | both | Only matched, or only unmatched entries |
+Every recognition (microphone, audio file, or text with `--save`) is stored in the database as a
+recognition-log row; `max_recognition_logs` limits how many rows are kept. The v1.7.1 contract no
+longer exposes a REST surface for browsing them — use `service perf` (per-recognition latencies,
+confidences and match flags, newest first) and `failed list` (captured `no_match` utterances) instead.
 
 ```bash
-# The 100 newest entries
-opal listen log list
+# Totals and latencies for recent recognitions
+opal listen service perf summary
+opal listen service perf history --limit 20
 
-# The last 50 failures
-opal listen log list --no-match --limit 50
-
-# Next page (the CLI prints the --cursor to pass when has_more is true)
-opal listen log list --intent light_turn_on --cursor <token-from-previous-page>
-
-# One entry in full detail
-opal listen log get 42
-
-# Totals
-opal listen log count
+# Captured no_match utterances, filterable and promotable
+opal listen failed list --unreviewed
 ```
 
 ---
@@ -1267,11 +1248,17 @@ After an import, the CLI prints the backup filename, a count of imported items, 
 
 ## 18. `service`: process lifecycle, health and diagnostics
 
+`start`/`stop`/`log` are REST-first: they call the `/api/v1/service/*` ops on a running server (which
+can therefore stop or restart *itself*, still returning the status first). When the API is unreachable
+they fall back to the same local pidfile/log management the server-side ops use — that is what lets
+`service start` cold-boot a server that isn't running yet. The managed server writes
+`logs/opal_listen.log` and `logs/opal_listen.pid`.
+
 | Command | Description |
 |---|---|
-| `start [--host H] [--port P] [--data-dir DIR]` | Start the server in the background, logging to `logs/opal_listen.log` (truncated on each start). Replaces a previously started server. Returns immediately. |
-| `stop` | Stop the server started by `service start`, if it is running |
-| `log [--lines N]` | Show the last N lines of `logs/opal_listen.log` (default 10) |
+| `start [--host H] [--port P] [--data-dir DIR] [--append]` | Start the managed server (replaces a running one). `--append` appends to `logs/opal_listen.log` instead of truncating. Returns immediately. |
+| `stop` | Stop the managed server, if it is running |
+| `log [--lines N]` | Show the last N lines of the managed server's log (default 10) |
 | `ping` | Liveness probe (`GET /api/v1/info/ping`) |
 | `info` | Service name, package version and contract version (`GET /api/v1/info/`) |
 | `doctor` | Run all health checks. Exits `1` if any check is an error. |
@@ -1302,7 +1289,7 @@ opal listen service ready
 
 # Find the microphone index or name to use for the audio_device setting
 opal listen service devices
-opal listen setting set audio_device 2
+opal listen config setting set audio_device 2
 ```
 
 Example `doctor` output:
@@ -1435,7 +1422,7 @@ timestamp, argv, exit code, duration, stderr tail). `--limit N` controls how man
 opal listen reaction log --limit 5
 ```
 
-Remember: armed reactions only fire when the feature is switched on — `opal listen setting set
+Remember: armed reactions only fire when the feature is switched on — `opal listen config setting set
 reactions_enabled true`. The switch is a setting so it can be flipped at runtime without editing
 files.
 
@@ -1493,9 +1480,9 @@ opal listen profile activate test_profile
 opal listen profile activate default                          # switch back before removing
 
 # --- settings -----------------------------------------------------------------------------
-opal listen setting list
-opal listen setting set whisper_model medium.en
-opal listen setting set whisper_model tiny.en
+opal listen config setting list
+opal listen config setting set whisper_model medium.en
+opal listen config setting set whisper_model tiny.en
 
 # --- recognition --------------------------------------------------------------------------
 opal listen test text "computer, turn on the kitchen light"
@@ -1548,7 +1535,7 @@ opal listen service doctor
 opal listen test listen --duration 300
 
 # 2. Look at what failed
-opal listen log count
+opal listen service perf summary
 opal listen failed list --unreviewed
 
 # 3. Promote real commands that should have matched
@@ -1680,7 +1667,7 @@ opal listen --json regression list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `service devices`, `setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
+| `test listen` shows nothing | Check `service devices`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1736,8 +1723,11 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `persona update` | `PATCH /api/v1/persona/{persona_id}` (If-Match) |
 | `persona remove` | `DELETE /api/v1/persona/{persona_id}` (If-Match) |
 | `persona validate` | `POST /api/v1/persona/{persona_id}/validate` |
-| `setting list` | `GET /api/v1/setting/` |
-| `setting set` | `PATCH /api/v1/setting/` (If-Match; atomic, may set several keys) |
+| `config setting list` | `GET /api/v1/setting/` |
+| `config setting show` | `GET /api/v1/setting/{key}` |
+| `config setting set` | `PUT /api/v1/setting/{key}` (If-Match) |
+| `config setting update` (`patch`) | `PATCH /api/v1/setting/` (If-Match; atomic, may set several keys) |
+| `config setting remove` (`setting unset`) | `DELETE /api/v1/setting/{key}` (If-Match) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
 | `test listen`, `test listen-debug` | `GET /api/v1/recognition/stream` (SSE) |
@@ -1756,9 +1746,9 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `regression get` | `GET /api/v1/regression/{id}` |
 | `regression update` | `PATCH /api/v1/regression/{id}` |
 | `regression remove` | `DELETE /api/v1/regression/{id}` |
-| `log list` | `GET /api/v1/log/` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
-| `log count` | `GET /api/v1/log/count` |
-| `log get` | `GET /api/v1/log/{id}` |
+| `service start` | `POST /api/v1/service/start` (falls back to local spawn when the API is unreachable) |
+| `service stop` | `POST /api/v1/service/stop` (falls back to local pidfile stop when unreachable) |
+| `service log` | `GET /api/v1/service/log` (falls back to the local log file when unreachable) |
 | `service perf last` | `GET /api/v1/performance/last` |
 | `service perf summary` | `GET /api/v1/performance/summary` |
 | `service perf history` | `GET /api/v1/performance/history` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
