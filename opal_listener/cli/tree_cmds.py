@@ -95,7 +95,7 @@ def render_ascii_tree(root: object, label: str) -> str:
     return "\n".join(lines)
 
 
-def register(app: typer.Typer, label: str = "opal listen") -> None:
+def register(app: typer.Typer, label: str = "opal-listen") -> None:
     """Attach the `tree` command, which prints the app's live command tree."""
 
     @app.command("tree")

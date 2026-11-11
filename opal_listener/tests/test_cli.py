@@ -384,7 +384,7 @@ def test_listen_tree_renders_live_command_tree(cli: CliHarness) -> None:
     result = cli("tree")
     assert result.exit_code == 0, result.output
     out = result.output
-    assert out.splitlines()[0].startswith("opal listen")
+    assert out.splitlines()[0].startswith("opal-listen")
     # groups and leaf commands are present with Unicode box-drawing guides
     assert "├── wakeword" in out and "── list" in out and "└── " in out
     # piped output carries no ANSI escapes; styles only appear on a terminal
@@ -411,7 +411,7 @@ def test_listen_tree_styles_when_on_a_terminal(cli: CliHarness) -> None:
 
     def render(force_terminal: bool) -> str:
         con = Console(file=io.StringIO(), force_terminal=force_terminal, width=120)
-        con.print(render_tree(get_command(listen_app), "opal listen"))
+        con.print(render_tree(get_command(listen_app), "opal-listen"))
         return con.file.getvalue()
 
     styled, plain = render(True), render(False)
@@ -425,7 +425,7 @@ def test_listen_tree_ascii(cli: CliHarness) -> None:
     result = cli("tree", "--ascii")
     assert result.exit_code == 0, result.output
     out = result.output
-    assert out.splitlines()[0].startswith("opal listen")
+    assert out.splitlines()[0].startswith("opal-listen")
     # ASCII guides only — no Unicode box-drawing, no ANSI escapes
     assert "|-- wakeword" in out and "`-- " in out
     assert "├──" not in out and "└──" not in out and "│" not in out and "\x1b[" not in out
