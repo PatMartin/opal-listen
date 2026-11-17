@@ -16,3 +16,4 @@ node_modules/
 resources/models/
 resources/vosk/
 logs/
+!.env.example

@@ -12,7 +12,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="OPAL_LISTENER_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="OPAL_LISTENER_", extra="ignore")
 
     data_dir: Path = Path("var")
     database_file: str = "opal_listener.db"
@@ -65,6 +65,27 @@ class AppSettings(BaseSettings):
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.backup_dir.mkdir(parents=True, exist_ok=True)
+
+
+def dotenv_baseline() -> dict[str, object]:
+    defaults = AppSettings.model_construct()
+    return {
+        "OPAL_LISTENER_DATA_DIR": defaults.data_dir,
+        "OPAL_LISTENER_DATABASE_FILE": defaults.database_file,
+        "OPAL_LISTENER_BACKUP_DIR_NAME": defaults.backup_dir_name,
+        "OPAL_LISTENER_CONFIG_DIR": defaults.config_dir,
+        "OPAL_LISTENER_VOSK_MODEL_PATH": defaults.vosk_model_path,
+        "OPAL_LISTENER_HOST": defaults.host,
+        "OPAL_LISTENER_PORT": defaults.port,
+        "OPAL_LISTENER_CORS_ORIGINS": ",".join(defaults.cors_origins),
+        "OPAL_LISTENER_MAX_UPLOAD_BYTES": defaults.max_upload_bytes,
+        "OPAL_LISTENER_SEED_ON_EMPTY": defaults.seed_on_empty,
+        "OPAL_LISTENER_API_TOKEN": "<set-a-token>",
+        "OPAL_LISTENER_XPUB_URL": defaults.xpub_url,
+        "OPAL_LISTENER_OPAL_EVENT_URL": defaults.opal_event_url,
+        "OPAL_LISTENER_OPAL_EVENT_TOKEN": "<set-a-token>",
+        "OPAL_LISTENER_EVENT_TRANSPORT": defaults.event_transport,
+    }
 
 
 @lru_cache

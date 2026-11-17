@@ -187,7 +187,16 @@ def listen_callback(
     xsub: str = typer.Option(None, "--xsub", help="ZeroMQ event subscriber URL [env: OPAL_EVENT_XSUB_URL]"),
     json_output: bool = typer.Option(False, "--json", help="Print raw JSON responses"),
     timeout: float = typer.Option(60.0, "--timeout", help="HTTP timeout in seconds"),
+    env_file: str = typer.Option(None, "--env-file", help="Load this dotenv file instead of ./.env"),
+    no_env_file: bool = typer.Option(False, "--no-env-file", help="Disable dotenv loading and .env initialization"),
 ) -> None:
+    from opal_listener.app_settings import dotenv_baseline
+    from opal_listener.dotenv import DotenvError, prepare
+
+    try:
+        prepare(env_file=env_file, no_env_file=no_env_file, baseline=dotenv_baseline())
+    except DotenvError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     ctx.obj = CliState(
         ApiClient(api_url or api_url_from_env(), timeout),
         json_output,

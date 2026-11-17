@@ -9,6 +9,7 @@ description = "Local-first wakeword, STT, intent recognition and slot extraction
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "python-dotenv>=1.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "sse-starlette>=2.0",

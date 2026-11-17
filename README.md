@@ -953,3 +953,7 @@ opal-listen/
 **OPAL Listen is meant to understand you—not make you memorize its commands.** Start with one wakeword and one useful intent. Add a few alternate phrases, measure the results, and keep teaching it the words people actually say.
 
 The rest of OPAL can take it from there.
+
+## Dotenv configuration
+
+See [docs/DOTENV.md](docs/DOTENV.md) for `.env` loading, initialization, precedence, and `--env-file` / `--no-env-file` behavior.
