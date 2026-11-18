@@ -7,6 +7,10 @@ Policy
   recorded as ``queue_full``).
 - Timeout: a refine call exceeding the task snapshot's ``refiner_timeout_ms`` is abandoned;
   the stuck call is discarded by replacing the executor so later tasks are unaffected.
+- Bounded inference: threads cannot be cancelled in Python, so abandoned calls keep running.
+  Unresolved refine calls are tracked and capped at ``max_unresolved``; at the cap the draft
+  transcript is used instead (degradation recorded as ``refiner_saturated``) until an
+  abandoned call returns and frees capacity.
 - Failure: any refiner error falls back to the draft transcript (degradation recorded).
 - Shutdown: pending tasks drain within a bounded join; leftovers are discarded with a warning.
 """
@@ -33,6 +37,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_QUEUE_CAPACITY = 8
 DEFAULT_REFINE_TIMEOUT_MS = 5000
+DEFAULT_MAX_UNRESOLVED = 2  # one awaited call + one abandoned slot: caps stuck-call threads
 _SHUTDOWN_DRAIN_SECONDS = 5.0
 
 FinalizeFn = Callable[["CommandOutcome", "RuntimeSnapshot", Transcript | None, str | None, float], None]
@@ -49,20 +54,41 @@ class RefineTask:
 
 
 class RefinementWorker:
-    def __init__(self, capacity: int, refiner_for: RefinerForFn, finalize: FinalizeFn) -> None:
+    def __init__(
+        self,
+        capacity: int,
+        refiner_for: RefinerForFn,
+        finalize: FinalizeFn,
+        max_unresolved: int = DEFAULT_MAX_UNRESOLVED,
+    ) -> None:
         self._queue: queue.Queue[RefineTask | None] = queue.Queue(maxsize=capacity)
         self._refiner_for = refiner_for
         self._finalize = finalize
+        self._max_unresolved = max_unresolved
+        self._unresolved: set[futures.Future[Transcript]] = set()
         self._thread: threading.Thread | None = None
         self._executor: futures.ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
         self._closed = False
         self.refined = 0
         self.failed = 0
+        self.saturated = 0
 
     @property
     def queue_depth(self) -> int:
         return self._queue.qsize()
+
+    @property
+    def unresolved(self) -> int:
+        """Refine calls still running (awaited or abandoned after a timeout)."""
+        with self._lock:
+            tracked = set(self._unresolved)
+        return sum(1 for f in tracked if not f.done())
+
+    def _unresolved_count(self) -> int:
+        """Worker-thread helper: prune finished futures, return the live count."""
+        self._unresolved = {f for f in self._unresolved if not f.done()}
+        return len(self._unresolved)
 
     def submit(self, task: RefineTask) -> bool:
         """Enqueue a captured command for refinement. Returns False when the queue is full."""
@@ -96,19 +122,29 @@ class RefinementWorker:
                 return
             refined: Transcript | None = None
             error: str | None = None
-            try:
-                refiner = self._refiner_for(task.snapshot)
-            except Exception as exc:
-                refiner, error = None, f"refiner_unavailable: {exc}"
-            if refiner is not None and task.outcome.transcript.text:
-                timeout_s = int(task.snapshot.settings.get("refiner_timeout_ms", DEFAULT_REFINE_TIMEOUT_MS)) / 1000
+            with self._lock:
+                unresolved = self._unresolved_count()
+            if unresolved >= self._max_unresolved:
+                # stuck-call bound reached: skip the executor entirely and use the draft
+                error = "refiner_saturated"
+                self.saturated += 1
+            else:
                 try:
-                    refined = self._executor_submit(refiner, task).result(timeout=timeout_s)
-                except futures.TimeoutError:
-                    error = "timeout"
-                    self._reset_executor()
+                    refiner = self._refiner_for(task.snapshot)
                 except Exception as exc:
-                    error = f"refiner_error: {exc}"
+                    refiner, error = None, f"refiner_unavailable: {exc}"
+                if refiner is not None and task.outcome.transcript.text:
+                    timeout_s = int(task.snapshot.settings.get("refiner_timeout_ms", DEFAULT_REFINE_TIMEOUT_MS)) / 1000
+                    try:
+                        future = self._executor_submit(refiner, task)
+                        with self._lock:
+                            self._unresolved.add(future)
+                        refined = future.result(timeout=timeout_s)
+                    except futures.TimeoutError:
+                        error = "timeout"
+                        self._reset_executor()
+                    except Exception as exc:
+                        error = f"refiner_error: {exc}"
             elapsed_ms = (time.monotonic() - task.enqueued_at) * 1000
             if error:
                 self.failed += 1

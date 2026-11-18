@@ -841,6 +841,94 @@ def test_shutdown_drains_pending_refinement(client: TestClient, fake_provider: t
     assert finalized and finalized[0][3] is None  # refined result was finalized during shutdown
 
 
+class _GatedRefiner(_FakeRefiner):
+    """Refiner that blocks inside refine() until the test releases the gate, tracking how
+    many calls actually started so tests can prove the stuck-call bound."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = threading.Event()
+        self.entered = 0
+
+    def refine(self, pcm: bytes, draft: Transcript) -> Transcript:
+        self.entered += 1
+        self.calls.append(draft.text or "")
+        self.gate.wait(30)  # hangs until released — a stuck inference call
+        return Transcript(text=(draft.text or "") + " (refined)", confidence=draft.confidence)
+
+
+def test_refiner_hang_is_bounded(client: TestClient, fake_provider: type) -> None:
+    """Repeatedly hung refinements cannot pile up: after ``max_unresolved`` abandoned calls
+    the worker stops attempting refine() and finalizes on the Vosk draft instead."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    finalized = _spy_finalize(service)
+    assert patch_settings(
+        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
+    ).status_code == 200
+    fake_provider.script.extend(["turn on the kitchen light"] * 4)
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: len(finalized) >= 4, timeout=15)
+    finally:
+        client.post("/api/v1/recognition/stop")
+        refiner.gate.set()  # let the abandoned calls return
+    errors = [f[3] for f in finalized]
+    assert errors == ["timeout", "timeout", "refiner_saturated", "refiner_saturated"]
+    assert refiner.entered == 2  # the stuck-call bound: only two refine() calls ever started
+    assert all(f[2] is None for f in finalized)  # every one finalized on the draft transcript
+    assert log_counts(client)["total"] == 4  # and every utterance was still recorded
+
+
+def test_refinement_recovers_when_stuck_calls_return(client: TestClient, fake_provider: type) -> None:
+    """Once abandoned calls return, refinement resumes for later commands."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    finalized = _spy_finalize(service)
+    assert patch_settings(
+        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
+    ).status_code == 200
+    feed: deque[bytes] = deque()
+    fake_provider.script.extend(["turn on the kitchen light"] * 2)
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        feed.extend(COMMAND * 2)
+        wait_for(lambda: len(finalized) >= 2, timeout=15)
+        assert client.get("/api/v1/recognition/status").json()["metrics"]["refine_unresolved"] == 2.0
+        refiner.gate.set()  # the hung calls return; unresolved capacity frees up
+        fake_provider.script.append("what time is it")
+        feed.extend(COMMAND)
+        wait_for(lambda: len(finalized) >= 3)
+    finally:
+        client.post("/api/v1/recognition/stop")
+        refiner.gate.set()
+    refined, error = finalized[2][2], finalized[2][3]
+    assert error is None and refined is not None and refined.text.endswith("(refined)")
+    assert client.get("/api/v1/recognition/status").json()["metrics"]["refine_unresolved"] == 0.0
+
+
+def test_bounded_shutdown_with_stuck_refiner(client: TestClient, fake_provider: type) -> None:
+    """shutdown() stays bounded even while refine() calls are still hung."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert patch_settings(
+        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
+    ).status_code == 200
+    fake_provider.script.extend(["turn on the kitchen light"] * 4)
+    service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
+    client.post("/api/v1/recognition/start")
+    wait_for(lambda: refiner.entered >= 2, timeout=15)
+    started = time.monotonic()
+    service.shutdown()  # drain is bounded; hung calls are abandoned, not awaited
+    assert time.monotonic() - started < 10
+    refiner.gate.set()  # release the abandoned calls so threads can exit
+
+
 def test_status_reports_capture_and_pipeline_metrics(client: TestClient, fake_provider: type) -> None:
     service = client.app.state.listener  # type: ignore[attr-defined]
     fake_provider.script.append("turn on the kitchen light")
