@@ -77,6 +77,12 @@ SETTINGS: dict[str, SettingDef] = {
                    minimum=500, maximum=60000),
         SettingDef("max_recognition_logs", int, 10000, "settings", "Recognition log retention (rows)",
                    minimum=100, maximum=1000000),
+        SettingDef("transcript_retention_days", int, 0, "settings",
+                   "Days to keep transcript text in recognition logs; 0 = forever (rows stay)",
+                   minimum=0, maximum=36500),
+        SettingDef("unreviewed_failure_ttl_days", int, 90, "settings",
+                   "Auto-delete unreviewed, unpromoted failed utterances after N days; 0 = forever",
+                   minimum=0, maximum=36500),
     ]
 }  # fmt: skip
 

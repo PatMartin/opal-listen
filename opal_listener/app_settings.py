@@ -27,6 +27,9 @@ class AppSettings(BaseSettings):
     # while generated .env files write a plain comma-separated list — both forms are accepted.
     cors_origins: Annotated[list[str], NoDecode] = ["*"]
     max_upload_bytes: int = 10 * 1024 * 1024
+    # reaction_log.jsonl is a transcript-bearing execution journal; it is truncated from the
+    # top (oldest entries dropped) once it exceeds this size
+    reaction_log_max_bytes: int = 1024 * 1024
     seed_on_empty: bool = True
     # Bearer credential for the OPAL BearerAuth contract (token_env in the shared kernel). Unset
     # disables authentication, which the kernel permits on loopback deployments; set it whenever
@@ -96,6 +99,7 @@ def dotenv_baseline() -> dict[str, object]:
         "OPAL_LISTENER_PORT": defaults.port,
         "OPAL_LISTENER_CORS_ORIGINS": ",".join(defaults.cors_origins),
         "OPAL_LISTENER_MAX_UPLOAD_BYTES": defaults.max_upload_bytes,
+        "OPAL_LISTENER_REACTION_LOG_MAX_BYTES": defaults.reaction_log_max_bytes,
         "OPAL_LISTENER_SEED_ON_EMPTY": defaults.seed_on_empty,
         "OPAL_LISTENER_API_TOKEN": "<set-a-token>",
         "OPAL_LISTENER_XPUB_URL": defaults.xpub_url,

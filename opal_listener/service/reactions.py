@@ -32,6 +32,10 @@ log = logging.getLogger(__name__)
 Operator = Literal["eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "exists", "contains"]
 OPERATORS = frozenset(get_args(Operator))
 
+# reaction_log.jsonl carries the full result payload (including transcript text); it is a
+# bounded journal — appends beyond this size truncate the oldest lines first
+DEFAULT_LOG_MAX_BYTES = 1024 * 1024
+
 
 class ReactionCondition(BaseModel):
     """One predicate over the recognition-result payload; opal-event condition grammar."""
@@ -136,9 +140,12 @@ class ReactionRunner:
     A full queue drops the job (recognition must never wait on a shell command);
     every execution appends a JSON line to the reactions log file."""
 
-    def __init__(self, config_path: Path, log_path: Path, capacity: int = 64) -> None:
+    def __init__(
+        self, config_path: Path, log_path: Path, capacity: int = 64, log_max_bytes: int = DEFAULT_LOG_MAX_BYTES
+    ) -> None:
         self._config_path = config_path
         self._log_path = log_path
+        self._log_max_bytes = log_max_bytes
         self._queue: queue.Queue[tuple[list[ReactionAction], dict[str, Any], str]] = queue.Queue(capacity)
         self._stats = _RunnerStats()
         self._stat_lock = threading.Lock()
@@ -214,7 +221,7 @@ class ReactionRunner:
                 self._execute(action, payload, names)
 
     def _execute(self, action: ReactionAction, payload: dict[str, Any], names: str) -> None:
-        record = run_action(action, payload, names, self._log_path, origin="service")
+        record = run_action(action, payload, names, self._log_path, origin="service", max_bytes=self._log_max_bytes)
         with self._stat_lock:
             if record["failed"]:
                 self._stats.failed += 1
@@ -228,8 +235,48 @@ def record_outcome(record: dict[str, Any]) -> str:
     return record.get("error") or f"exit {record['exit_code']}"
 
 
+def _append_journal(log_path: Path, line: str, max_bytes: int) -> None:
+    """Append one JSON line; when the file would exceed ``max_bytes``, oldest lines are
+    dropped first (the journal keeps the newest half of its budget)."""
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if max_bytes > 0:
+            try:
+                oversize = log_path.stat().st_size + len(line.encode("utf-8")) > max_bytes
+            except OSError:
+                oversize = False
+            if oversize:
+                _truncate_oldest(log_path, max_bytes)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+    except OSError:
+        log.warning("cannot write reaction log %s", log_path, exc_info=True)
+
+
+def _truncate_oldest(log_path: Path, max_bytes: int) -> None:
+    try:
+        lines = log_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return
+    budget = max_bytes // 2
+    kept: list[str] = []
+    size = 0
+    for line in reversed(lines):
+        n = len(line.encode("utf-8"))
+        if size + n > budget:
+            break
+        kept.append(line)
+        size += n
+    log_path.write_text("".join(reversed(kept)), encoding="utf-8")
+
+
 def run_action(
-    action: ReactionAction, payload: dict[str, Any], names: str, log_path: Path, origin: str
+    action: ReactionAction,
+    payload: dict[str, Any],
+    names: str,
+    log_path: Path,
+    origin: str,
+    max_bytes: int = DEFAULT_LOG_MAX_BYTES,
 ) -> dict[str, Any]:
     """Run one command action with the payload as JSON on stdin and journal the outcome.
 
@@ -262,12 +309,7 @@ def run_action(
         record.update(exit_code=None, error=str(exc))
         failed = True
     record["duration_ms"] = round((time.monotonic() - started) * 1000, 2)
-    try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, default=str) + "\n")
-    except OSError:
-        log.warning("cannot write reaction log %s", log_path, exc_info=True)
+    _append_journal(log_path, json.dumps(record, default=str) + "\n", max_bytes)
     record["failed"] = failed
     return record
 

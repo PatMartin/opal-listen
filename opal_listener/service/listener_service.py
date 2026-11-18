@@ -205,6 +205,7 @@ class ListenerService:
         self._reaction_runner = ReactionRunner(
             config_path=app_settings.config_dir / "reactions.yaml",
             log_path=app_settings.data_dir / "reaction_log.jsonl",
+            log_max_bytes=app_settings.reaction_log_max_bytes,
         )
         self._reaction_runner.start()
         self._results_since_prune = 0
@@ -220,6 +221,10 @@ class ListenerService:
             self.reload()
         except ConfigInvalidError as exc:
             log.error("stored configuration is invalid: %s", exc)
+        if self._snapshot:
+            with self.db.session() as session:
+                self._prune_storage(session, self._snapshot.settings)
+                session.commit()
         if self._snapshot and self._snapshot.settings.get("auto_start_listener"):
             self.start()
 
@@ -541,7 +546,7 @@ class ListenerService:
                 self._results_since_prune += 1
                 if self._results_since_prune >= 100:
                     self._results_since_prune = 0
-                    recognition_store.prune_logs(session, int(snapshot.settings["max_recognition_logs"]))
+                    self._prune_storage(session, snapshot.settings)
                 session.commit()
         actionable = (
             result.matched
@@ -565,6 +570,14 @@ class ListenerService:
             self._stats.dispatch_suppressed += 1
         self.bus.publish("result", result.model_dump(mode="json"))
         return result
+
+    def _prune_storage(self, session: Session, settings: dict[str, Any]) -> None:
+        """Retention cycle: bound log rows, expire transcript text and stale unreviewed
+        failures. Runs at startup and every 100 recorded results; the settings in effect at
+        prune time govern all existing rows (retroactive by age, not by policy-at-write)."""
+        recognition_store.prune_logs(session, int(settings["max_recognition_logs"]))
+        recognition_store.prune_transcripts(session, int(settings["transcript_retention_days"]))
+        recognition_store.prune_failed_utterances(session, int(settings["unreviewed_failure_ttl_days"]))
 
     def test_text(self, text: str, save_log: bool = True) -> s.RecognitionResult:
         return self._record(self.interpret(text, self.snapshot, source="text"), save_log)

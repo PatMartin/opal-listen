@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import statistics
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypeVar
 
 from sqlalchemy import func
-from sqlmodel import Session, SQLModel, col, delete, select
+from sqlmodel import Session, SQLModel, col, delete, select, update
 
 from opal_listener.models import schemas as s
 from opal_listener.models.tables import FailedUtterance, PerformanceResult, RecognitionLog
@@ -71,6 +72,41 @@ def prune_logs(session: Session, keep: int) -> None:
     ).first()
     if cutoff is not None:
         session.exec(delete(RecognitionLog).where(col(RecognitionLog.id) <= cutoff))  # type: ignore[call-overload]
+
+
+def prune_transcripts(session: Session, retention_days: int) -> int:
+    """Null transcript columns on recognition logs older than ``retention_days``.
+
+    Only the spoken text is scrubbed: the row (intent, slots, confidences, latencies) and its
+    PerformanceResult survive, so aggregate tuning metrics are preserved. ``0`` keeps
+    transcripts forever. Returns the number of rows scrubbed."""
+    if retention_days <= 0:
+        return 0
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    result = session.exec(
+        update(RecognitionLog)
+        .where(col(RecognitionLog.created_at) < cutoff)
+        .where(col(RecognitionLog.transcript).is_not(None) | col(RecognitionLog.normalized_transcript).is_not(None))
+        .values(transcript=None, normalized_transcript=None)
+    )
+    return result.rowcount or 0
+
+
+def prune_failed_utterances(session: Session, ttl_days: int) -> int:
+    """Hard-delete unreviewed, unpromoted failed utterances older than ``ttl_days``.
+
+    Reviewed or promoted failures are intentionally curated and always kept; ``0`` keeps
+    everything. Returns the number of rows deleted."""
+    if ttl_days <= 0:
+        return 0
+    cutoff = datetime.now(UTC) - timedelta(days=ttl_days)
+    result = session.exec(
+        delete(FailedUtterance)
+        .where(col(FailedUtterance.created_at) < cutoff)
+        .where(FailedUtterance.reviewed == False)  # noqa: E712
+        .where(FailedUtterance.promoted_to_phrase == False)  # noqa: E712
+    )
+    return result.rowcount or 0
 
 
 def list_logs(

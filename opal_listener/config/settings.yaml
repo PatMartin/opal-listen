@@ -12,3 +12,5 @@ settings:
   token_fuzzy_min_score: 0.8
   audio_watchdog_timeout_ms: 3000
   max_recognition_logs: 10000
+  transcript_retention_days: 0
+  unreviewed_failure_ttl_days: 90
