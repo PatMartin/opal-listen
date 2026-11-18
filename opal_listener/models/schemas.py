@@ -7,9 +7,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 from pydantic.json_schema import SkipJsonSchema
-from pydantic_core import CoreSchema
-
-
 
 NO_MATCH = "no_match"
 
@@ -244,6 +241,9 @@ class RecognitionResult(BaseModel):
     audio_level: float | None = None
     deduplicated: bool = False
     refinement_error: str | None = None  # set when refinement failed/timed out and the draft was used
+    # dispatch targets actually invoked for this result (subset of {"local", "event"}); always
+    # empty for diagnostics, deduplicated repeats, and superseded-generation results
+    dispatched_to: list[str] = []
     recognition_log_id: int | None = None
     created_at: datetime
 

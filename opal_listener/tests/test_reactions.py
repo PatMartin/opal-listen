@@ -277,3 +277,119 @@ def test_reaction_counters_in_pipeline_status(client: Any, service: Any, tmp_pat
     metrics = client.get("/api/v1/recognition/status").json()["metrics"]
     assert metrics["reactions_fired"] == 1.0
     assert metrics["reactions_failed"] == 0.0
+
+
+# --- dispatch policy ------------------------------------------------------------------------------
+
+
+def _mic_match(service: Any) -> Any:
+    """Interpret a mic-source match and record it (no live listener needed)."""
+    result = service.interpret("turn on the kitchen light", service.snapshot, source="mic")
+    assert result.matched
+    service._record(result, save_log=False)
+    return result
+
+
+def test_dispatch_targets_resolution() -> None:
+    from opal_listener.service.listener_service import dispatch_targets
+
+    # auto migrates the legacy flags: each flag contributes its target independently
+    assert dispatch_targets({"intent_dispatch": "auto"}) == frozenset()
+    assert dispatch_targets({"intent_dispatch": "auto", "reactions_enabled": True}) == frozenset({"local"})
+    assert dispatch_targets({"intent_dispatch": "auto", "event_publication_enabled": True}) == frozenset({"event"})
+    assert dispatch_targets(
+        {"intent_dispatch": "auto", "reactions_enabled": True, "event_publication_enabled": True}
+    ) == frozenset({"local", "event"})
+    # explicit values override both flags entirely
+    assert dispatch_targets(
+        {"intent_dispatch": "off", "reactions_enabled": True, "event_publication_enabled": True}
+    ) == frozenset()
+    assert dispatch_targets(
+        {"intent_dispatch": "local", "event_publication_enabled": True}
+    ) == frozenset({"local"})
+    assert dispatch_targets(
+        {"intent_dispatch": "event", "reactions_enabled": True}
+    ) == frozenset({"event"})
+    assert dispatch_targets({"intent_dispatch": "both"}) == frozenset({"local", "event"})
+
+
+def test_dispatch_off_suppresses_all_side_effects(client: Any, service: Any, tmp_path: Path) -> None:
+    """intent_dispatch=off wins over both legacy flags: match is recorded, nothing fires."""
+    marker = tmp_path / "fired.txt"
+    _arm_marker_reaction(service, tmp_path, marker)
+    publisher = service.event_publisher
+    assert patch_settings(
+        client, intent_dispatch="off", reactions_enabled="true", event_publication_enabled="true"
+    ).status_code == 200
+    result = _mic_match(service)
+    assert result.dispatched_to == []
+    assert wait_file(marker, timeout=0.5) is None
+    assert publisher.events == []
+    metrics = client.get("/api/v1/recognition/status").json()["metrics"]
+    assert metrics["dispatch_suppressed"] == 1.0
+
+
+def test_dispatch_local_only(client: Any, service: Any, tmp_path: Path) -> None:
+    """intent_dispatch=local runs reactions even while the event flag is also on."""
+    marker = tmp_path / "fired.txt"
+    _arm_marker_reaction(service, tmp_path, marker)
+    publisher = service.event_publisher
+    assert patch_settings(
+        client, intent_dispatch="local", event_publication_enabled="true"
+    ).status_code == 200
+    result = _mic_match(service)
+    assert wait_file(marker) == "light_turn_on"
+    assert publisher.events == []
+    assert result.dispatched_to == ["local"]
+    metrics = client.get("/api/v1/recognition/status").json()["metrics"]
+    assert metrics["dispatched_local"] == 1.0 and metrics["dispatched_event"] == 0.0
+
+
+def test_dispatch_event_only(client: Any, service: Any, tmp_path: Path) -> None:
+    """intent_dispatch=event publishes only; the armed reaction stays silent."""
+    marker = tmp_path / "fired.txt"
+    _arm_marker_reaction(service, tmp_path, marker)
+    publisher = service.event_publisher
+    assert patch_settings(
+        client, intent_dispatch="event", reactions_enabled="true"
+    ).status_code == 200
+    result = _mic_match(service)
+    assert len(publisher.events) == 1 and publisher.events[0][1]["intent_name"] == "light_turn_on"
+    assert publisher.events[0][1]["dispatched_to"] == ["event"]  # payload carries the selection
+    assert wait_file(marker, timeout=0.5) is None
+    assert result.dispatched_to == ["event"]
+
+
+def test_dispatch_both_is_explicit(client: Any, service: Any, tmp_path: Path) -> None:
+    """intent_dispatch=both fires reactions AND publishes — the only dual path."""
+    marker = tmp_path / "fired.txt"
+    _arm_marker_reaction(service, tmp_path, marker)
+    publisher = service.event_publisher
+    assert patch_settings(client, intent_dispatch="both").status_code == 200
+    result = _mic_match(service)
+    assert wait_file(marker) == "light_turn_on"
+    assert len(publisher.events) == 1
+    assert result.dispatched_to == ["event", "local"]
+    metrics = client.get("/api/v1/recognition/status").json()["metrics"]
+    assert metrics["dispatched_local"] == 1.0 and metrics["dispatched_event"] == 1.0
+
+
+def test_dispatch_auto_keeps_legacy_flags_working(client: Any, service: Any, tmp_path: Path) -> None:
+    """Migration: with intent_dispatch left at auto, the old booleans behave exactly as before."""
+    marker = tmp_path / "fired.txt"
+    _arm_marker_reaction(service, tmp_path, marker)
+    publisher = service.event_publisher
+    assert patch_settings(
+        client, intent_dispatch="auto", dedup_window_ms="0",
+        reactions_enabled="true", event_publication_enabled="false",
+    ).status_code == 200
+    assert _mic_match(service).dispatched_to == ["local"]
+    assert wait_file(marker) == "light_turn_on"
+    assert publisher.events == []
+    marker.unlink()
+    assert patch_settings(
+        client, reactions_enabled="false", event_publication_enabled="true"
+    ).status_code == 200
+    assert _mic_match(service).dispatched_to == ["event"]
+    assert len(publisher.events) == 1
+    assert wait_file(marker, timeout=0.5) is None

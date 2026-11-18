@@ -10,7 +10,7 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -58,6 +58,31 @@ DIAGNOSTIC_SOURCES = ("text", "audio")
 # Settings that describe the physical capture stream: changing any of them requires reopening the
 # audio source, not just rebuilding the pipeline (frame duration must stay coherent end to end).
 _CAPTURE_SETTING_KEYS = ("audio_device", "audio_capture_rate", "audio_block_ms")
+
+# Dispatch targets a matched intent can take: 'local' = file-provisioned reactions.yaml
+# commands, 'event' = external opal-event publication.
+DISPATCH_TARGETS = ("local", "event")
+
+
+def dispatch_targets(settings: Mapping[str, Any]) -> frozenset[str]:
+    """Resolve the intent dispatch policy to the set of targets to invoke.
+
+    'auto' (the default) migrates the legacy booleans transparently: reactions_enabled ->
+    'local', event_publication_enabled -> 'event'. Any explicit intent_dispatch value
+    ('off', 'local', 'event', 'both') overrides both flags."""
+    mode = str(settings.get("intent_dispatch", "auto"))
+    if mode == "auto":
+        targets = set()
+        if settings.get("reactions_enabled"):
+            targets.add("local")
+        if settings.get("event_publication_enabled"):
+            targets.add("event")
+        return frozenset(targets)
+    if mode == "both":
+        return frozenset(DISPATCH_TARGETS)
+    if mode == "off":
+        return frozenset()
+    return frozenset({mode})
 
 
 def _capture_signature(settings: dict[str, Any]) -> tuple[Any, ...]:
@@ -132,6 +157,9 @@ class _RuntimeStats:
     publish_latency_ms: float | None = None
     mic_overflows: int = 0  # overflow reports accumulated from retired sources
     dropped_audio_blocks: int = 0  # full-queue drops accumulated from retired sources
+    dispatched_local: int = 0  # matched results dispatched to local reactions this run
+    dispatched_event: int = 0  # matched results published to the event bus this run
+    dispatch_suppressed: int = 0  # actionable results with no target selected (policy 'off')
 
 
 class ListenerService:
@@ -515,22 +543,27 @@ class ListenerService:
                     self._results_since_prune = 0
                     recognition_store.prune_logs(session, int(snapshot.settings["max_recognition_logs"]))
                 session.commit()
-        payload = result.model_dump(mode="json")
-
-        self.bus.publish("result", payload)
         actionable = (
             result.matched
             and not result.deduplicated
             and result.source not in DIAGNOSTIC_SOURCES
             and allow_dispatch
         )
-        if actionable and snapshot.settings["event_publication_enabled"]:
-            log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
+        targets = dispatch_targets(snapshot.settings) if actionable else frozenset()
+        # the resolved path is recorded on the result before dispatch so the local stream,
+        # the event payload and the reaction payload all carry the same selection
+        result.dispatched_to = sorted(targets)
+        if "event" in targets:
             publish_start = time.monotonic()
-            self.event_publisher.publish(INTENT_MATCH_TOPIC, payload)
+            self.event_publisher.publish(INTENT_MATCH_TOPIC, result.model_dump(mode="json"))
             self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
-        if actionable and snapshot.settings["reactions_enabled"]:
-            self._reaction_runner.dispatch(payload)
+            self._stats.dispatched_event += 1
+        if "local" in targets:
+            self._reaction_runner.dispatch(result.model_dump(mode="json"))
+            self._stats.dispatched_local += 1
+        if actionable and not targets:
+            self._stats.dispatch_suppressed += 1
+        self.bus.publish("result", result.model_dump(mode="json"))
         return result
 
     def test_text(self, text: str, save_log: bool = True) -> s.RecognitionResult:
@@ -669,6 +702,9 @@ class ListenerService:
             "refinement_completed": float(self._refine_worker.refined),
             "refinement_failed": float(self._refine_worker.failed),
             "refinement_saturated": float(self._refine_worker.saturated),
+            "dispatched_local": float(st.dispatched_local),
+            "dispatched_event": float(st.dispatched_event),
+            "dispatch_suppressed": float(st.dispatch_suppressed),
             "recoveries": float(st.audio_restarts),
             "stt_latency_ms": st.stt_latency_ms or 0.0,
             "refine_latency_ms": st.refine_latency_ms or 0.0,
