@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from typing import Any
 
@@ -926,3 +927,64 @@ def test_failed_capture_restart_uses_last_known_good(client: TestClient, fake_pr
         assert sources[2].started is True
     finally:
         client.post("/api/v1/recognition/stop")
+
+
+class _FeedSource(ScriptedSource):
+    """Reads frames from a shared deque the test can extend at any time (silence when empty),
+    so scripted audio reaches whichever source instance is currently active."""
+
+    def __init__(self, feed: deque[bytes], **kwargs: Any) -> None:
+        super().__init__([], **kwargs)
+        self.feed = feed
+
+    def read(self, timeout: float) -> AudioFrame | None:
+        time.sleep(0.002)
+        pcm = self.feed.popleft() if self.feed else silence_frame()
+        return AudioFrame(pcm, time.monotonic())
+
+
+def test_failed_capture_restart_keeps_frames_flowing(client: TestClient, fake_provider: type) -> None:
+    """A rejected capture-settings change must not starve the capture loop: the restored
+    last-known-good stream keeps delivering frames and fresh utterances still finalize on
+    the previous snapshot while the bad version stays unapplied."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    feed: deque[bytes] = deque()
+    sources: list[_FeedSource] = []
+
+    def factory(settings: dict[str, Any]) -> _FeedSource:
+        source = _FeedSource(feed, fail_start=settings["audio_device"] == "bad-device")
+        sources.append(source)
+        return source
+
+    def status() -> dict[str, Any]:
+        return client.get("/api/v1/recognition/status").json()
+
+    service._source_factory = factory
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: status()["state"] == "listening")
+        patch_settings(client, audio_device="bad-device")
+        wait_for(lambda: status()["audio_restarts"] >= 1)
+        assert "restart failed" in status()["last_error"]
+        assert "bad-device" in status()["last_error"]  # the rejected settings are reported
+        assert status()["metrics"]["capture_settings_pending"] == 1.0
+
+        frames_seen = status()["frames_processed"]
+        fake_provider.script.append("turn on the kitchen light")
+        feed.extend(COMMAND)
+        wait_for(lambda: log_counts(client)["total"] >= 1)
+        assert list_logs(client)[0].intent_name == "light_turn_on"
+        assert status()["frames_processed"] > frames_seen  # read() never starved
+        assert service._active_source is sources[0]  # the restored LKG stream stayed active
+
+        # a later valid configuration still takes effect on a reopened source
+        fake_provider.script.append("what time is it")
+        patch_settings(client, audio_device="usb-ok")
+        wait_for(lambda: len(sources) >= 3)
+        feed.extend(COMMAND)
+        wait_for(lambda: log_counts(client)["total"] >= 2)
+        wait_for(lambda: status()["metrics"]["capture_settings_pending"] == 0.0)
+        assert sources[0].started is False and sources[2].started is True
+    finally:
+        client.post("/api/v1/recognition/stop")
+    assert not any(s.started for s in sources)  # stop still releases the device

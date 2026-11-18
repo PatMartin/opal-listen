@@ -122,6 +122,9 @@ class _RuntimeStats:
     last_recovery_reason: str | None = None
     audio_device: str | None = None
     capture_sample_rate: int | None = None
+    # capture signature (device, rate, block_ms) the running source was opened with; differs
+    # from the latest snapshot's signature while a capture-setting change is unapplied
+    capture_signature: tuple[Any, ...] | None = None
     # per-stage delays of the last finalized result (ms) and capture/reliability counters
     stt_latency_ms: float | None = None
     refine_latency_ms: float | None = None
@@ -628,11 +631,24 @@ class ListenerService:
         source = self._active_source
         capacity = float(getattr(source, "queue_capacity", 0) or 0)
         depth = float(getattr(source, "queue_depth", 0) or 0)
+        latest = self._snapshot
+        capture_pending = (
+            self.running
+            and latest is not None
+            and st.capture_signature is not None
+            and _capture_signature(latest.settings) != st.capture_signature
+        )
         return {
             "mic_overflows": st.mic_overflows + getattr(source, "overflows", 0),
             "dropped_audio_blocks": st.dropped_audio_blocks + getattr(source, "dropped_blocks", 0),
             "audio_queue_depth": depth,
             "audio_queue_utilization": round(depth / capacity, 3) if capacity else 0.0,
+            # requested (latest snapshot) vs active capture settings: pending=1 while a
+            # capture-setting change is committed but not applied (e.g. a rejected reopen);
+            # the rejected device name rides along in last_error
+            "requested_capture_rate": float(latest.settings["audio_capture_rate"]) if latest else 0.0,
+            "requested_audio_block_ms": float(latest.settings["audio_block_ms"]) if latest else 0.0,
+            "capture_settings_pending": 1.0 if capture_pending else 0.0,
             "refine_queue_depth": float(self._refine_worker.queue_depth),
             "refinement_completed": float(self._refine_worker.refined),
             "refinement_failed": float(self._refine_worker.failed),
@@ -664,6 +680,7 @@ class ListenerService:
                 self._active_source = source
                 self._stats.audio_device = source.description
                 self._stats.capture_sample_rate = source.capture_rate
+                self._stats.capture_signature = _capture_signature(snapshot.settings)
                 self._stats.last_error = None
                 self._set_state("listening")
                 backoff = 1.0
@@ -706,7 +723,11 @@ class ListenerService:
         except Exception as exc:
             with contextlib.suppress(Exception):
                 source.start()  # best-effort: keep the previously working stream alive
-            raise AudioCaptureError(f"audio capture restart failed: {exc}") from exc
+            raise AudioCaptureError(
+                f"audio capture restart failed (requested device={snapshot.settings['audio_device']!r} "
+                f"rate={snapshot.settings['audio_capture_rate']} block_ms={snapshot.settings['audio_block_ms']}"
+                f"; active device={source.description!r} rate={source.capture_rate}): {exc}"
+            ) from exc
         self._active_source = new_source
         self._stats.audio_device = new_source.description
         self._stats.capture_sample_rate = new_source.capture_rate
@@ -723,22 +744,25 @@ class ListenerService:
                     # Config changes apply only at the idle session boundary. Capture-setting
                     # changes additionally require reopening the audio source; a failed reopen
                     # keeps the last-known-good stream *and* snapshot (frame duration stays
-                    # coherent) and is recorded through the normal recovery accounting.
+                    # coherent) and is recorded through the normal recovery accounting. A
+                    # rejected version must NOT skip read(): the loop falls through so frames
+                    # keep flowing on the restored source.
+                    applied = False
                     if _capture_signature(snapshot.settings) == _capture_signature(current.settings):
-                        snapshot = current
-                    elif current.version == failed_capture_version:
-                        continue  # reopen already failed for this version: stay on last-known-good
-                    else:
+                        snapshot, applied = current, True
+                    elif current.version != failed_capture_version:
                         try:
                             source = self._reopen_source(source, current)
                         except AudioCaptureError as exc:
                             failed_capture_version = current.version
                             self._recover(str(exc))
-                            continue
-                        snapshot = current
-                        last_frame = time.monotonic()  # fresh stream: reset the watchdog baseline
-                    pipeline = self._make_pipeline(snapshot, debug=pipeline.debug, cooldown=True, live=True)
-                    watchdog_s = int(snapshot.settings["audio_watchdog_timeout_ms"]) / 1000
+                        else:
+                            snapshot, applied = current, True
+                            last_frame = time.monotonic()  # fresh stream: reset the watchdog baseline
+                    if applied:
+                        self._stats.capture_signature = _capture_signature(snapshot.settings)
+                        pipeline = self._make_pipeline(snapshot, debug=pipeline.debug, cooldown=True, live=True)
+                        watchdog_s = int(snapshot.settings["audio_watchdog_timeout_ms"]) / 1000
                 want_debug = self.bus.subscriber_count > 0
                 if pipeline.debug != want_debug and pipeline.idle:
                     pipeline.debug = want_debug
