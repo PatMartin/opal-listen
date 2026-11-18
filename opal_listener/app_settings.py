@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 
@@ -21,7 +23,9 @@ class AppSettings(BaseSettings):
     vosk_model_path: str = "/resources/vosk/models/vosk-model-small-en-us-0.15"
     host: str = "0.0.0.0"
     port: int = 8000
-    cors_origins: list[str] = ["*"]
+    # NoDecode: pydantic-settings would otherwise require a JSON array from the environment,
+    # while generated .env files write a plain comma-separated list — both forms are accepted.
+    cors_origins: Annotated[list[str], NoDecode] = ["*"]
     max_upload_bytes: int = 10 * 1024 * 1024
     seed_on_empty: bool = True
     # Bearer credential for the OPAL BearerAuth contract (token_env in the shared kernel). Unset
@@ -49,6 +53,19 @@ class AppSettings(BaseSettings):
         default="http",
         validation_alias=AliasChoices("event_transport", "OPAL_EVENT_TRANSPORT", "OPAL_LISTENER_EVENT_TRANSPORT"),
     )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                try:
+                    return json.loads(text)
+                except ValueError:
+                    pass  # fall through to the comma-separated form
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
 
     @property
     def database_path(self) -> Path:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from opal_listener.service.audio.pcm import write_wav_bytes
@@ -44,6 +45,18 @@ def test_cors_allows_other_subnet_origins(client: TestClient) -> None:
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_cors_origins_env_accepts_csv_and_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generated .env files write a plain list ('*' or 'a,b'); JSON arrays must also parse."""
+    from opal_listener.app_settings import AppSettings
+
+    monkeypatch.setenv("OPAL_LISTENER_CORS_ORIGINS", "*")
+    assert AppSettings().cors_origins == ["*"]
+    monkeypatch.setenv("OPAL_LISTENER_CORS_ORIGINS", "http://a.local, http://b.local")
+    assert AppSettings().cors_origins == ["http://a.local", "http://b.local"]
+    monkeypatch.setenv("OPAL_LISTENER_CORS_ORIGINS", '["http://a.local"]')
+    assert AppSettings().cors_origins == ["http://a.local"]
 
 
 def test_seeded_configuration(client: TestClient) -> None:
