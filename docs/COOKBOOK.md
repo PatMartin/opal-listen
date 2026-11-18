@@ -328,8 +328,12 @@ listen's built-in reactions (recipes 7 and 18) are enough. Use opal-event when
 you need HTTP or Python actions, rules over events from *other* producers (look,
 think), fan-out to many actions, or a central execution history. The
 two share a condition grammar; listen's `intent_name` becomes `data.intent_name`
-in a bus event. Every recipe below needs
-`opal listen config setting set event_publication_enabled true`.
+in a bus event. Recipes below enable event publication with the legacy flag
+(`event_publication_enabled true`), which keeps working because the default
+`intent_dispatch=auto` resolves from the legacy flags. To be explicit, set the
+policy instead: `opal listen config setting set intent_dispatch event`
+(or `both` for event bus + local reactions). Each result's `dispatched_to`
+field reports which path was selected.
 
 ### 21. "OK" — the closed voice loop
 
@@ -352,6 +356,16 @@ opal event actions create --json \
 opal event rules create --json \
   '{"id":"ack_intents","enabled":true,"topic":"opal.listen.intent.match","conditions":[],"actions":["speak_ack"]}'
 opal listen test listen --count 1
+```
+
+For a hands-off verification of this whole loop, `scripts/event_say_smoke.py`
+spins up real opal-event and opal-say instances, replays a checked-in WAV
+fixture through the live capture path, and asserts the matched intent, the
+stored event ID, the action's execution receipt, and a nonempty synthesized
+WAV:
+
+```bash
+.venv/Scripts/python.exe scripts/event_say_smoke.py   # needs ../opal-event + ../opal-say checkouts
 ```
 
 ### 22. Dry-fire the loop without a microphone

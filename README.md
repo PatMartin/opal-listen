@@ -719,7 +719,7 @@ OPAL Event: rule checks intent + room
 A trusted script, local HTTP endpoint, or Python plugin
 ~~~
 
-In current code, the **default delivery transport is HTTP** to OPAL Event's `POST /api/v1/events/` endpoint (default `http://127.0.0.1:8080`). Direct ZeroMQ is an alternative, chosen at **server startup**.
+In current code, the **default delivery transport is HTTP** to OPAL Event's `POST /api/v1/event/` endpoint (default `http://127.0.0.1:8080`). Direct ZeroMQ is an alternative, chosen at **server startup**.
 
 Start OPAL Event separately, then configure OPAL Listen **before launching its server**:
 

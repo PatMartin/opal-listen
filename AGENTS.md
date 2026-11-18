@@ -33,3 +33,18 @@ model lives at `resources/vosk/models/vosk-model-small-en-us-0.15`; point the su
 `openapi/opal_listen_v*.yaml` is the upstream API contract; `test_contract.py` asserts the
 generated OpenAPI is a compatible superset. Additive optional fields are compatible; changed
 fields or new required fields are contract amendments.
+
+## Live smoke test
+
+`scripts/event_say_smoke.py` runs a deterministic end-to-end check: real opal-event +
+opal-say subprocesses, a WAV fixture fed through the live capture path (no mic needed), and
+assertions on the matched intent, stored event ID, action execution receipt, and nonempty
+synthesized WAV. Requires `../opal-event` and `../opal-say` checkouts with working `.venv`s
+(override via `OPAL_EVENT_DIR` / `OPAL_SAY_DIR`):
+
+```bash
+.venv/Scripts/python.exe scripts/event_say_smoke.py
+```
+
+Note: opal-event's ingest route is `POST /api/v1/event/` (singular) — see
+`service/http_events.py`.

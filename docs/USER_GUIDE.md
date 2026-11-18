@@ -148,8 +148,8 @@ prefix is `OPAL_LISTENER_`.
 | `OPAL_LISTEN_API_URL` | `http://localhost:8000` | API URL used by the **CLI** (no `ER`) |
 | `OPAL_EVENT_API_URL` | `http://127.0.0.1:8080` | opal-event REST API URL for publishing matched intent events |
 | `OPAL_EVENT_API_TOKEN` | _None_ | Optional Bearer token for authenticating to opal-event REST API |
-| `OPAL_EVENT_TRANSPORT` | `http` | Event transport: `http` (default for opal-event REST), `zmq`, or `both` |
-| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5555` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq` or `both`), and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
+| `OPAL_EVENT_TRANSPORT` | `http` | Event transport: `http` (default for opal-event REST at `POST /api/v1/event/`) or `zmq`. `both` is rejected at startup — the same event would be delivered twice |
+| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5555` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq`), and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
 | `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5556` | ZeroMQ broker's other endpoint (CLI-only today, reserved for future use) |
 
 Example `.env` file:
@@ -441,6 +441,19 @@ A capture session ends for one of these reasons (the `speech_end` event includes
 | `no_speech` | No speech within `no_speech_timeout_ms` after the wakeword |
 | `max_length` | Hard cap `max_utterance_ms` reached |
 
+**Capture reconfiguration fallback.** Applying invalid capture settings (`audio_device`,
+`audio_capture_rate`, `audio_block_ms`) while listening does not break the running stream: the
+rejected version is kept pending, capture keeps reading from the last-good device, and the next
+valid change applies normally. Status reports the mismatch via `last_error` (which names the
+requested and active settings) and the `requested_capture_rate`, `requested_audio_block_ms`, and
+`capture_settings_pending` metrics.
+
+**Stop/start and pending results.** Each `POST /start` begins a new run generation. Results are
+stamped with the generation they were captured in; a late completion (e.g. a refinement finishing
+after a stop/start) is still logged and streamed but cannot publish events or fire reactions in
+the new run. Results that were pending when a plain `stop` (no restart) was issued may still
+complete and dispatch — capture ended while the run was live.
+
 ### 3.5 Intent matching
 
 For every enabled phrase variant, the engine:
@@ -493,8 +506,8 @@ SQLite database (default `var/opal_listener.db`), managed by Alembic, with forei
 | `slot`, `slot_values`, `slot_aliases` | slot definitions, canonical values, aliases |
 | `profile` | environment presets (JSON columns for lists/maps) |
 | `setting` | typed key/value settings (stored as strings) |
-| `recognition_logs` | every recognition result; pruned to `max_recognition_logs` every 100 results |
-| `failed_utterances` | `no_match` results for review |
+| `recognition_logs` | every recognition result; pruned to `max_recognition_logs` every 100 results. When `transcript_retention_days > 0`, transcript text on older rows is scrubbed while the row and its performance aggregates are kept |
+| `failed_utterances` | `no_match` results for review; unreviewed rows older than `unreviewed_failure_ttl_days` are deleted (0 = keep forever) |
 | `regression_tests` | expected intent/slots per phrase |
 | `performance_results` | latency and confidence per recognition |
 
@@ -505,6 +518,7 @@ Backups are SQLite online backups in `var/backups/`, named `opal_listener_<UTC t
 | Feature | Behavior |
 |---|---|
 | Watchdog | Capture is restarted if no audio arrives within `audio_watchdog_timeout_ms` or the device fails. Backoff grows from 1 to 30 s. `audio_restarts` and `last_error` are shown in status. |
+| Rejected reconfiguration | An invalid `audio_device`/`audio_capture_rate`/`audio_block_ms` change fails without touching the live stream — capture keeps reading the last-good source and status reports requested vs active settings. |
 | Cooldown | After a mic session, wakewords are ignored for `cooldown_ms`. |
 | Dedup | Identical mic results (same intent and slots) within `dedup_window_ms` are flagged `deduplicated: true`. They are still logged. |
 | Graceful no_match | Every path returns a `RecognitionResult` with a `no_match_reason`. It never errors. |
@@ -651,7 +665,11 @@ Invalid values are rejected with `422`.
 | `cooldown_ms` | int | `1500` | 0–60000 | Ignore wakewords for this long after a session |
 | `dedup_window_ms` | int | `2000` | 0–60000 | Flag identical results within this window |
 | `auto_capture_failures` | bool | `true` | | Store `no_match` utterances (mic/audio) as failed utterances |
-| `event_publication_enabled` | bool | `false` | | Publish matched intents to the external event bus (see `event_transport`) |
+| `intent_dispatch` | str | `auto` | `auto`, `off`, `local`, `event`, `both` | Where a matched intent goes: `local` = reactions.yaml only, `event` = external event bus only, `both`, or `off`. `auto` resolves from the legacy flags below; each result's `dispatched_to` shows the resolved path |
+| `event_publication_enabled` | bool | `false` | | Legacy flag → `event` target while `intent_dispatch=auto` |
+| `reactions_enabled` | bool | `false` | | Legacy flag → `local` target while `intent_dispatch=auto` |
+| `transcript_retention_days` | int | `0` | 0–36500 | Days to keep transcript text on recognition logs; 0 = forever. Rows and performance aggregates are always kept |
+| `unreviewed_failure_ttl_days` | int | `90` | 0–36500 | Auto-delete unreviewed, unpromoted failed utterances after this many days; 0 = forever. Reviewed rows are kept |
 | `filler_words` | str | `uh,um,er,please` | CSV | Words dropped during normalization |
 | `slot_fuzzy_min_score` | float | `0.85` | 0–1 | Minimum fuzzy score for slot values |
 | `token_fuzzy_min_score` | float | `0.8` | 0–1 | Minimum fuzzy score for phrase tokens |
@@ -721,10 +739,12 @@ same file locally and never goes through the API.
 
 A reaction fires only when **all** of these hold: the result matched an intent (`no_match` never
 fires), it was not deduplicated (repeat utterances inside `dedup_window_ms` don't re-fire), it came
-from the live microphone (`test text` / `test audio` never fire), and `reactions_enabled` is `true`:
+from the live microphone (`test text` / `test audio` never fire), and the dispatch policy resolves
+to the `local` target. With the default `intent_dispatch=auto` that means the legacy
+`reactions_enabled` flag; to be explicit set the policy directly:
 
 ```bash
-opal listen config setting set reactions_enabled true
+opal listen config setting set intent_dispatch local   # or "both" for local + event bus
 ```
 
 ```yaml
@@ -756,7 +776,8 @@ reactions:
 - **Observability**: every execution appends one JSON line to `<data_dir>/reaction_log.jsonl`
   (`{ts, reactions, argv, exit_code, duration_ms, stderr_tail}`), and `reactions_fired` /
   `reactions_failed` / `reactions_dropped` / `reaction_queue_depth` appear in
-  `opal listen pipeline status` metrics.
+  `opal listen pipeline status` metrics. The journal is bounded: once it exceeds
+  `OPAL_LISTENER_REACTION_LOG_MAX_BYTES` (default 1 MiB) the oldest lines are dropped.
 
 A malformed file logs a warning and yields an empty reaction set — it never stops the service.
 

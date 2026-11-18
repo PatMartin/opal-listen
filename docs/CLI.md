@@ -720,11 +720,16 @@ The canonical commands live under `config setting`; the contract also declares t
 | `cooldown_ms` | int | `1500` | 0 to 60000 |
 | `dedup_window_ms` | int | `2000` | 0 to 60000 |
 | `auto_capture_failures` | bool | `true` | |
+| `intent_dispatch` | str | `auto` | `auto`, `off`, `local`, `event`, `both` |
+| `event_publication_enabled` | bool | `false` | legacy flag → `event` while `intent_dispatch=auto` |
+| `reactions_enabled` | bool | `false` | legacy flag → `local` while `intent_dispatch=auto` |
 | `filler_words` | str | `uh,um,er,please` | comma-separated words |
 | `slot_fuzzy_min_score` | float | `0.85` | 0 to 1 |
 | `token_fuzzy_min_score` | float | `0.8` | 0 to 1 |
 | `audio_watchdog_timeout_ms` | int | `3000` | 500 to 60000 |
 | `max_recognition_logs` | int | `10000` | 100 to 1000000 |
+| `transcript_retention_days` | int | `0` | 0 to 36500; 0 = keep transcripts forever |
+| `unreviewed_failure_ttl_days` | int | `90` | 0 to 36500; 0 = keep failures forever |
 
 Booleans accept `true/false`, `1/0`, `yes/no` and `on/off`.
 
@@ -1110,7 +1115,10 @@ opal listen test regression
 ## 15. Recognition history
 
 Every recognition (microphone, audio file, or text with `--save`) is stored in the database as a
-recognition-log row; `max_recognition_logs` limits how many rows are kept. The v1.7.1 contract no
+recognition-log row; `max_recognition_logs` limits how many rows are kept and
+`transcript_retention_days` controls how long transcript text stays on them (rows and latency
+aggregates survive regardless). `unreviewed_failure_ttl_days` expires stale failed utterances.
+The v1.7.1 contract no
 longer exposes a REST surface for browsing them — use `service perf` (per-recognition latencies,
 confidences and match flags, newest first) and `failed list` (captured `no_match` utterances) instead.
 
@@ -1427,9 +1435,10 @@ timestamp, argv, exit code, duration, stderr tail). `--limit N` controls how man
 opal listen reaction log --limit 5
 ```
 
-Remember: armed reactions only fire when the feature is switched on — `opal listen config setting set
-reactions_enabled true`. The switch is a setting so it can be flipped at runtime without editing
-files.
+Remember: armed reactions only fire when the dispatch policy selects `local` — `opal listen config
+setting set intent_dispatch local` (or `both`). With the default `intent_dispatch=auto` the legacy
+`reactions_enabled true` flag selects the same target. The switch is a setting so it can be flipped
+at runtime without editing files.
 
 ---
 
