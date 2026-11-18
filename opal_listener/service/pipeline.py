@@ -46,6 +46,9 @@ class CommandOutcome:
     ended_at: float  # time.monotonic() when end of speech was decided
     audio_level: float | None
     pcm: bytes = b""
+    # listener run generation that captured this command; a result finalizing under a newer
+    # generation (stop/start boundary) is recorded but never dispatched
+    generation: int = 0
 
 
 @dataclass

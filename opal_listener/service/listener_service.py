@@ -164,6 +164,9 @@ class ListenerService:
         self._shutdown = False
         self._dedup_seen: dict[tuple[object, ...], float] = {}
         self._dedup_lock = threading.Lock()
+        # run identity: bumped on every start(); outcomes carry the generation that captured
+        # them so a late finalization (e.g. deferred refinement) cannot dispatch into a new run
+        self._generation = 0
         self._active_source: AudioSource | None = None
         self._refine_worker = RefinementWorker(
             capacity=DEFAULT_QUEUE_CAPACITY, refiner_for=self._refiner_for, finalize=self._finalize_result
@@ -477,9 +480,17 @@ class ListenerService:
             created_at=utc_now(),
         )
 
-    def _record(self, result: s.RecognitionResult, save_log: bool) -> s.RecognitionResult:
+    def _record(
+        self, result: s.RecognitionResult, save_log: bool, *, allow_dispatch: bool = True
+    ) -> s.RecognitionResult:
+        """Log, stream, and (when allowed) dispatch a recognition result.
+
+        ``allow_dispatch`` is False for results captured under an older run generation: they
+        are still logged and streamed locally but can never publish events or fire reactions.
+        Dispatch enablement itself is read from the *current* snapshot — the final authority
+        for side effects regardless of which config version captured the utterance."""
         snapshot = self.snapshot
-        if result.source == "mic" and result.matched:
+        if result.source == "mic" and result.matched and allow_dispatch:
             key = (
                 result.source,
                 result.profile_name,
@@ -511,6 +522,7 @@ class ListenerService:
             result.matched
             and not result.deduplicated
             and result.source not in DIAGNOSTIC_SOURCES
+            and allow_dispatch
         )
         if actionable and snapshot.settings["event_publication_enabled"]:
             log.info("publishing event to topic '%s': %s", INTENT_MATCH_TOPIC, payload)
@@ -577,6 +589,9 @@ class ListenerService:
                 self._thread = None
             self.snapshot  # noqa: B018 - raises if configuration is not loaded
             self._stop.clear()
+            self._generation += 1
+            with self._dedup_lock:
+                self._dedup_seen.clear()  # dedup state belongs to the run that collected it
             self._stats = _RuntimeStats(state="starting", started_at=utc_now(), started_monotonic=time.monotonic())
             self._thread = threading.Thread(target=self._run, name="listener-runtime", daemon=True)
             self._thread.start()
@@ -794,6 +809,7 @@ class ListenerService:
             self._set_state("listening")
         if event.kind == "session_end" and event.outcome is not None:
             outcome = event.outcome
+            outcome.generation = self._generation  # stamp the run that captured the command
             self._set_state("listening")  # capture resumes immediately; finalization may be deferred
             if snapshot.refiner_name not in ("", "none") and outcome.transcript.text:
                 if self._refine_worker.submit(RefineTask(outcome=outcome, snapshot=snapshot)):
@@ -815,13 +831,14 @@ class ListenerService:
         refine_ms: float = 0.0,
     ) -> None:
         """Finalizes a captured command on the capture thread or the refinement worker: applies the
-        refined (or draft) transcript, interprets, records, and updates runtime stats."""
+        refined (or draft) transcript, interprets with the capture-time snapshot, records, and
+        updates runtime stats. Results from a superseded generation are logged but not dispatched."""
         if refined is not None:
             outcome.transcript = refined
         result = self.interpret(outcome.transcript.text, snapshot, source="mic", outcome=outcome)
         if refinement_error:
             result.refinement_error = refinement_error
-        self._record(result, save_log=True)
+        self._record(result, save_log=True, allow_dispatch=outcome.generation == self._generation)
         self._stats.results += 1
         self._stats.last_result_at = result.created_at
         self._stats.stt_latency_ms = result.stt_latency_ms

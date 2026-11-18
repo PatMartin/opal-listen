@@ -911,6 +911,85 @@ def test_refinement_recovers_when_stuck_calls_return(client: TestClient, fake_pr
     assert client.get("/api/v1/recognition/status").json()["metrics"]["refine_unresolved"] == 0.0
 
 
+def test_late_result_from_old_generation_cannot_dispatch(client: TestClient, fake_provider: type) -> None:
+    """A refinement completing after stop/start belongs to a superseded generation: it is
+    still logged and streamed but can never publish an event or fire a reaction."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert patch_settings(
+        client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+    ).status_code == 200
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        fake_provider.script.append("turn on the kitchen light")
+        feed.extend(COMMAND)
+        wait_for(lambda: refiner.entered >= 1)  # captured in generation 1; refine is hung
+        assert client.post("/api/v1/recognition/stop").json()["status"] == "stopped"
+        assert client.post("/api/v1/recognition/start").json()["status"] == "started"  # generation 2
+        refiner.gate.set()  # the stale call completes under the new generation
+        wait_for(lambda: log_counts(client)["total"] >= 1)
+        assert list_logs(client)[0].intent_name == "light_turn_on"  # still recorded
+        assert publisher.events == []  # but never dispatched into the new run
+        # the new generation still dispatches normally
+        fake_provider.script.append("what time is it")
+        feed.extend(COMMAND)
+        wait_for(lambda: len(publisher.events) == 1)
+        assert publisher.events[0][1]["intent_name"] == "get_time"
+    finally:
+        client.post("/api/v1/recognition/stop")
+        refiner.gate.set()
+
+
+def test_pending_result_still_dispatches_after_stop(client: TestClient, fake_provider: type) -> None:
+    """A command fully captured while running keeps its dispatch rights when refinement
+    finishes after stop(): same generation, current settings still authoritative."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert patch_settings(
+        client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+    ).status_code == 200
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        fake_provider.script.append("turn on the kitchen light")
+        feed.extend(COMMAND)
+        wait_for(lambda: refiner.entered >= 1)
+        assert client.post("/api/v1/recognition/stop").json()["status"] == "stopped"
+        refiner.gate.set()  # refinement finishes after stop, within the same generation
+        wait_for(lambda: len(publisher.events) == 1)
+        assert publisher.events[0][1]["intent_name"] == "light_turn_on"
+    finally:
+        refiner.gate.set()
+
+
+def test_dedup_state_resets_on_restart(client: TestClient, fake_provider: type) -> None:
+    """Deduplication is per-run: an identical command in a new generation dispatches again
+    even inside the dedup window."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    assert patch_settings(client, dedup_window_ms="60000", event_publication_enabled="true").status_code == 200
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    fake_provider.script.extend(["what time is it"] * 2)
+    client.post("/api/v1/recognition/start")
+    try:
+        feed.extend(COMMAND)
+        wait_for(lambda: len(publisher.events) == 1)
+        assert client.post("/api/v1/recognition/stop").json()["status"] == "stopped"
+        assert client.post("/api/v1/recognition/start").json()["status"] == "started"
+        feed.extend(COMMAND)
+        wait_for(lambda: len(publisher.events) == 2)
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
 def test_bounded_shutdown_with_stuck_refiner(client: TestClient, fake_provider: type) -> None:
     """shutdown() stays bounded even while refine() calls are still hung."""
     service = client.app.state.listener  # type: ignore[attr-defined]
