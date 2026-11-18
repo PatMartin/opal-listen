@@ -1,7 +1,7 @@
 """HTTP event-bus publisher used by the server to announce recognition events to opal-event via REST.
 
 Implements the EventPublisher protocol and dispatches events via HTTP POST to opal-event's
-`/api/v1/events/` endpoint using an asynchronous worker queue so that network latency or
+`/api/v1/event/` endpoint using an asynchronous worker queue so that network latency or
 opal-event downtime never blocks recognition or audio capture.
 """
 
@@ -29,7 +29,7 @@ DEFAULT_HTTP_TIMEOUT = 5.0
 
 
 class HttpEventPublisher:
-    """Publishes JSON events to opal-event REST API (/api/v1/events/) via a background queue worker.
+    """Publishes JSON events to opal-event REST API (/api/v1/event/) via a background queue worker.
 
     Conforms to the EventPublisher protocol.
     Publishes an EventInput envelope containing:
@@ -154,11 +154,11 @@ class HttpEventPublisher:
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
 
-        log.info("sending HTTP event to topic '%s' at %s/api/v1/events/: %s", topic, self._base_url, event_input)
-        response = client.post("/api/v1/events/", json=event_input, headers=headers)
+        log.info("sending HTTP event to topic '%s' at %s/api/v1/event/: %s", topic, self._base_url, event_input)
+        response = client.post("/api/v1/event/", json=event_input, headers=headers)
         if response.status_code >= 400:
             self._record_failure(
-                f"opal-event POST /api/v1/events/ returned status {response.status_code}: {response.text[:200]}"
+                f"opal-event POST /api/v1/event/ returned status {response.status_code}: {response.text[:200]}"
             )
 
     def close(self) -> None:

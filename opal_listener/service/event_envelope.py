@@ -1,6 +1,6 @@
 """Shared OPAL event-envelope construction.
 
-The same envelope schema is produced by the HTTP publisher (POST /api/v1/events/) and the
+The same envelope schema is produced by the HTTP publisher (POST /api/v1/event/) and the
 ZeroMQ publisher (frame 2 of the two-frame wire message): a UUID id, the topic, the source, an
 RFC3339 UTC timestamp, and a `data` object carrying the OPAL v1.3 EventContext correlation
 metadata alongside the recognition-result payload.

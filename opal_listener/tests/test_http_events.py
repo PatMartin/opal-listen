@@ -60,7 +60,7 @@ def test_http_event_publisher_publishes_event_successfully() -> None:
         assert _wait_until(lambda: len(received_requests) == 1), "Event was not received by mock server"
 
         req = received_requests[0]
-        assert req.url.path == "/api/v1/events/"
+        assert req.url.path == "/api/v1/event/"
         assert req.headers["Authorization"] == "Bearer secret-token"
         assert req.headers[SESSION_HEADER] == "test-session-123"
         assert TRANSACTION_HEADER in req.headers
