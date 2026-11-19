@@ -151,8 +151,8 @@ Four probe shapes for four depths of "is it healthy": `ping` (TCP/HTTP up),
 (every startup check, human-readable). All exit non-zero on failure.
 
 ```bash
-opal listen service ping && opal listen service live && opal listen service ready
-opal listen service doctor   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
+opal listen service live && opal listen service live && opal listen service ready
+opal listen info health   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
 ```
 
 ### 10. Retune several settings
@@ -309,7 +309,7 @@ Pick the right mic by name, let the watchdog recover dead captures, and bound th
 log table — all without editing a file or restarting.
 
 ```bash
-opal listen service devices
+opal listen info health
 opal listen config setting set --name audio_device --value "USB"
 opal listen config setting set --name audio_watchdog_timeout_ms --value 5000
 opal listen config setting set --name max_recognition_logs --value 5000

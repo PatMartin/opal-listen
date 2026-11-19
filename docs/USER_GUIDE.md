@@ -190,14 +190,14 @@ Useful URLs:
 ### 2.6 Verify the installation
 
 ```bash
-opal listen service ping
-opal listen service doctor
+opal listen service live
+opal listen info health
 opal listen test text "computer, turn on the kitchen light"
 opal listen test audio opal_listener/tests/audio/fixtures/golden_kitchen_light_on.wav
 opal listen test listen-debug        # live microphone, Ctrl-C to stop
 ```
 
-`service doctor` should show `✓` on every line. Microphone problems show as warnings, because text and
+`info health` should show `✓` on every line. Microphone problems show as warnings, because text and
 audio-file tests still work without a microphone. A missing model shows as an error.
 
 ### 2.7 Access from other machines
@@ -207,7 +207,7 @@ The server listens on all interfaces by default. Find the Pi's address, then con
 ```bash
 hostname -I                                      # on the Pi
 export OPAL_LISTEN_API_URL=http://192.168.1.50:8000   # on your laptop
-opal listen service doctor
+opal listen info health
 # browser: http://192.168.1.50:8000/ui/opal-listen.html
 ```
 
@@ -257,7 +257,7 @@ opal listen config setting set auto_start_listener true   # start the microphone
 ```bash
 cd opal_listener
 VOSK_MODELS_DIR=/path/to/models docker compose up -d --build
-opal listen service doctor
+opal listen info health
 ```
 
 | Compose variable | Default | Purpose |
@@ -274,11 +274,11 @@ The container:
 - gets `/dev/snd` for the microphone
 - stores SQLite and the managed snapshot in the `listener_data` volume (`/data`)
 - reads `opal_listener/config` as its seed (`/config`, read-only)
-- has a health check on `/api/v1/info/ping`
+- has a health check on `/api/v1/health/live`
 
 ```bash
 docker compose logs -f listener
-docker compose exec listener opal listen service doctor
+docker compose exec listener opal listen info health
 ```
 
 ### 2.10 Upgrading
@@ -288,7 +288,7 @@ git pull
 pip install -e ".[dev]"
 opal listen config save              # optional safety snapshot
 sudo systemctl restart opal-listen-svc # migrations run automatically on startup
-opal listen service doctor            # the "migrations" check shows the current revision
+opal listen info health            # the "migrations" check shows the current revision
 ```
 
 ---
@@ -855,30 +855,46 @@ locations).
 
 ### 5.3 Service
 
-#### `GET /api/v1/info/` — service info
+#### `GET /api/v1/health/` — aggregate health report
 
-Kernel `ServiceInfo`: service name, package version and API contract version.
+Kernel `OpalHealthReport`: service identity, canonical `status` (`ok` | `degraded` | `error`),
+`live`/`ready` flags, and module diagnostics under `details` (the check list and `audio_devices`).
 
 ```bash
-curl -s $API/api/v1/info/
+curl -s $API/api/v1/health/
 ```
 ```json
 {"name": "opal-listen-svc", "version": "0.1.0", "api_version": "v1",
- "description": "Wakeword, STT, intent recognition, and slot extraction engine"}
+ "status": "ok", "live": true, "ready": true,
+ "details": {"checks": [{"name": "sqlite", "status": "ok", "detail": "var/opal_listener.db"}],
+             "audio_devices": [{"index": 0, "name": "...", "max_input_channels": 2,
+                                "default_sample_rate": 48000.0, "is_default": true}]},
+ "active_profile_id": "1", "checked_at": "2026-09-30T12:34:56.123456",
+ "uptime_seconds": 12.4, "pending_restart_fields": ["auto_start_listener"]}
 ```
 
-#### `GET /api/v1/info/ping` — liveness probe
+#### `GET /api/v1/health/live` — liveness probe
 
-Cheap check that the process is up. Used by Docker. For real checks use `/api/v1/health/`.
+Cheap check that the process is up and the database is reachable (`OpalHealthProbe`). Used by Docker.
 
 ```bash
-curl -s $API/api/v1/info/ping
+curl -s $API/api/v1/health/live
 ```
 ```json
-{"status": "ok"}
+{"status": "ok", "ready": true, "version": "0.1.0"}
 ```
 
----
+#### `GET /api/v1/health/ready` — readiness probe
+
+Full readiness: configuration compiles, the listener provider loads, etc. Returns 503 with
+`OpalHealthProbe` when the service cannot perform useful work.
+
+```bash
+curl -s $API/api/v1/health/ready
+```
+```json
+{"status": "ok", "ready": true, "version": "0.1.0"}
+```
 
 ### 5.4 Wakewords — `/api/v1/wakeword`
 
@@ -917,7 +933,7 @@ curl -s -X POST $API/api/v1/wakeword/ \
 {"name": "hey opal", "enabled": true, "confidence_threshold": 0.85, "id": 2, "created_at": "...", "updated_at": "..."}
 ```
 
-> Choose wakewords that are in the model vocabulary. `service doctor` warns about unknown words.
+> Choose wakewords that are in the model vocabulary. `info health` warns about unknown words.
 > Two or three syllables work best.
 
 #### `GET /api/v1/wakeword/{wakeword_id}` — get one wakeword
@@ -2403,10 +2419,10 @@ opal listen service start --port 8001 --data-dir /var/lib/opal
 opal listen service log           # last 10 lines (--lines N for more)
 opal listen service stop
 
-opal listen service ping          # GET /api/v1/info/ping
-opal listen service info          # GET /api/v1/info/
-opal listen service doctor        # GET /api/v1/health/ (exit 1 on errors)
-opal listen service devices       # GET /api/v1/health/audio_devices
+opal listen service live          # GET /api/v1/health/live
+opal listen info health          # GET /api/v1/health/
+opal listen info health        # GET /api/v1/health/ (exit 1 on errors)
+opal listen info health       # GET /api/v1/health/audio_devices
 opal listen service live          # GET /api/v1/health/live  (OPAL v1.2 liveness probe)
 opal listen service ready         # GET /api/v1/health/ready (OPAL v1.2 readiness probe)
 ```
@@ -2536,7 +2552,7 @@ opal listen regression add color_kitchen_red "make the kitchen lights crimson" \
 opal listen test regression
 
 # 5. check the new words are known to the model
-opal listen service doctor
+opal listen info health
 ```
 
 The same steps with the REST API:
@@ -2659,7 +2675,7 @@ curl -s -X POST $API/api/v1/profile/$(curl -s $API/api/v1/profile/ | jq '.[] | s
 ```bash
 # larger Vosk model for one profile only
 opal listen profile update default --model vosk_model=/models/vosk-model-en-us-0.22-lgraph
-opal listen service doctor                 # the provider check loads the model
+opal listen info health                 # the provider check loads the model
 
 # faster-whisper second pass (pip install -e ".[whisper]")
 opal listen config setting set stt_refiner faster_whisper
@@ -2845,7 +2861,7 @@ Markers: `vosk` (needs the model on disk) and `slow` (noise tests).
 | `provider` or `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH`, the `vosk_model_path` setting or a profile's `model_paths.vosk_model` at a directory that contains `am/` and `conf/`. |
 | `503 listener provider unavailable` | Same as above. The model cannot be loaded. |
 | `microphone` warning | Install `libportaudio2`. Check `arecord -l`. Add the user to the `audio` group. In Docker, check `/dev/snd` and `AUDIO_GID`. |
-| Wakeword never triggers | Run `test listen-debug`. If levels stay near -90 dBFS, choose another device with `service devices` and `setting set audio_device <index>`. Lower the wakeword threshold. |
+| Wakeword never triggers | Run `test listen-debug`. If levels stay near -90 dBFS, choose another device with `info health` and `setting set audio_device <index>`. Lower the wakeword threshold. |
 | Triggers on similar words | Add them to `wakeword_distractors`. Raise the wakeword threshold or the profile's `wakeword` floor. |
 | Command cut off, or ends too late | Tune the active profile's `vad_settings`, e.g. `profile update default --vad silence_end_ms=900`. |
 | `vocabulary` warning | A phrase or alias uses a word that the model does not know. Rephrase it, or use a larger model. |
@@ -2895,8 +2911,8 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 
 | Method | Path | Operation | `opal listen ...` | GUI page |
 |---|---|---|---|---|
-| GET | `/api/v1/info/` | `opal_info_get` | `service info` | System |
-| GET | `/api/v1/info/ping` | `opal_info_ping` | `service ping` | System |
+| GET | `/api/v1/health/` | `opal_info_get` | `info health` | System |
+| GET | `/api/v1/health/live` | `opal_info_ping` | `service live` | System |
 | GET | `/api/v1/wakeword/` | `list_wakewords` | `wakeword list` | Wakewords |
 | POST | `/api/v1/wakeword/` | `create_wakeword` | `wakeword add` | Wakewords |
 | GET | `/api/v1/wakeword/{wakeword_id}` | `get_wakeword` | `wakeword get` | Wakewords |
@@ -2961,8 +2977,8 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | GET | `/api/v1/performance/last` | `get_last_performance` | `service perf last` | Performance |
 | GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |
 | GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |
-| GET | `/api/v1/health/` | `opal_health_get` | `service doctor` | System |
-| GET | `/api/v1/health/audio_devices` | `get_audio_devices` | `service devices` | System |
+| GET | `/api/v1/health/` | `opal_health_get` | `info health` | System |
+| GET | `/api/v1/health/audio_devices` | `get_audio_devices` | `info health` | System |
 | GET | `/api/v1/health/live` | `opal_health_live_get` | `service live` | System |
 | GET | `/api/v1/health/ready` | `opal_health_ready_get` | `service ready` | System |
 | POST | `/api/v1/config/save` | `opal_config_save` | `config save` | Config |

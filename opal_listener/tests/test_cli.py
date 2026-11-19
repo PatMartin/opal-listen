@@ -43,7 +43,7 @@ REQUIRED_COMMANDS = {
     "failed list", "failed promote",
     "service perf last", "service perf summary",
     "config validate", "config save", "config load",
-    "service doctor", "service start", "service stop", "service log", "gui",
+    "info health", "service start", "service stop", "service log", "gui",
     "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
     "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
 }  # fmt: skip
@@ -273,11 +273,12 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
 
 
 def test_service_commands(cli: CliHarness) -> None:
-    doctor = cli("service", "doctor")
-    assert "sqlite" in doctor.output and "overall" in doctor.output
-    assert isinstance(cli.json("service", "devices"), list)
-    assert cli.json("service", "info")["name"] == "opal-listen-svc"
-    assert "is up" in cli("service", "ping").output
+    health = cli("info", "health")
+    assert "sqlite" in health.output and "overall" in health.output
+    report = cli.json("info", "health")
+    assert report["name"] == "opal-listen-svc"
+    assert isinstance(report["details"]["audio_devices"], list)
+    assert cli.json("service", "live")["status"] == "ok"
 
 
 def test_service_stop_and_log_without_server(cli: CliHarness, tmp_path: Path, monkeypatch) -> None:

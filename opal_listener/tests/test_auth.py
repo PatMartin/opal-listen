@@ -28,12 +28,12 @@ def authed_client(tmp_path) -> Iterator[TestClient]:
 
 
 def test_auth_disabled_without_token(client: TestClient) -> None:
-    assert client.get("/api/v1/info/ping").status_code == 200
+    assert client.get("/api/v1/health/live").status_code == 200
     assert client.get("/api/v1/setting/").status_code == 200
 
 
 def test_auth_enforced_on_every_route(authed_client: TestClient) -> None:
-    for path in ("/api/v1/info/", "/api/v1/info/ping", "/api/v1/health/", "/api/v1/setting/", "/api/v1/wakeword/"):
+    for path in ("/api/v1/health/", "/api/v1/health/live", "/api/v1/health/ready", "/api/v1/setting/", "/api/v1/wakeword/"):
         response = authed_client.get(path)
         assert response.status_code == 401, path
         assert response.json()["error"]["code"] == "unauthorized", path
@@ -45,9 +45,9 @@ def test_auth_enforced_on_every_route(authed_client: TestClient) -> None:
 def test_auth_accepts_valid_bearer(authed_client: TestClient) -> None:
     good = authed_client.get("/api/v1/setting/", headers={"Authorization": f"Bearer {TOKEN}"})
     assert good.status_code == 200
-    wrong = authed_client.get("/api/v1/info/ping", headers={"Authorization": "Bearer nope"})
+    wrong = authed_client.get("/api/v1/health/live", headers={"Authorization": "Bearer nope"})
     assert wrong.status_code == 401
-    wrong_scheme = authed_client.get("/api/v1/info/ping", headers={"Authorization": f"Basic {TOKEN}"})
+    wrong_scheme = authed_client.get("/api/v1/health/live", headers={"Authorization": f"Basic {TOKEN}"})
     assert wrong_scheme.status_code == 401
 
 
@@ -104,6 +104,6 @@ def test_cli_sends_bearer_token_from_env(authed_client: TestClient, monkeypatch:
     monkeypatch.delenv(cli_client.API_TOKEN_ENV, raising=False)
     api = cli_client.ApiClient()
     with pytest.raises(cli_client.CliError, match="401"):
-        api.get("/api/v1/info/ping")
+        api.get("/api/v1/health/live")
     monkeypatch.setenv(cli_client.API_TOKEN_ENV, TOKEN)
-    assert api.get("/api/v1/info/ping") == {"status": "ok"}
+    assert api.get("/api/v1/health/live")["status"] == "ok"

@@ -117,9 +117,9 @@ Keep it running. In another terminal, from the repository directory:
 ~~~bash
 source .venv/bin/activate
 
-opal listen service ping
-opal listen service doctor
-opal listen service devices
+opal listen service live
+opal listen info health
+opal listen info health
 ~~~
 
 On first start, the service migrates its SQLite database (by default `var/opal_listener.db`) and seeds the supplied YAML catalogs. You'll have a `computer` wakeword, lights/timer/temperature/time/cancel intents, room and numeric slots, and four sample profiles.
@@ -412,7 +412,7 @@ opal listen regression add cozy_kitchen \
   --slot color=warm_white
 
 opal listen test regression
-opal listen service doctor
+opal listen info health
 ~~~
 
 The doctor checks that the loaded speech model knows the new vocabulary. **A text test can pass even when audio recognition struggles with an unknown word.** A larger Vosk model or different phrasing may help.
@@ -522,7 +522,7 @@ Useful VAD settings include `energy_threshold_dbfs` (minimum speech energy), `no
 When recognition fails, it's easy to blame the AI. Usually the first question is simpler: **Did the microphone hear you?**
 
 ~~~bash
-opal listen service devices
+opal listen info health
 opal listen setting list
 
 # Select an input device by index or a substring of its name.
@@ -803,8 +803,8 @@ snapshot with `opal listen config load` after reading the prompt.
 
 | What you want | Command |
 | --- | --- |
-| "Is it running?" | `opal listen service doctor` |
-| "Which microphone?" | `opal listen service devices` |
+| "Is it running?" | `opal listen info health` |
+| "Which microphone?" | `opal listen info health` |
 | "Why didn't that wake me?" | `opal listen test listen-debug` |
 | "Understand this sentence?" | `opal listen test text "..."` |
 | "Re-run recorded speech?" | `opal listen test audio recording.wav --require-wakeword` |

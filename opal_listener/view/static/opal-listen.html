@@ -170,8 +170,7 @@ const ROUTES = [
   ["get_performance_last", "GET", "/api/v1/performance/last", "service perf last", "perf"],
   ["get_performance_summary", "GET", "/api/v1/performance/summary", "service perf summary", "perf"],
   ["get_performance_history", "GET", "/api/v1/performance/history", "service perf history", "perf"],
-  ["opal_health_get", "GET", "/api/v1/health/", "service doctor", "system"],
-  ["list_audio_devices", "GET", "/api/v1/health/audio_devices", "service devices", "system"],
+  ["opal_health_get", "GET", "/api/v1/health/", "info health", "system"],
   ["opal_health_live_get", "GET", "/api/v1/health/live", "service live", "system"],
   ["opal_health_ready_get", "GET", "/api/v1/health/ready", "service ready", "system"],
   ["opal_config_save", "POST", "/api/v1/config/save", "config save", "config"],
@@ -183,8 +182,7 @@ const ROUTES = [
   ["opal_persona_patch", "PATCH", "/api/v1/persona/{persona_id}", "persona update", "personas"],
   ["opal_persona_delete", "DELETE", "/api/v1/persona/{persona_id}", "persona remove", "personas"],
   ["opal_persona_validate", "POST", "/api/v1/persona/{persona_id}/validate", "persona validate", "personas"],
-  ["opal_info_get", "GET", "/api/v1/info/", "service info", "system"],
-  ["opal_info_ping", "GET", "/api/v1/info/ping", "service ping", "system"],
+
   ["opal_service_start", "POST", "/api/v1/service/start", "service start", "system"],
   ["opal_service_stop", "POST", "/api/v1/service/stop", "service stop", "system"],
   ["opal_service_log", "GET", "/api/v1/service/log", "service log", "system"],
@@ -395,28 +393,27 @@ function statusBadge(s) {
 const VIEWS = {};
 
 VIEWS.system = async () => {
-  const [info, ping, health, devices, live, ready, svclog] = await Promise.allSettled([
-    api("GET", "/api/v1/info/"), api("GET", "/api/v1/info/ping"), api("GET", "/api/v1/health/"), api("GET", "/api/v1/health/audio_devices"),
+  const [health, live, ready, svclog] = await Promise.allSettled([
+    api("GET", "/api/v1/health/"),
     api("GET", "/api/v1/health/live"), api("GET", "/api/v1/health/ready"), api("GET", "/api/v1/service/log", { query: { lines: 20 } }),
   ]);
   const val = p => p.status === "fulfilled" ? p.value : null;
   const err = p => p.status === "rejected" ? `<p class="err">${esc(p.reason.message)}</p>` : "";
   const h = val(health);
+  const details = (h && h.details) || {};
   const probe = p => { const v = val(p); return v ? `${statusBadge(v.status)} <span class="muted">ready: ${cell(v.ready)}</span>` : ""; };
-  return `<h2>System</h2><div class="sub">Service info, liveness, startup health checks and audio devices.</div>
-    <div class="cols">
-      ${card("Info", ["opal_info_get"], err(info) + kv(val(info)))}
-      ${card("Ping", ["opal_info_ping"], err(ping) + kv(val(ping)))}
-    </div>
+  return `<h2>System</h2><div class="sub">Service identity, liveness, health checks and audio devices (all from the health report).</div>
+    ${card("Health report", ["opal_health_get"], err(health) + (h ? kv({name: h.name, version: h.version, api_version: h.api_version,
+      status: h.status, live: h.live, ready: h.ready, active_profile_id: h.active_profile_id,
+      checked_at: h.checked_at, uptime_seconds: h.uptime_seconds, pending_restart_fields: h.pending_restart_fields}) : ""))}
     <div class="cols">
       ${card("Liveness", ["opal_health_live_get"], err(live) + probe(live))}
       ${card("Readiness", ["opal_health_ready_get"], err(ready) + probe(ready))}
     </div>
-    ${card("Doctor", ["opal_health_get"], err(health) + (h ? `<p>overall ${statusBadge(h.status)} <span class="muted">checked ${cell(h.checked_at)}</span></p>` +
-      table(h.checks, [["name", "check"], ["status", "status", r => statusBadge(r.status)], ["detail", "detail"]]) : ""),
-      btn("Re-run", "refresh", {}, "ghost small"))}
-    ${card("Audio input devices", ["get_audio_devices"], err(devices) +
-      table(val(devices), [["index", "index"], ["name", "name"], ["max_input_channels", "channels"], ["default_sample_rate", "default rate"], ["is_default", "default"]], { empty: "No input devices." }))}
+    ${card("Checks", ["opal_health_get"], h ? table(details.checks || [], [["name", "check"], ["status", "status", r => statusBadge(r.status)], ["detail", "detail"]]) + 
+      `<div class="row">${btn("Re-run", "refresh", {}, "ghost small")}</div>` : err(health))}
+    ${card("Audio input devices", ["opal_health_get"], err(health) +
+      table(details.audio_devices || [], [["index", "index"], ["name", "name"], ["max_input_channels", "channels"], ["default_sample_rate", "default rate"], ["is_default", "default"]], { empty: "No input devices." }))}
     ${card("Server process", ["opal_service_start", "opal_service_stop", "opal_service_log"],
       `<div class="row">${btn("Start / restart", "svcStart")} ${btn("Stop", "svcStop", {}, "danger")}
         <label class="muted"><input type="checkbox" id="svcAppend"> append to log</label></div>` +

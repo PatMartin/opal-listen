@@ -1,4 +1,4 @@
-"""Startup/doctor health checks."""
+"""Aggregate health report (kernel OpalHealthReport) with module diagnostics in details."""
 
 from __future__ import annotations
 
@@ -6,22 +6,67 @@ import shutil
 
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from sqlmodel import select
 
+from opal_listener import __version__
 from opal_listener.data.db import alembic_config
 from opal_listener.models import schemas as s
-from opal_listener.models.tables import utc_now
+from opal_listener.models.tables import Profile, utc_now
 from opal_listener.service.audio.capture import AudioCaptureError, list_input_devices, resolve_device
 from opal_listener.service.config_store import export_bundle
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.service.nlu.normalizer import normalize_text
 from opal_listener.service.providers.base import ProviderError
 from opal_listener.service.runtime_config import compile_bundle
+from opal_listener.service.settings_registry import SETTINGS
 
 MIN_FREE_BYTES = 100 * 1024 * 1024
 
 
 def _check(name: str, status: s.CheckStatus, detail: str) -> s.HealthCheckResult:
     return s.HealthCheckResult(name=name, status=status, detail=detail)
+
+
+def _report(service: ListenerService, status: s.HealthStatus, checks: list[s.HealthCheckResult]) -> s.OpalHealthReport:
+    """Wrap the check list in the kernel report envelope: identity, canonical status,
+    live/ready and module-defined diagnostics under `details`."""
+    details: dict[str, object] = {"checks": [c.model_dump() for c in checks]}
+    try:
+        details["audio_devices"] = list_input_devices()
+    except Exception:  # noqa: BLE001 - diagnostics never break the report
+        details["audio_devices"] = []
+    active_id: str | None = None
+    try:
+        with service.db.session() as session:
+            active = session.exec(select(Profile).where(Profile.is_active)).first()
+            if active is not None:
+                active_id = str(active.id)
+    except Exception:  # noqa: BLE001
+        pass
+    snapshot = service.snapshot
+    pending = (
+        [
+            k
+            for k in SETTINGS
+            if SETTINGS[k].restart_required
+            and service.setting_pending_restart(k, snapshot.settings.get(k, SETTINGS[k].default_value()))
+        ]
+        if snapshot is not None
+        else []
+    )
+    return s.OpalHealthReport(
+        name="opal-listen-svc",
+        version=__version__,
+        api_version="v1",
+        status=status,
+        live=True,
+        ready=status != "error",
+        details=details,
+        active_profile_id=active_id,
+        checked_at=utc_now(),
+        uptime_seconds=service.status().uptime_s or 0.0,
+        pending_restart_fields=pending,
+    )
 
 
 def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
@@ -32,7 +77,7 @@ def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
         checks.append(_check("sqlite", "ok", str(service.db.path)))
     except Exception as exc:  # noqa: BLE001
         checks.append(_check("sqlite", "error", f"database unavailable: {exc}"))
-        return s.OpalHealthReport(status="error", checks=checks, checked_at=utc_now())
+        return _report(service, "error", checks)
 
     with service.db.engine.connect() as conn:
         current = MigrationContext.configure(conn).get_current_revision()
@@ -111,9 +156,9 @@ def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
     free = shutil.disk_usage(service.app_settings.data_dir).free
     checks.append(_check("disk", "ok" if free >= MIN_FREE_BYTES else "warning", f"{free // (1024 * 1024)} MiB free"))
 
-    worst: s.CheckStatus = "ok"
+    worst: s.HealthStatus = "ok"
     if any(c.status == "error" for c in checks):
         worst = "error"
     elif any(c.status == "warning" for c in checks):
-        worst = "warning"
-    return s.OpalHealthReport(status=worst, checks=checks, checked_at=utc_now())
+        worst = "degraded"
+    return _report(service, worst, checks)

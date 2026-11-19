@@ -127,7 +127,7 @@ variable has no `ER` in it, unlike the server's `OPAL_LISTENER_*` variables. `OP
 
 ```bash
 export OPAL_LISTEN_API_URL=http://192.168.1.50:8000
-opal listen service ping            # talks to 192.168.1.50
+opal listen service live            # talks to 192.168.1.50
 
 # One-off override for a single command
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
@@ -139,8 +139,8 @@ opal listen --api-url http://localhost:8000 system info
 ### Checking the connection
 
 ```bash
-opal listen service ping            # ✓ http://localhost:8000 is up
-opal listen service info            # service name and version
+opal listen service live            # ✓ http://localhost:8000 is up
+opal listen info health            # service name and version
 ```
 
 If the server cannot be reached, the CLI prints a hint and exits with code `1`:
@@ -258,7 +258,7 @@ server logs.
 | Exit code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | API error (4xx/5xx), server unreachable, resource not found, failed regression run, invalid configuration, `service doctor` errors, `--expect-intent` mismatch, or declined confirmation |
+| `1` | API error (4xx/5xx), server unreachable, resource not found, failed regression run, invalid configuration, `info health` errors, `--expect-intent` mismatch, or declined confirmation |
 | `2` | Invalid CLI usage: unknown option, missing argument, or an out-of-range value such as `--threshold 1.5` |
 
 ---
@@ -546,7 +546,7 @@ opal listen slot add-alias room_name living_room martin_hall
 opal listen slot remove-alias room_name living_room martin_hall
 ```
 
-> After you add a value or alias, run `opal listen service doctor`. The `vocabulary` check warns if a
+> After you add a value or alias, run `opal listen info health`. The `vocabulary` check warns if a
 > word is unknown to the speech model and therefore can't be recognized from audio.
 
 ---
@@ -1248,36 +1248,25 @@ they fall back to the same local pidfile/log management the server-side ops use 
 | `start [--host H] [--port P] [--data-dir DIR] [--append]` | Start the managed server (replaces a running one). `--append` appends to `logs/opal_listen.log` instead of truncating. Returns immediately. |
 | `stop` | Stop the managed server, if it is running |
 | `log [--lines N]` | Show the last N lines of the managed server's log (default 10) |
-| `ping` | Liveness probe (`GET /api/v1/info/ping`) |
-| `info` | Service name, package version and contract version (`GET /api/v1/info/`) |
-| `doctor` | Run all health checks. Exits `1` if any check is an error. |
-| `devices` | List audio input devices visible to the **server** |
-| `live` | OPAL v1.2 liveness probe: process + database reachability (`GET /api/v1/health/live`) |
-| `ready` | OPAL v1.2 readiness probe: configuration compiles, provider loads, etc. (`GET /api/v1/health/ready`) |
+| `live` | OPAL liveness probe: process + database reachability (`GET /api/v1/health/live`) |
+| `ready` | OPAL readiness probe: configuration compiles, provider loads, etc. (`GET /api/v1/health/ready`) |
 | `perf last\|summary\|history` | Performance metrics sub-group (see [§16](#16-service-perf--performance-metrics)) |
 
 ```bash
 # Run the server in the background, check it, stop it
 opal listen service start --port 8000
-opal listen service ping
 opal listen service log
 opal listen service stop
 
-# Is the server up?
-opal listen service ping
-
-# Which version is running?
-opal listen service info
-
-# Full health check
-opal listen service doctor
+# Aggregate health report: identity, status, checks and audio devices
+opal listen info health
 
 # Standard OPAL liveness/readiness probes (status: ok | degraded | unavailable; 503 when unavailable)
 opal listen service live
 opal listen service ready
 
-# Find the microphone index or name to use for the audio_device setting
-opal listen service devices
+# Audio input devices are listed in the health report's details
+opal listen --json info health | jq '.details.audio_devices'
 opal listen config setting set --name audio_device --value 2
 ```
 
@@ -1426,8 +1415,8 @@ This tour exercises every catalog group and cleans up after itself. You can run 
 
 ```bash
 # --- sanity -------------------------------------------------------------------------------
-opal listen service ping
-opal listen service doctor
+opal listen service live
+opal listen info health
 
 # --- wakewords ----------------------------------------------------------------------------
 opal listen wakeword list
@@ -1515,7 +1504,7 @@ opal listen regression add kitchen_cozy "set the kitchen lights to cozy" \
 opal listen test regression
 
 # 5. Check that the speech model knows the new words
-opal listen service doctor
+opal listen info health
 ```
 
 ### 18.3 The review and tuning loop
@@ -1604,7 +1593,7 @@ opal listen --json test listen | jq -c '{intent_name, slot_values}'
 #!/usr/bin/env bash
 set -euo pipefail
 
-opal listen service ping
+opal listen service live
 opal listen test text "computer, turn on the kitchen light" --no-save --expect-intent light_turn_on
 opal listen test text "order a pizza"                       --no-save --expect-intent no_match
 opal listen test audio resources/cmds/cmd-cancel.wav        --no-save --expect-intent cancel
@@ -1657,7 +1646,7 @@ opal listen --json regression list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `service devices`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
+| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1744,11 +1733,11 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config validate` | `POST /api/v1/config/validate` (live, or `{snapshot}` with `--in`) |
 | `config save` | `POST /api/v1/config/save` (`managed`, or `response` with `--out`) |
 | `config load` | `POST /api/v1/config/load` (If-Match; managed, or `{snapshot}` with `--in`) |
-| `service doctor` | `GET /api/v1/health/` |
-| `service devices` | `GET /api/v1/health/audio_devices` |
+| `info health` | `GET /api/v1/health/` |
+| `info health` | `GET /api/v1/health/audio_devices` |
 | `service live` | `GET /api/v1/health/live` (liveness probe) |
 | `service ready` | `GET /api/v1/health/ready` (readiness probe) |
-| `service info` | `GET /api/v1/info/` |
-| `service ping` | `GET /api/v1/info/ping` |
+| `info health` | `GET /api/v1/health/` |
+| `service live` | `GET /api/v1/health/live` |
 
 See the [User Guide](USER_GUIDE.md) for the REST API, configuration files and architecture.

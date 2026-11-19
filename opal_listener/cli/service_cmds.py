@@ -23,6 +23,7 @@ config_app = typer.Typer(
     help="Save, load and validate persistent configuration snapshots.", no_args_is_help=True
 )
 service_app = typer.Typer(help="Run, probe and inspect the server process.", no_args_is_help=True)
+info_app = typer.Typer(help="Service information and health.", no_args_is_help=True)
 
 
 def _confirm(ctx: typer.Context, yes: bool, message: str) -> None:
@@ -133,46 +134,26 @@ def config_validate(
         raise CliError("validation failed")
 
 
-STATUS_ICON = {"ok": "[green]✓[/green]", "warning": "[yellow]![/yellow]", "error": "[red]✗[/red]"}
+STATUS_ICON = {"ok": "[green]✓[/green]", "warning": "[yellow]![/yellow]", "degraded": "[yellow]![/yellow]", "error": "[red]✗[/red]"}
 
 
-@service_app.command("doctor")
-def service_doctor(ctx: typer.Context) -> None:
-    """Run startup health checks (SQLite, model, microphone, intents, slots ...). Exit 1 on errors."""
+@info_app.command("health")
+def info_health(ctx: typer.Context) -> None:
+    """Aggregate health report: identity, status, live/ready and module diagnostics (details)."""
     report = state(ctx).api.get(f"{HEALTH}/")
     if state(ctx).json_output:
         print_json(report)
     else:
-        for check in report["checks"]:
+        details = report.get("details") or {}
+        for check in details.get("checks", []):
             console.print(f"{STATUS_ICON[check['status']]} {escape(check['name']):<16} {escape(str(check['detail']))}")
-        console.print(f"overall: {STATUS_ICON[report['status']]} {report['status']}")
+        devices = details.get("audio_devices") or []
+        if devices:
+            render(ctx, devices, ("index", "name", "max_input_channels", "default_sample_rate", "is_default"), "Input devices")
+        console.print(f"overall: {STATUS_ICON.get(report['status'], report['status'])} {report['status']}")
+        console.print(f"{report['name']} {report['version']} (api {report['api_version']}) live={report['live']} ready={report['ready']}")
     if report["status"] == "error":
         raise CliError("health check failed")
-
-
-@service_app.command("devices")
-def service_devices(ctx: typer.Context) -> None:
-    """List audio input devices visible to the server."""
-    devices = state(ctx).api.get(f"{HEALTH}/audio_devices")
-    render(
-        ctx,
-        devices,
-        ("index", "name", "max_input_channels", "default_sample_rate", "is_default"),
-        "Input devices",
-    )
-
-
-@service_app.command("info")
-def service_info(ctx: typer.Context) -> None:
-    """Service identity: name, package version and API contract version."""
-    render_kv(ctx, state(ctx).api.get("/api/v1/info/"))
-
-
-@service_app.command("ping")
-def service_ping(ctx: typer.Context) -> None:
-    """Liveness probe."""
-    result = state(ctx).api.get("/api/v1/info/ping")
-    done(ctx, f"{state(ctx).api.base_url} is up", result)
 
 
 @service_app.command("live")

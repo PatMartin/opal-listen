@@ -544,6 +544,8 @@ class OpalConfigValidation(BaseModel):
 
 CheckStatus = Literal["ok", "warning", "error"]
 
+HealthStatus = Literal["ok", "degraded", "error"]
+
 
 class HealthCheckResult(BaseModel):
     name: str
@@ -552,15 +554,23 @@ class HealthCheckResult(BaseModel):
 
 
 class OpalHealthReport(BaseModel):
-    """Kernel OpalHealthReport; status is the only normative member.
+    """Kernel OpalHealthReport (v3): identity + canonical status + live/ready + details.
 
-    checked_at stays in the emitted payload but is hidden from the schema: the kernel types
-    it non-nullable and our optional timestamp would otherwise fail the format check.
+    Module-defined diagnostics (the check list and `audio_devices`) live under `details`
+    per the kernel's `x-opal-health-details` extension.
     """
 
-    status: CheckStatus
-    checks: list[HealthCheckResult] = []
-    checked_at: SkipJsonSchema[datetime | None] = None
+    name: str
+    version: str
+    api_version: str
+    status: HealthStatus
+    live: bool
+    ready: bool
+    details: dict[str, Any]
+    active_profile_id: str | None = None
+    checked_at: datetime | None = None
+    uptime_seconds: float = Field(default=0.0, ge=0)
+    pending_restart_fields: list[str] = []
 
 
 class AudioDevice(BaseModel):

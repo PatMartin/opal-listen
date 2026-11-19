@@ -53,6 +53,7 @@ def opal_persona_create(
         require_matching_etag(if_match, collection_etag(current), "personas")
         result = OpalPersonaRead.model_validate(catalog.create_persona(session, data))
     response.headers["Location"] = f"/api/v1/persona/{result.persona_id}"
+    response.headers["ETag"] = item_etag(result)
     return result
 
 
@@ -97,6 +98,7 @@ def opal_persona_get(
 )
 def opal_persona_patch(
     data: OpalPersonaUpdate,
+    response: Response,
     persona_id: str = Path(min_length=1, max_length=200, pattern=PERSONA_ID_PATTERN),
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
@@ -105,6 +107,7 @@ def opal_persona_patch(
         current = OpalPersonaRead.model_validate(catalog.get_persona(session, persona_id))
         require_matching_etag(if_match, item_etag(current), "persona")
         result = OpalPersonaRead.model_validate(catalog.update_persona(session, persona_id, data))
+    response.headers["ETag"] = item_etag(result)
     return result
 
 
@@ -118,4 +121,5 @@ def opal_persona_delete(
         current = OpalPersonaRead.model_validate(catalog.get_persona(session, persona_id))
         require_matching_etag(if_match, item_etag(current), "persona")
         catalog.delete_persona(session, persona_id)
-    return Response(status_code=204)
+        remaining = [OpalPersonaRead.model_validate(p) for p in catalog.list_personas(session)]
+    return Response(status_code=204, headers={"ETag": collection_etag(remaining)})

@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends, Response
 
 from opal_listener import __version__
 from opal_listener.models.opal_standard import OPAL_422_RESPONSE, OPAL_503_RESPONSE, OpalHealthProbe
-from opal_listener.models.schemas import AudioDevice, OpalHealthReport
-from opal_listener.service.audio.capture import list_input_devices
+from opal_listener.models.schemas import OpalHealthReport
 from opal_listener.service.health import run_health_checks
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.view.api.deps import get_service
@@ -23,11 +22,6 @@ _PROBE_503 = {503: {"model": OpalHealthProbe, "description": "Service unavailabl
 )
 def opal_health_get(svc: ListenerService = Depends(get_service)) -> OpalHealthReport:
     return run_health_checks(svc)
-
-
-@router.get("/audio_devices", response_model=list[AudioDevice], responses=OPAL_422_RESPONSE, operation_id="list_audio_devices")
-def list_audio_devices() -> list[AudioDevice]:
-    return [AudioDevice(**d) for d in list_input_devices()]
 
 
 @router.get(
@@ -59,8 +53,8 @@ def opal_health_ready_get(response: Response, svc: ListenerService = Depends(get
     report = run_health_checks(svc)
     if report.status == "error":
         response.status_code = 503
-        failures = [c.detail for c in report.checks if c.status == "error"]
+        failures = [c["detail"] for c in report.details.get("checks", []) if c["status"] == "error"]
         return OpalHealthProbe(version=__version__, status="unavailable", ready=False, details={"failures": failures})
-    if report.status == "warning":
+    if report.status == "degraded":
         return OpalHealthProbe(version=__version__, status="degraded", ready=True)
     return OpalHealthProbe(version=__version__, status="ok", ready=True)

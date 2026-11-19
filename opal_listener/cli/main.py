@@ -24,7 +24,7 @@ from opal_listener.cli.event_cmds import event_app
 from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, perf_app, regression_app
-from opal_listener.cli.service_cmds import config_app, service_app
+from opal_listener.cli.service_cmds import config_app, info_app, service_app
 from opal_listener.cli.test_cmds import pipeline_app, recognition_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
 
@@ -94,10 +94,7 @@ OPERATION_COMMANDS: dict[str, str] = {
     "get_performance_last": "service perf last",
     "get_performance_summary": "service perf summary",
     "get_performance_history": "service perf history",
-    "opal_health_get": "service doctor",
-    "list_audio_devices": "service devices",
-    "opal_info_get": "service info",
-    "opal_info_ping": "service ping",
+    "opal_health_get": "info health",
     "opal_health_live_get": "service live",
     "opal_health_ready_get": "service ready",
     "opal_service_start": "service start",
@@ -128,6 +125,7 @@ for sub_app, name in (
     (reactions_app, "reaction"),
     (config_app, "config"),
     (service_app, "service"),
+    (info_app, "info"),
     (event_app, "event"),
 ):
     listen_app.add_typer(sub_app, name=name)
@@ -152,13 +150,13 @@ def listen_gui(
     api = state(ctx).api
     url = f"{api.base_url}/ui/opal-listen.html"
     try:
-        api.get("/api/v1/info/ping")
+        api.get("/api/v1/health/live")
     except Exception:
         parsed = urllib.parse.urlparse(api.base_url)
         launch_server(parsed.hostname or "127.0.0.1", parsed.port or 8000, None)
         for _ in range(100):  # ~10s for the server to come up
             try:
-                api.get("/api/v1/info/ping")
+                api.get("/api/v1/health/live")
                 break
             except Exception:
                 time.sleep(0.1)

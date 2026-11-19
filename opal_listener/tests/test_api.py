@@ -19,11 +19,14 @@ def _etag(client: TestClient, path: str) -> str:
     return client.get(path).headers["etag"]
 
 
-def test_kernel_info_routes(client: TestClient) -> None:
-    info = client.get("/api/v1/info/").json()
-    assert info["name"] == "opal-listen-svc"
-    assert info["api_version"] == "v1"
-    assert client.get("/api/v1/info/ping").json() == {"status": "ok"}
+def test_retired_info_routes(client: TestClient) -> None:
+    """v0.1.0 retires /api/v1/info/*; identity, liveness and readiness live in the health report."""
+    assert client.get("/api/v1/info/").status_code == 404
+    assert client.get("/api/v1/info/ping").status_code == 404
+    report = client.get("/api/v1/health/").json()
+    assert report["name"] == "opal-listen-svc"
+    assert report["api_version"] == "v1"
+    assert report["live"] is True and report["ready"] is True
 
 
 def test_web_ui_is_served(client: TestClient) -> None:
@@ -500,10 +503,11 @@ def test_regression_crud(client: TestClient) -> None:
 
 def test_health_report(client: TestClient) -> None:
     report = client.get("/api/v1/health/").json()
-    names = {c["name"] for c in report["checks"]}
+    names = {c["name"] for c in report["details"]["checks"]}
     assert {"sqlite", "migrations", "intents", "slots", "microphone", "listener"} <= names
-    assert report["status"] in ("ok", "warning", "error")
-    assert isinstance(client.get("/api/v1/health/audio_devices").json(), list)
+    assert report["status"] in ("ok", "degraded", "error")
+    assert isinstance(report["details"]["audio_devices"], list)
+    assert client.get("/api/v1/health/audio_devices").status_code == 404
 
 
 def test_pipeline_start_stop_idempotent(client: TestClient, fake_provider: type) -> None:

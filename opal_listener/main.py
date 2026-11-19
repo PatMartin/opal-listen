@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings, get_app_settings
 from opal_listener.data.db import Database
+from opal_listener.models import schemas as s
 from opal_listener.service.errors import (
     DomainError,
     OpalValidationError,
@@ -52,6 +53,10 @@ _ORPHAN_SCHEMA_REFS: dict[str, str] = {
 _ORPHAN_SCHEMA_COPIES: dict[str, str] = {
     "Body_test_audio_api_v1_recognition_test_audio_post": "Body_test_recognition_audio",
 }
+
+# Contract schemas carried only inside `OpalHealthReport.details` (an open object) have no
+# $ref from any route, so inject them from their models directly.
+_ORPHAN_SCHEMA_MODELS: list[type[s.AudioDevice]] = [s.AudioDevice]
 
 # OPAL SUITE STANDARD response-header documentation (openapi/shared/opal_kernel.yaml components/headers).
 # OpalContextMiddleware stamps these on every response, so every operation documents them.
@@ -115,6 +120,7 @@ _ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
     "opal_profile_get": _ITEM_ETAG,
     "opal_profile_patch": _ITEM_ETAG,
     "opal_persona_get": _ITEM_ETAG,
+    "opal_persona_patch": _ITEM_ETAG,
     "list_phrases": _MEMBER_ETAG,
     "list_slot_values": _MEMBER_ETAG,
     "list_aliases": _MEMBER_ETAG,
@@ -126,7 +132,13 @@ _ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
 }
 
 # Operations whose only documented ETag rides on a 204 response.
-_ETAG_204_OPERATIONS: dict[str, dict[str, Any]] = {"opal_setting_delete": _SETTINGS_ETAG}
+_ETAG_204_OPERATIONS: dict[str, dict[str, Any]] = {
+    "opal_setting_delete": _SETTINGS_ETAG,
+    "opal_persona_delete": _COLLECTION_ETAG,
+}
+
+# Operations that document an ETag on their 201 response alongside Location.
+_ETAG_201_OPERATIONS: dict[str, dict[str, Any]] = {"opal_persona_create": _ITEM_ETAG}
 
 # Operations that set a Location header on their 201 responses.
 _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
@@ -213,7 +225,7 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
 
     OpalContextMiddleware stamps the four X-Opal-* correlation headers on every response
     (success, error, and streaming alike); ETag-bearing reads and Location-bearing creates
-    are annotated per operation, matching openapi/opal_listen_v2.0.0.yaml.
+    are annotated per operation, matching openapi/opal_listen_v0.1.0.yaml.
     """
     components = schema.setdefault("components", {})
     components.setdefault("headers", {}).update(_OPAL_HEADER_COMPONENTS)
@@ -233,6 +245,8 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
                     headers["ETag"] = _ETAG_204_OPERATIONS[opid]
                 if status == "201" and opid in _LOCATION_OPERATION_HEADERS:
                     headers["Location"] = _LOCATION_OPERATION_HEADERS[opid]
+                if status == "201" and opid in _ETAG_201_OPERATIONS:
+                    headers["ETag"] = _ETAG_201_OPERATIONS[opid]
 
 
 def _validation_detail(messages: list[str], error_type: str) -> list[dict[str, object]]:
@@ -273,6 +287,8 @@ def _inject_orphan_schemas(schema: dict[str, Any]) -> None:
     for name, source in _ORPHAN_SCHEMA_COPIES.items():
         if name not in components and source in components:
             components[name] = copy.deepcopy(components[source])
+    for model in _ORPHAN_SCHEMA_MODELS:
+        components.setdefault(model.__name__, model.model_json_schema())
 
 
 def create_app(settings: AppSettings | None = None, service: ListenerService | None = None) -> FastAPI:
@@ -293,7 +309,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="2.0.0",
+        version="0.1.0",
         lifespan=lifespan,
     )
     app.state.listener = service
