@@ -82,12 +82,18 @@ def build_snapshot(session: Session) -> s.OpalConfigSnapshot:
                     "name": p.name,
                     "description": p.description,
                     "is_active": p.is_active,
-                    "wakeword_names": list(p.wakeword_names),
-                    "confidence_thresholds": dict(p.confidence_thresholds),
-                    "vad_settings": dict(p.vad_settings),
-                    "enabled_intents": list(p.enabled_intents),
-                    "enabled_slots": list(p.enabled_slots),
-                    "model_paths": dict(p.model_paths),
+                    "shared": dict(p.shared),
+                    "modules": {
+                        **p.modules,
+                        "opal-listen": {
+                            "wakeword_names": list(p.wakeword_names),
+                            "confidence_thresholds": dict(p.confidence_thresholds),
+                            "vad_settings": dict(p.vad_settings),
+                            "enabled_intents": list(p.enabled_intents),
+                            "enabled_slots": list(p.enabled_slots),
+                            "model_paths": dict(p.model_paths),
+                        },
+                    },
                 }
                 for p in session.exec(select(Profile).order_by(Profile.id)).all()
             ],
@@ -230,18 +236,23 @@ def apply_snapshot(session: Session, snapshot: s.OpalConfigSnapshot) -> dict[str
         ]
         session.add(slot)
     for p in resources["profiles"]:
+        # v3 envelope (shared + modules.opal-listen) with flat-field fallback for pre-v3 snapshots.
+        comp = dict(p.get("modules", {}).get("opal-listen") or {})
+        foreign = {k: v for k, v in (p.get("modules") or {}).items() if k != "opal-listen"}
         session.add(
             Profile(
                 id=_item_id(p),
                 name=p["name"],
                 description=p.get("description"),
                 is_active=p.get("is_active", False),
-                wakeword_names=list(p.get("wakeword_names", [])),
-                confidence_thresholds=dict(p.get("confidence_thresholds", {})),
-                vad_settings=dict(p.get("vad_settings", {})),
-                enabled_intents=list(p.get("enabled_intents", [])),
-                enabled_slots=list(p.get("enabled_slots", [])),
-                model_paths=dict(p.get("model_paths", {})),
+                wakeword_names=list(comp.get("wakeword_names", p.get("wakeword_names", []))),
+                confidence_thresholds=dict(comp.get("confidence_thresholds", p.get("confidence_thresholds", {}))),
+                vad_settings=dict(comp.get("vad_settings", p.get("vad_settings", {}))),
+                enabled_intents=list(comp.get("enabled_intents", p.get("enabled_intents", []))),
+                enabled_slots=list(comp.get("enabled_slots", p.get("enabled_slots", []))),
+                model_paths=dict(comp.get("model_paths", p.get("model_paths", {}))),
+                shared=dict(p.get("shared", {})),
+                modules=foreign,
                 created_at=now,
                 updated_at=now,
             )

@@ -527,8 +527,9 @@ async function slotDetail(id) {
 
 function profileForm(p, lists) {
   const group = (name, all, selected) => all.length ? all.map(n => `<label><input type="checkbox" data-group="1" name="${name}" value="${esc(n)}" ${selected.includes(n) ? "checked" : ""}> ${esc(n)}</label>`).join(" ") : '<span class="muted">none</span>';
-  const th = p.confidence_thresholds || {};
-  const mp = p.model_paths || {};
+  const comp = ((p.modules || {})["opal-listen"]) || {};
+  const th = comp.confidence_thresholds || {};
+  const mp = comp.model_paths || {};
   return `<form data-form="profileSave" data-id="${p.id ?? ""}">
     <div class="row"><label class="block" style="flex:1"><span>name</span><input name="name" value="${esc(p.name || "")}" required></label>
       <label class="block" style="flex:2"><span>description</span><input name="description" value="${esc(p.description || "")}"></label>
@@ -536,12 +537,12 @@ function profileForm(p, lists) {
     <p><b>Confidence thresholds</b> <span class="hint">floors: effective = max(item threshold, profile threshold); blank = unset</span></p>
     <div class="row">${["wakeword", "intent", "stt"].map(k => `<label>${k} <input type="number" name="th_${k}" step="0.01" min="0" max="1" value="${th[k] ?? ""}"></label>`).join("")}</div>
     <label class="block"><span>vad_settings (JSON) — keys: ${Object.keys(VAD_KEYS).join(", ")}</span>
-      <textarea class="mono" name="vad" placeholder='${esc(JSON.stringify({ silence_end_ms: 700 }))}'>${esc(Object.keys(p.vad_settings || {}).length ? JSON.stringify(p.vad_settings, null, 2) : "")}</textarea></label>
+      <textarea class="mono" name="vad" placeholder='${esc(JSON.stringify({ silence_end_ms: 700 }))}'>${esc(Object.keys(comp.vad_settings || {}).length ? JSON.stringify(comp.vad_settings, null, 2) : "")}</textarea></label>
     <div class="row"><label class="block" style="flex:1"><span>model_paths.vosk_model</span><input name="mp_vosk_model" value="${esc(mp.vosk_model || "")}"></label>
       <label class="block" style="flex:1"><span>model_paths.whisper_model</span><input name="mp_whisper_model" value="${esc(mp.whisper_model || "")}"></label></div>
-    <p><b>Wakewords</b> <span class="hint">none checked = all enabled</span><br>${group("wakeword_names", lists.wakewords, p.wakeword_names || [])}</p>
-    <p><b>Enabled intents</b> <span class="hint">none checked = all</span><br>${group("enabled_intents", lists.intents, p.enabled_intents || [])}</p>
-    <p><b>Enabled slots</b> <span class="hint">none checked = all</span><br>${group("enabled_slots", lists.slots, p.enabled_slots || [])}</p>
+    <p><b>Wakewords</b> <span class="hint">none checked = all enabled</span><br>${group("wakeword_names", lists.wakewords, comp.wakeword_names || [])}</p>
+    <p><b>Enabled intents</b> <span class="hint">none checked = all</span><br>${group("enabled_intents", lists.intents, comp.enabled_intents || [])}</p>
+    <p><b>Enabled slots</b> <span class="hint">none checked = all</span><br>${group("enabled_slots", lists.slots, comp.enabled_slots || [])}</p>
     <button type="submit">${p.id ? "Save profile" : "Add profile"}</button></form>`;
 }
 
@@ -559,7 +560,7 @@ VIEWS.profiles = async ([id]) => {
       ${card("Edit profile", ["opal_profile_get", "opal_profile_patch"], profileForm(p, lists),
         (p.is_active ? "" : btn("Activate", "profileActivate", { id: p.id }, "small")) + btn("Delete", "profileDelete", { id: p.id, name: p.name }, "danger small"))}`;
   }
-  const items = await api("GET", "/api/v1/profile/");
+  const items = (await api("GET", "/api/v1/profile/")).map(r => ({ ...r, ...(r.modules || {})["opal-listen"] }));
   return `<h2>Profiles</h2><div class="sub">Exactly one profile is active; it selects wakewords, thresholds, VAD settings, models and enabled intents/slots.</div>
     ${opsLine(["opal_profile_list", "opal_profile_create", "opal_profile_get", "opal_profile_patch", "opal_profile_delete", "opal_profile_activate"])}
     ${card("Profiles", ["opal_profile_list"], table(items, [["id", "id"], ["name", "name"], ["is_active", "active"], ["confidence_thresholds", "thresholds"],
@@ -968,8 +969,10 @@ const FORM = {
     if (v.mp_whisper_model.trim()) models.whisper_model = v.mp_whisper_model.trim();
     const body = {
       name: v.name.trim(), description: v.description || null, is_active: v.is_active,
-      wakeword_names: v.wakeword_names || [], enabled_intents: v.enabled_intents || [], enabled_slots: v.enabled_slots || [],
-      confidence_thresholds: thresholds, vad_settings: parseJson(v.vad, "vad_settings"), model_paths: models,
+      modules: { "opal-listen": {
+        wakeword_names: v.wakeword_names || [], enabled_intents: v.enabled_intents || [], enabled_slots: v.enabled_slots || [],
+        confidence_thresholds: thresholds, vad_settings: parseJson(v.vad, "vad_settings"), model_paths: models,
+      } },
     };
     const p = f.dataset.id
       ? await apiWithEtag("PATCH", `/api/v1/profile/${f.dataset.id}`, { body })

@@ -20,10 +20,10 @@ router = APIRouter(prefix="/api/v1/profile", tags=["profiles"])
 _ITEM_ERRORS = {**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
 
 
-@router.get("/", response_model=list[OpalProfile], responses=OPAL_422_RESPONSE, operation_id="opal_profile_list")
+@router.get("/", response_model=list[OpalProfile], response_model_exclude_unset=True, responses=OPAL_422_RESPONSE, operation_id="opal_profile_list")
 def opal_profile_list(response: Response, svc: ListenerService = Depends(get_service)) -> list[OpalProfile]:
     with svc.db.session() as session:
-        items = [OpalProfile.model_validate(p) for p in catalog.list_profiles(session)]
+        items = [catalog.profile_read(p) for p in catalog.list_profiles(session)]
     response.headers["ETag"] = collection_etag(items)
     return items
 
@@ -31,6 +31,7 @@ def opal_profile_list(response: Response, svc: ListenerService = Depends(get_ser
 @router.post(
     "/",
     response_model=OpalProfile,
+    response_model_exclude_unset=True,
     status_code=201,
     responses=_ITEM_ERRORS,
     operation_id="opal_profile_create",
@@ -42,9 +43,9 @@ def opal_profile_create(
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.config_change() as session:
-        current = [OpalProfile.model_validate(p) for p in catalog.list_profiles(session)]
+        current = [catalog.profile_read(p) for p in catalog.list_profiles(session)]
         require_matching_etag(if_match, collection_etag(current), "profiles")
-        result = OpalProfile.model_validate(catalog.create_profile(session, data))
+        result = catalog.profile_read(catalog.create_profile(session, data))
     response.headers["Location"] = f"/api/v1/profile/{result.id}"
     return result
 
@@ -52,6 +53,7 @@ def opal_profile_create(
 @router.get(
     "/{profile_id}",
     response_model=OpalProfile,
+    response_model_exclude_unset=True,
     responses={**OPAL_404_RESPONSE, **OPAL_422_RESPONSE},
     operation_id="opal_profile_get",
 )
@@ -61,7 +63,7 @@ def opal_profile_get(
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.db.session() as session:
-        item = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
+        item = catalog.profile_read(catalog.get_by_ref(session, Profile, profile_id, "profile"))
     response.headers["ETag"] = item_etag(item)
     return item
 
@@ -69,6 +71,7 @@ def opal_profile_get(
 @router.patch(
     "/{profile_id}",
     response_model=OpalProfile,
+    response_model_exclude_unset=True,
     responses=_ITEM_ERRORS,
     operation_id="opal_profile_patch",
 )
@@ -80,9 +83,9 @@ def opal_profile_patch(
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.config_change() as session:
-        current = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
+        current = catalog.profile_read(catalog.get_by_ref(session, Profile, profile_id, "profile"))
         require_matching_etag(if_match, item_etag(current), "profile")
-        result = OpalProfile.model_validate(catalog.update_profile(session, catalog.parse_id(profile_id, "profile"), data))
+        result = catalog.profile_read(catalog.update_profile(session, catalog.parse_id(profile_id, "profile"), data))
     response.headers["ETag"] = item_etag(result)
     return result
 
@@ -94,7 +97,7 @@ def opal_profile_delete(
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        current = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
+        current = catalog.profile_read(catalog.get_by_ref(session, Profile, profile_id, "profile"))
         require_matching_etag(if_match, item_etag(current), "profile")
         catalog.delete_profile(session, catalog.parse_id(profile_id, "profile"))
     return Response(status_code=204)
@@ -103,6 +106,7 @@ def opal_profile_delete(
 @router.post(
     "/{profile_id}/activate",
     response_model=OpalProfile,
+    response_model_exclude_unset=True,
     responses=_ITEM_ERRORS,
     operation_id="opal_profile_activate",
 )
@@ -113,7 +117,7 @@ def opal_profile_activate(
 ) -> OpalProfile:
     """Set this profile as active, deactivating all others."""
     with svc.config_change() as session:
-        current = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
+        current = catalog.profile_read(catalog.get_by_ref(session, Profile, profile_id, "profile"))
         require_matching_etag(if_match, item_etag(current), "profile")
-        result = OpalProfile.model_validate(catalog.activate_profile(session, catalog.parse_id(profile_id, "profile")))
+        result = catalog.profile_read(catalog.activate_profile(session, catalog.parse_id(profile_id, "profile")))
     return result

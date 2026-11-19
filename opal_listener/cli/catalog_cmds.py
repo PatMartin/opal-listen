@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -385,8 +387,22 @@ PROFILE_COLUMNS = (
 )
 
 
-def _profile_body(
-    description: str | None,
+def _read_doc(path: Path, label: str) -> dict[str, Any]:
+    """Read a JSON/YAML object (contract `local_in` bindings for --in/--shared/--module)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CliError(f"cannot read {path}: {exc}") from exc
+    try:
+        data = yaml.safe_load(text) if path.suffix.lower() in (".yaml", ".yml") else json.loads(text)
+    except (yaml.YAMLError, json.JSONDecodeError) as exc:
+        raise CliError(f"{path} is not valid JSON/YAML: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CliError(f"{path} does not contain a {label} object")
+    return data
+
+
+def _compartment_body(
     wakeword: list[str] | None,
     threshold: list[str] | None,
     vad: list[str] | None,
@@ -394,14 +410,18 @@ def _profile_body(
     slot: list[str] | None,
     model: list[str] | None,
 ) -> dict[str, Any]:
+    """Convenience flags -> the opal-listen compartment (modules["opal-listen"])."""
     return {
-        "description": description,
-        "wakeword_names": wakeword,
-        "confidence_thresholds": parse_pairs(threshold) if threshold else None,
-        "vad_settings": parse_pairs(vad) if vad else None,
-        "enabled_intents": intent,
-        "enabled_slots": slot,
-        "model_paths": {k: str(v) for k, v in parse_pairs(model).items()} if model else None,
+        k: v
+        for k, v in {
+            "wakeword_names": wakeword,
+            "confidence_thresholds": parse_pairs(threshold) if threshold else None,
+            "vad_settings": parse_pairs(vad) if vad else None,
+            "enabled_intents": intent,
+            "enabled_slots": slot,
+            "model_paths": {k: str(v) for k, v in parse_pairs(model).items()} if model else None,
+        }.items()
+        if v is not None
     }
 
 
@@ -429,9 +449,14 @@ def profiles_get(ctx: typer.Context, profile: str = typer.Argument(..., help="Na
 @profiles_app.command("add")
 def profiles_add(
     ctx: typer.Context,
-    name: str,
+    name: str | None = typer.Argument(None),
+    doc: Path | None = typer.Option(None, "--in", help="Whole portable profile document (JSON/YAML); exclusive with --name/--shared/--module"),
+    shared: Path | None = typer.Option(None, "--shared", help="Shared-values object file merged into the document"),
+    module: Path | None = typer.Option(None, "--module", help="opal-listen compartment file"),
+    opt_name: str | None = typer.Option(None, "--name"),
     description: str | None = typer.Option(None, "--description"),
-    activate: bool = typer.Option(False, "--activate", help="Make this the active profile"),
+    is_active: bool | None = typer.Option(None, "--is-active/--no-is-active", help="Activate this profile locally"),
+    activate: bool = typer.Option(False, "--activate", help="Alias for --is-active"),
     wakeword: list[str] | None = _WAKEWORD_OPT,
     threshold: list[str] | None = _THRESHOLD_OPT,
     vad: list[str] | None = _VAD_OPT,
@@ -439,13 +464,27 @@ def profiles_add(
     slot: list[str] | None = _SLOT_OPT,
     model: list[str] | None = _MODEL_OPT,
 ) -> None:
-    """Add a profile."""
-    body = {
-        k: v
-        for k, v in _profile_body(description, wakeword, threshold, vad, intent, slot, model).items()
-        if v is not None
-    }
-    created = state(ctx).api.post_with_etag(PROFILES, json={"name": name, "is_active": activate, **body})
+    """Add a profile (portable document: shared + modules compartments)."""
+    if doc is not None:
+        if any(v is not None for v in (name, opt_name, shared, module)) or description is not None:
+            raise CliError("--in is exclusive with --name/--description/--shared/--module")
+        body = _read_doc(doc, "profile")
+    else:
+        name = opt_name or name
+        if not name:
+            raise CliError("profile name required (positional or --name)")
+        compartment = _compartment_body(wakeword, threshold, vad, intent, slot, model)
+        if module is not None:
+            compartment = {**_read_doc(module, "module compartment"), **compartment}
+        body = {
+            "name": name,
+            "is_active": bool(is_active) or activate,
+            "shared": _read_doc(shared, "shared") if shared else {},
+            "modules": {"opal-listen": compartment} if compartment else {},
+        }
+        if description is not None:
+            body["description"] = description
+    created = state(ctx).api.post_with_etag(PROFILES, json=body)
     done(ctx, f"profile '{created['name']}' added (id {created['id']})", created)
 
 
@@ -453,8 +492,12 @@ def profiles_add(
 def profiles_update(
     ctx: typer.Context,
     profile: str = typer.Argument(..., help="Name or id"),
+    doc: Path | None = typer.Option(None, "--in", help="Patch document (JSON/YAML); exclusive with --name/--shared/--module"),
+    shared: Path | None = typer.Option(None, "--shared", help="Shared-values object file"),
+    module: Path | None = typer.Option(None, "--module", help="opal-listen compartment patch file"),
     name: str | None = typer.Option(None, "--name"),
     description: str | None = typer.Option(None, "--description"),
+    is_active: bool | None = typer.Option(None, "--is-active/--no-is-active"),
     wakeword: list[str] | None = _WAKEWORD_OPT,
     threshold: list[str] | None = _THRESHOLD_OPT,
     vad: list[str] | None = _VAD_OPT,
@@ -462,10 +505,24 @@ def profiles_update(
     slot: list[str] | None = _SLOT_OPT,
     model: list[str] | None = _MODEL_OPT,
 ) -> None:
-    """Update a profile (list/map options replace the stored value)."""
+    """Update a profile (list/map options replace the stored compartment values)."""
     api = state(ctx).api
     item = api.resolve(PROFILES, profile)
-    body = _changes(name=name, **_profile_body(description, wakeword, threshold, vad, intent, slot, model))
+    if doc is not None:
+        if any(v is not None for v in (name, description, is_active, shared, module)):
+            raise CliError("--in is exclusive with --name/--description/--is-active/--shared/--module")
+        body = _read_doc(doc, "profile patch")
+    else:
+        compartment = _compartment_body(wakeword, threshold, vad, intent, slot, model)
+        if module is not None:
+            compartment = {**_read_doc(module, "module compartment"), **compartment}
+        body = _changes(name=name, description=description, is_active=is_active)
+        if shared is not None:
+            body["shared"] = _read_doc(shared, "shared")
+        if compartment:
+            body["modules"] = {"opal-listen": compartment}
+        if not body:
+            raise CliError("nothing to update")
     updated = api.patch_with_etag(f"{PROFILES}{item['id']}", json=body)
     done(ctx, f"profile '{updated['name']}' updated", updated)
 
@@ -543,7 +600,7 @@ def _persona_id(api: Any, ref: str) -> str:
 @personas_app.command("list")
 def personas_list(
     ctx: typer.Context,
-    enabled: bool | None = typer.Option(None, "--enabled/--disabled"),
+    enabled: bool | None = typer.Option(None, "--enabled/--no-enabled"),
 ) -> None:
     """List personas."""
     params = {"enabled": enabled} if enabled is not None else {}
@@ -560,15 +617,24 @@ def personas_get(ctx: typer.Context, persona: str = typer.Argument(..., help="Pe
 @personas_app.command("add")
 def personas_add(
     ctx: typer.Context,
-    persona_id: str = typer.Argument(..., help="Globally unique persona id, e.g. 'amy'"),
+    persona_id: str | None = typer.Argument(None, help="Globally unique persona id, e.g. 'amy'"),
     name: str = typer.Option(..., "--name", help="Human-readable name"),
     description: str | None = typer.Option(None, "--description"),
-    voice: str | None = typer.Option(None, "--voice", help="OPAL Say voice id, e.g. en-gb-alan-low"),
-    enabled: bool = typer.Option(True, "--enabled/--disabled"),
+    voice: str | None = typer.Option(None, "--voice", "--voice-id", help="OPAL Say voice id, e.g. en-gb-alan-low"),
+    enabled: bool = typer.Option(True, "--enabled/--no-enabled"),
+    persona_id_opt: str | None = typer.Option(None, "--persona-id", help="Persona id (alternative to positional)"),
+    if_match: str | None = typer.Option(None, "--if-match", help="Explicit If-Match value (skips the ETag probe)"),
 ) -> None:
     """Register a persona."""
-    body = {"persona_id": persona_id, "name": name, "description": description, "voice_id": voice, "enabled": enabled}
-    created = state(ctx).api.post_with_etag(PERSONAS, json=body)
+    pid = persona_id_opt or persona_id
+    if not pid:
+        raise CliError("persona id required (positional or --persona-id)")
+    body = {"persona_id": pid, "name": name, "description": description, "voice_id": voice, "enabled": enabled}
+    api = state(ctx).api
+    if if_match is not None:
+        created = api.post(PERSONAS, json=body, headers={"If-Match": if_match})
+    else:
+        created = api.post_with_etag(PERSONAS, json=body)
     done(ctx, f"persona '{created['persona_id']}' registered", created)
 
 
@@ -579,7 +645,7 @@ def personas_update(
     name: str | None = typer.Option(None, "--name"),
     description: str | None = typer.Option(None, "--description"),
     voice: str | None = typer.Option(None, "--voice"),
-    enabled: bool | None = typer.Option(None, "--enabled/--disabled"),
+    enabled: bool | None = typer.Option(None, "--enabled/--no-enabled"),
 ) -> None:
     """Update a persona."""
     api = state(ctx).api

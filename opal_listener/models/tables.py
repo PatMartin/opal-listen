@@ -116,6 +116,8 @@ class Profile(SQLModel, table=True):
     enabled_intents: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     enabled_slots: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     model_paths: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    shared: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    modules: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 

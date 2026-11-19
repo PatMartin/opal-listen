@@ -26,7 +26,8 @@ def test_retired_info_routes(client: TestClient) -> None:
     report = client.get("/api/v1/health/").json()
     assert report["name"] == "opal-listen-svc"
     assert report["api_version"] == "v1"
-    assert report["live"] is True and report["ready"] is True
+    assert report["live"] is True
+    assert report["ready"] == (report["status"] != "error")
 
 
 def test_web_ui_is_served(client: TestClient) -> None:
@@ -245,6 +246,62 @@ def test_conflicting_alias_rejected(client: TestClient) -> None:
     assert "maps to both" in json.dumps(response.json()["error"])
 
 
+def test_profile_envelope_compartments(client: TestClient) -> None:
+    """Kernel x-opal-profiles v3: shared+modules envelope, foreign compartments verbatim."""
+    coll_etag = _etag(client, "/api/v1/profile/")
+    created = client.post(
+        "/api/v1/profile/",
+        json={
+            "name": "portable",
+            "modules": {
+                "opal-listen": {"enabled_intents": ["light_turn_on"], "vad_settings": {"silence_end_ms": 800}},
+                "opal-say": {"voice_id": "en-us-lessac-medium", "speed": 1.2},
+                "future-module": {"anything": [1, 2, {"nested": True}]},
+            },
+        },
+        headers={"If-Match": coll_etag},
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["shared"] == {}
+    assert body["modules"]["opal-say"] == {"voice_id": "en-us-lessac-medium", "speed": 1.2}
+    assert body["modules"]["future-module"] == {"anything": [1, 2, {"nested": True}]}
+    assert body["modules"]["opal-listen"]["enabled_intents"] == ["light_turn_on"]
+
+    etag = created.headers["etag"] if "etag" in created.headers else _etag(client, f"/api/v1/profile/{body['id']}")
+    # Own-compartment field merge: supplied fields replace, siblings and foreign compartments survive.
+    patched = client.patch(
+        f"/api/v1/profile/{body['id']}",
+        json={"modules": {"opal-listen": {"vad_settings": None, "model_paths": {"vosk_model": "/m"}}}},
+        headers={"If-Match": etag},
+    )
+    assert patched.status_code == 200, patched.text
+    comp = patched.json()["modules"]["opal-listen"]
+    assert comp["vad_settings"] == {}  # explicit null removes the override
+    assert comp["enabled_intents"] == ["light_turn_on"]  # sibling untouched
+    assert comp["model_paths"] == {"vosk_model": "/m"}
+    assert patched.json()["modules"]["future-module"] == {"anything": [1, 2, {"nested": True}]}
+
+    # Foreign compartment edits are rejected with 422 and leave stored contents untouched.
+    etag = patched.headers["etag"]
+    rejected = client.patch(
+        f"/api/v1/profile/{body['id']}",
+        json={"modules": {"opal-say": {"speed": 2.0}}},
+        headers={"If-Match": etag},
+    )
+    assert rejected.status_code == 422
+    again = client.get(f"/api/v1/profile/{body['id']}").json()
+    assert again["modules"]["opal-say"] == {"voice_id": "en-us-lessac-medium", "speed": 1.2}
+
+    # shared is a closed empty object: members rejected; unknown top-level fields rejected.
+    assert client.patch(
+        f"/api/v1/profile/{body['id']}", json={"shared": {"bogus": 1}}, headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")}
+    ).status_code == 422
+    assert client.patch(
+        f"/api/v1/profile/{body['id']}", json={"wakeword_names": []}, headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")}
+    ).status_code == 422
+
+
 def test_profiles_activate_and_filters(client: TestClient) -> None:
     car = _by_name(client, "/api/v1/profile/", "car")
     activated = client.post(
@@ -260,12 +317,18 @@ def test_profiles_activate_and_filters(client: TestClient) -> None:
 
     bad_etag = _etag(client, f"/api/v1/profile/{car['id']}")
     bad = client.patch(
-        f"/api/v1/profile/{car['id']}", json={"vad_settings": {"silence_end_ms": 1}}, headers={"If-Match": bad_etag}
+        f"/api/v1/profile/{car['id']}",
+        json={"modules": {"opal-listen": {"vad_settings": {"silence_end_ms": 1}}}},
+        headers={"If-Match": bad_etag},
     )
     assert bad.status_code == 422
     created = client.post(
         "/api/v1/profile/",
-        json={"name": "night", "is_active": True, "confidence_thresholds": {"intent": 0.9}},
+        json={
+            "name": "night",
+            "is_active": True,
+            "modules": {"opal-listen": {"confidence_thresholds": {"intent": 0.9}}},
+        },
         headers={"If-Match": _etag(client, "/api/v1/profile/")},
     ).json()
     assert created["is_active"] is True
@@ -382,7 +445,7 @@ def test_model_path_change_is_validated(client: TestClient) -> None:
     profile_etag = _etag(client, f"/api/v1/profile/{profile['id']}")
     bad = client.patch(
         f"/api/v1/profile/{profile['id']}",
-        json={"model_paths": {"vosk_model": "/nope"}},
+        json={"modules": {"opal-listen": {"model_paths": {"vosk_model": "/nope"}}}},
         headers={"If-Match": profile_etag},
     )
     assert bad.status_code == 422

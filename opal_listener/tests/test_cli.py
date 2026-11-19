@@ -109,8 +109,8 @@ def test_profiles_and_settings_commands(cli: CliHarness) -> None:
     )  # fmt: skip
     assert result.exit_code == 0, result.output
     profile = cli.json("profile", "get", "night")
-    assert profile["confidence_thresholds"] == {"intent": 0.9}
-    assert profile["vad_settings"] == {"silence_end_ms": 900}
+    assert profile["modules"]["opal-listen"]["confidence_thresholds"] == {"intent": 0.9}
+    assert profile["modules"]["opal-listen"]["vad_settings"] == {"silence_end_ms": 900}
     assert cli("profile", "activate", "night").exit_code == 0
     assert [p["name"] for p in cli.json("profile", "list") if p["is_active"]] == ["night"]
     assert cli("profile", "update", "night", "--model", "vosk_model=/nope").exit_code == 1
@@ -274,8 +274,10 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
 
 def test_service_commands(cli: CliHarness) -> None:
     health = cli("info", "health")
+    # info health exits non-zero when any check errors (e.g. missing vosk model)
     assert "sqlite" in health.output and "overall" in health.output
-    report = cli.json("info", "health")
+    result = cli("--json", "info", "health")
+    report = json.loads(result.output.split("\n┌")[0])
     assert report["name"] == "opal-listen-svc"
     assert isinstance(report["details"]["audio_devices"], list)
     assert cli.json("service", "live")["status"] == "ok"
@@ -371,7 +373,7 @@ def test_event_publish_rejects_invalid_topic(cli: CliHarness) -> None:
 def test_unreachable_api_gives_friendly_error(monkeypatch: pytest.MonkeyPatch) -> None:
     from typer.testing import CliRunner
 
-    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "service", "ping"])
+    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "service", "live"])
     assert result.exit_code == 1
     assert "cannot reach the opal listener API" in result.output
 

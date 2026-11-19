@@ -18,7 +18,7 @@ from opal_listener.models.tables import (
     Wakeword,
     utc_now,
 )
-from opal_listener.service.errors import ConflictError, InvalidRequestError, NotFoundError
+from opal_listener.service.errors import ConflictError, InvalidRequestError, NotFoundError, OpalValidationError
 from opal_listener.service.nlu.normalizer import normalize_text
 
 T = TypeVar("T", bound=SQLModel)
@@ -263,9 +263,52 @@ def _deactivate_others(session: Session, keep_id: int | None) -> None:
             session.add(other)
 
 
+# The opal-listen compartment lives in dedicated columns; everything else is stored verbatim.
+_COMPARTMENT_FIELDS = ("wakeword_names", "confidence_thresholds", "vad_settings", "enabled_intents", "enabled_slots", "model_paths")
+_COMPARTMENT_DEFAULTS: dict[str, Any] = {
+    "wakeword_names": [],
+    "confidence_thresholds": {},
+    "vad_settings": {},
+    "enabled_intents": [],
+    "enabled_slots": [],
+    "model_paths": {},
+}
+
+
+def _compartment(obj: Profile) -> dict[str, Any]:
+    return {f: getattr(obj, f) for f in _COMPARTMENT_FIELDS}
+
+
+def profile_read(obj: Profile) -> s.OpalProfile:
+    """Render the kernel envelope: own compartment from columns, foreign ones verbatim."""
+    modules = {**obj.modules, s.OWN_COMPARTMENT: _compartment(obj)}
+    return s.OpalProfile(
+        id=str(obj.id),
+        name=obj.name,
+        description=obj.description,
+        is_active=obj.is_active,
+        shared=obj.shared,
+        modules=modules,
+        created_at=obj.created_at,
+        updated_at=obj.updated_at,
+    )
+
+
 def create_profile(session: Session, data: s.OpalProfileCreate) -> Profile:
     _ensure_unique(session, Profile, data.name, "profile")
-    obj = Profile(**data.model_dump())
+    comp = data.modules.opal_listen or s.OpalListenProfileNamespace()
+    obj = Profile(
+        name=data.name,
+        description=data.description,
+        is_active=data.is_active,
+        shared={},
+        modules=data.modules.foreign_compartments(),
+        **{f: getattr(comp, f) for f in _COMPARTMENT_FIELDS},
+    )
+    if data.id is not None:
+        obj.id = parse_id(data.id, "profile")
+        if session.get(Profile, obj.id) is not None:
+            raise ConflictError(f"profile id '{data.id}' already exists")
     session.add(obj)
     session.flush()
     if obj.is_active:
@@ -276,12 +319,26 @@ def create_profile(session: Session, data: s.OpalProfileCreate) -> Profile:
 
 def update_profile(session: Session, obj_id: int, data: s.OpalProfilePatch) -> Profile:
     obj = get_or_404(session, Profile, obj_id, "profile")
-    changes = data.model_dump(exclude_unset=True, exclude_none=True)
-    if "name" in changes:
-        _ensure_unique(session, Profile, changes["name"], "profile", obj_id)
-    _apply(obj, changes)
+    if data.modules is not None:
+        foreign = data.modules.supplied_compartments() - {s.OWN_COMPARTMENT}
+        if foreign:
+            raise OpalValidationError(f"cannot edit foreign profile compartments: {sorted(foreign)}")
+    if data.name is not None:
+        _ensure_unique(session, Profile, data.name, "profile", obj_id)
+        obj.name = data.name
+    if "description" in data.model_fields_set:
+        obj.description = data.description
+    if data.shared is not None:
+        obj.shared = {}
+    if data.modules is not None and data.modules.opal_listen is not None:
+        comp = data.modules.opal_listen
+        for field in comp.model_fields_set:
+            value = getattr(comp, field)
+            setattr(obj, field, _COMPARTMENT_DEFAULTS[field].copy() if value is None else value)
+    obj.updated_at = utc_now()
     session.add(obj)
-    if changes.get("is_active"):
+    if data.is_active:
+        obj.is_active = True
         _deactivate_others(session, obj_id)
     session.flush()
     return obj

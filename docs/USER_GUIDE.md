@@ -679,6 +679,14 @@ Booleans accept `true/false`, `1/0`, `yes/no` and `on/off`.
 
 ### 4.3 Profiles
 
+A profile is a portable document: `{id, name, description, is_active, shared, modules}`. `shared`
+is a closed object reserved for values shared across modules (currently always `{}`); `modules`
+maps canonical module identities to compartment objects. opal-listen reads and writes only its own
+compartment `modules["opal-listen"]` and preserves every other compartment verbatim — a profile
+copied between OPAL modules keeps their settings untouched, and edits to foreign compartments are
+rejected with 422. The table below describes the `opal-listen` compartment fields (also the fields
+of `profiles.yaml` seed entries).
+
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | str | Unique name |
@@ -1216,14 +1224,22 @@ If `is_active` is `true`, all other profiles are deactivated.
 curl -s -X POST $API/api/v1/profile/ -H 'Content-Type: application/json' -d '{
   "name": "late_night",
   "description": "Quiet, only lights and time",
-  "wakeword_names": ["computer"],
-  "enabled_intents": ["light_turn_on", "light_turn_off", "get_time", "cancel"],
-  "enabled_slots": ["room_name"],
-  "confidence_thresholds": {"wakeword": 0.85, "intent": 0.8},
-  "vad_settings": {"silence_end_ms": 900, "energy_threshold_dbfs": -50},
-  "model_paths": {}
+  "modules": {
+    "opal-listen": {
+      "wakeword_names": ["computer"],
+      "enabled_intents": ["light_turn_on", "light_turn_off", "get_time", "cancel"],
+      "enabled_slots": ["room_name"],
+      "confidence_thresholds": {"wakeword": 0.85, "intent": 0.8},
+      "vad_settings": {"silence_end_ms": 900, "energy_threshold_dbfs": -50},
+      "model_paths": {}
+    },
+    "opal-say": {"voice_id": "en-us-lessac-medium"}
+  }
 }'
 ```
+
+Other modules' compartments are stored verbatim and returned on reads; only `opal-listen` is
+interpreted. `shared` and `modules` are required on read documents and normalize to `{}` on create.
 
 #### `GET /api/v1/profile/{profile_id}` — get a profile
 
@@ -1233,13 +1249,15 @@ curl -s $API/api/v1/profile/1
 
 #### `PATCH /api/v1/profile/{profile_id}` — update a profile
 
-Lists and maps **replace** the stored value. They are not merged. To add one VAD key, send the full map.
+A supplied compartment merges **field-wise**: supplied fields replace the stored value, sibling
+fields are preserved, and explicit `null` removes an override (restores the default). Compartments
+other than `opal-listen` cannot be patched — supplying one returns 422 and changes nothing.
 Requires `If-Match`.
 
 ```bash
 ETAG=$(curl -si $API/api/v1/profile/1 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
 curl -s -X PATCH $API/api/v1/profile/1 -H 'Content-Type: application/json' -H "If-Match: $ETAG" \
-  -d '{"vad_settings": {"silence_end_ms": 900, "no_speech_timeout_ms": 5000}}'
+  -d '{"modules": {"opal-listen": {"vad_settings": {"silence_end_ms": 900, "no_speech_timeout_ms": 5000}}}}'
 ```
 
 Invalid VAD keys or out-of-range values are rejected with `422`.
@@ -2217,7 +2235,7 @@ spoken feedback keeps a consistent voice. They travel in `config save`/`config l
 
 | Command | Description |
 |---|---|
-| `list [--enabled/--disabled]` | List personas |
+| `list [--enabled/--no-enabled]` | List personas |
 | `get ID\|NAME` | Show a persona |
 | `add PERSONA_ID --name N [--description] [--voice V] [--enabled/--disabled]` | Register a persona |
 | `update ID\|NAME [--name] [--description] [--voice V] [--enabled/--disabled]` | Update a persona |

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import Path as ApiPath
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, RootModel, WithJsonSchema, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 NO_MATCH = "no_match"
@@ -165,13 +165,28 @@ class SlotUpdate(BaseModel):
     _at_least_one = model_validator(mode="before")(_require_one_field)
 
 
-# --- profiles --------------------------------------------------------------------------------
+# --- profiles (kernel x-opal-profiles envelope, v3) ---------------------------------------------
+#
+# A profile is {id, name, description, is_active, shared, modules}: `shared` is a closed empty
+# object and `modules` a map of module-owned compartments keyed by canonical module identity.
+# This service's own compartment (key `opal-listen`) is stored in dedicated columns; every other
+# compartment is stored verbatim in the `modules` column and never interpreted locally.
+
+OWN_COMPARTMENT = "opal-listen"
 
 
-class OpalProfileCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    description: str | None = None
-    is_active: bool = False
+class OpalProfileShared(BaseModel):
+    """Closed empty object — a field is promoted to shared only when two or more module
+    contracts accept it with identical name, type and semantics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalListenProfileNamespace(BaseModel):
+    """opal-listen compartment: recognition defaults (the v2 flat profile fields)."""
+
+    model_config = ConfigDict(extra="forbid")
+
     wakeword_names: list[str] = []
     confidence_thresholds: dict[str, Any] = {}
     vad_settings: dict[str, Any] = {}
@@ -180,35 +195,187 @@ class OpalProfileCreate(BaseModel):
     model_paths: dict[str, str] = {}
 
 
-class OpalProfile(_Read):
-    """Kernel OpalProfile; only id/is_active/name are normative — the rest are service fields."""
+class OpalListenProfileNamespacePatch(BaseModel):
+    """Patch form: supplied fields merge field-wise; explicit null removes the override."""
 
-    id: PublicId
-    name: str
-    is_active: bool
-    description: str | None = None
-    wakeword_names: list[str] = []
-    confidence_thresholds: dict[str, Any] = {}
-    vad_settings: dict[str, Any] = {}
-    enabled_intents: list[str] = []
-    enabled_slots: list[str] = []
-    model_paths: dict[str, str] = {}
-    created_at: SkipJsonSchema[datetime | None] = None
-    updated_at: SkipJsonSchema[datetime | None] = None
+    model_config = ConfigDict(extra="forbid")
 
-
-class OpalProfilePatch(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
-
-    name: str | None = Field(default=None, min_length=1, max_length=100)
-    description: str | None = None
-    is_active: bool | None = None
     wakeword_names: list[str] | None = None
     confidence_thresholds: dict[str, Any] | None = None
     vad_settings: dict[str, Any] | None = None
     enabled_intents: list[str] | None = None
     enabled_slots: list[str] | None = None
     model_paths: dict[str, str] | None = None
+
+
+class OpalEventProfileNamespace(BaseModel):
+    """opal-event compartment: no profile-specific defaults declared (explicit closed empty)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalEventProfileNamespacePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalLookProfileNamespace(BaseModel):
+    """opal-look compartment: no profile-specific defaults declared (explicit closed empty)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalLookProfileNamespacePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalYoloProfileNamespace(BaseModel):
+    """opal-look-yolo compartment: no profile-specific defaults declared (closed empty)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalYoloProfileNamespacePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalThinkProfileNamespace(BaseModel):
+    """opal-think compartment: no profile-specific defaults declared (explicit closed empty)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OpalThinkProfileNamespacePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+_RateFloat = Annotated[
+    float, Field(ge=0.25, le=4.0), WithJsonSchema({"type": "number", "format": "float", "minimum": 0.25, "maximum": 4.0})
+]
+_VolumeFloat = Annotated[
+    float, Field(ge=0.0, le=2.0), WithJsonSchema({"type": "number", "format": "float", "minimum": 0.0, "maximum": 2.0})
+]
+
+
+class OpalSayProfileNamespace(BaseModel):
+    """opal-say compartment: generation defaults. Stored verbatim here, unverified locally."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    voice_id: str | None = Field(default=None, min_length=1)
+    speed: _RateFloat | None = None
+    volume: _VolumeFloat | None = None
+    output_format: str | None = None
+    sample_rate: int | None = Field(default=None, ge=8000, le=192000)
+    engine_options: dict[str, Any] | None = None
+
+
+class OpalSayProfileNamespacePatch(BaseModel):
+    """Patch form of the opal-say compartment; explicit null removes an override."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    voice_id: str | None = Field(default=None, min_length=1)
+    speed: _RateFloat | None = None
+    volume: _VolumeFloat | None = None
+    output_format: str | None = None
+    sample_rate: int | None = Field(default=None, ge=8000, le=192000)
+    engine_options: dict[str, Any] | None = None
+
+
+class OpalProfileModules(BaseModel):
+    """Compartment catalog: declared keys use their strict namespace schemas; any other
+    well-formed object is accepted and preserved verbatim (unverified)."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
+
+    opal_event: OpalEventProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-event")
+    opal_listen: OpalListenProfileNamespace | None = Field(default=None, alias="opal-listen")
+    opal_look: OpalLookProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-look")
+    opal_look_yolo: OpalYoloProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-look-yolo")
+    opal_say: OpalSayProfileNamespace | None = Field(default=None, alias="opal-say")
+    opal_think: OpalThinkProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-think")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _extras_are_objects(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            declared = {f.alias or n for n, f in cls.model_fields.items()}
+            for key, value in data.items():
+                if key not in declared and not isinstance(value, dict):
+                    raise ValueError(f"profile compartment '{key}' must be an object")
+        return data
+
+    def foreign_compartments(self) -> dict[str, Any]:
+        """Every compartment except this service's own, serialized verbatim."""
+        return self.model_dump(by_alias=True, exclude_none=True, exclude={"opal_listen"})
+
+
+class OpalProfileModulesPatch(BaseModel):
+    """Patch catalog: compartment values merge field-wise. Only the receiving service's own
+    compartment key may be supplied; foreign keys are validated at the route and return 422."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
+
+    opal_event: OpalEventProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-event")
+    opal_listen: OpalListenProfileNamespacePatch | None = Field(default=None, alias="opal-listen")
+    opal_look: OpalLookProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-look")
+    opal_look_yolo: OpalYoloProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-look-yolo")
+    opal_say: OpalSayProfileNamespacePatch | None = Field(default=None, alias="opal-say")
+    opal_think: OpalThinkProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-think")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _extras_are_objects(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            declared = {f.alias or n for n, f in cls.model_fields.items()}
+            for key, value in data.items():
+                if key not in declared and not isinstance(value, dict):
+                    raise ValueError(f"profile compartment '{key}' must be an object")
+        return data
+
+    def supplied_compartments(self) -> set[str]:
+        """Compartment keys actually supplied in the patch document."""
+        keys = {f.alias for n, f in type(self).model_fields.items() if n in self.model_fields_set}
+        keys |= set(self.model_extra or {})
+        return keys
+
+
+class OpalProfileCreate(BaseModel):
+    """Portable profile document; omitted shared/modules normalize to empty objects."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    is_active: bool = False
+    shared: OpalProfileShared = OpalProfileShared()
+    modules: OpalProfileModules = OpalProfileModules()
+    id: str | None = Field(default=None, min_length=1)
+
+
+class OpalProfile(_Read):
+    """Kernel OpalProfile (v3 envelope)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: PublicId
+    name: str
+    description: str | None = None
+    is_active: bool
+    shared: OpalProfileShared
+    modules: OpalProfileModules
+    created_at: SkipJsonSchema[datetime | None] = None
+    updated_at: SkipJsonSchema[datetime | None] = None
+
+
+class OpalProfilePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"minProperties": 1})
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    is_active: bool | None = None
+    shared: OpalProfileShared | None = None
+    modules: OpalProfileModulesPatch | None = None
 
     _at_least_one = model_validator(mode="before")(_require_one_field)
 

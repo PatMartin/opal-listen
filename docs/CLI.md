@@ -559,14 +559,31 @@ active at a time. The seeded profiles are `default`, `noisy_room`, `car` and `ki
 
 | Command | Description |
 |---|---|
+Profiles are portable documents: a `shared` object plus a `modules` map of per-module
+compartments. This service reads and writes only its own compartment (`modules["opal-listen"]`)
+and stores all others verbatim — a profile copied between OPAL modules keeps the other
+modules' settings untouched. Editing a foreign compartment is rejected with 422.
+
+| Command | Description |
+|---|---|
 | `list` | List profiles |
 | `get PROFILE` | Show a profile (name or id) |
-| `add NAME [--description D] [--activate] [OPTIONS...]` | Add a profile |
-| `update PROFILE [--name N] [--description D] [OPTIONS...]` | Change a profile |
+| `add [NAME] [--description D] [--is-active] [OPTIONS...]` | Add a profile |
+| `update PROFILE [--name N] [--description D] [--is-active/--no-is-active] [OPTIONS...]` | Change a profile |
 | `activate PROFILE` | Make this profile active (all others are deactivated) |
 | `remove PROFILE` | Delete a profile |
 
-### Profile options (for `add` and `update`)
+### Portable-document options (for `add` and `update`)
+
+| Option | Format | Meaning |
+|---|---|---|
+| `--in FILE` | JSON/YAML | Whole profile document (`add`) or patch document (`update`); exclusive with `--name`/`--shared`/`--module` |
+| `--shared FILE` | JSON/YAML | `shared` object merged into the submitted document (must currently be `{}`) |
+| `--module FILE` | JSON/YAML | The `opal-listen` compartment from a file; per-flag overrides below win on duplicates |
+
+### Profile compartment options (for `add` and `update`)
+
+All of these options are repeatable and write `modules["opal-listen"]` fields:
 
 All of these options are repeatable:
 
@@ -604,7 +621,7 @@ The server rejects unknown keys and out-of-range values with HTTP `422`.
 ### Examples
 
 ```bash
-# List profiles (columns: id, name, is_active, wakeword_names, confidence_thresholds,
+# List profiles (columns: id, name, is_active, then the opal-listen compartment fields
 # enabled_intents, description)
 opal listen profile list
 
@@ -661,10 +678,10 @@ configuration: they travel in `config save`/`config load` snapshots (`resources.
 
 | Command | Description |
 |---|---|
-| `list [--enabled/--disabled]` | List personas, optionally filtered by enabled state |
+| `list [--enabled/--no-enabled]` | List personas, optionally filtered by enabled state |
 | `get PERSONA` | Show a persona (persona_id or name) |
-| `add PERSONA_ID --name N [--description D] [--voice V] [--enabled/--disabled]` | Register a persona |
-| `update PERSONA [--name N] [--description D] [--voice V] [--enabled/--disabled]` | Change a persona |
+| `add [PERSONA_ID] --name N [--description D] [--voice-id V] [--enabled/--no-enabled] [--persona-id ID] [--if-match ETAG]` | Register a persona |
+| `update PERSONA [--name N] [--description D] [--voice V] [--enabled/--no-enabled]` | Change a persona |
 | `remove PERSONA` | Remove a persona |
 | `validate PERSONA` | Check the persona is enabled and its declared bindings are well-formed |
 
