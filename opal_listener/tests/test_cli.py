@@ -37,13 +37,12 @@ REQUIRED_COMMANDS = {
     "intent list", "intent add", "intent remove", "intent add-phrase",
     "slot list", "slot add", "slot add-value", "slot add-alias",
     "profile list", "profile add",
-    "config setting list", "config setting show", "config setting set", "config setting update",
-    "config setting remove", "setting get", "setting unset",
+    "config setting list", "config setting show", "config setting set", "config setting remove",
     "test text", "test audio", "test listen", "test listen-debug", "test regression",
     "recognition test",
     "failed list", "failed promote",
     "service perf last", "service perf summary",
-    "config validate", "config backup", "config restore", "config export", "config import",
+    "config validate", "config save", "config load",
     "service doctor", "service start", "service stop", "service log", "gui",
     "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
     "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
@@ -119,10 +118,10 @@ def test_profiles_and_settings_commands(cli: CliHarness) -> None:
     assert cli("profile", "remove", "night").exit_code == 0
     assert "noisy_room" in cli("profile", "list").output
 
-    assert cli("config", "setting", "set", "cooldown_ms", "900").exit_code == 0
+    assert cli("config", "setting", "set", "--name", "cooldown_ms", "--value", "900").exit_code == 0
     assert cli.json("config", "setting", "list")["cooldown_ms"] == "900"
-    assert cli("config", "setting", "set", "cooldown_ms", "abc").exit_code == 1
-    assert cli("config", "setting", "set", "cooldown_ms", "1500").exit_code == 0
+    assert cli("config", "setting", "set", "--name", "cooldown_ms", "--value", "abc").exit_code == 1
+    assert cli("config", "setting", "set", "--name", "cooldown_ms", "--value", "1500").exit_code == 0
     assert cli.json("config", "setting", "list")["cooldown_ms"] == "1500"
 
 
@@ -247,34 +246,30 @@ def test_json_list_returns_bounded_array(cli: CliHarness) -> None:
 
 
 def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
+    """`config save|load|validate` map the kernel snapshot operations (--in/--out local files)."""
     assert "valid" in cli("config", "validate").output
-    out_dir = tmp_path / "export"
-    assert cli("config", "export", "--out-dir", str(out_dir)).exit_code == 0
-    assert sorted(p.name for p in out_dir.iterdir()) == sorted(
-        ["wakewords.yaml", "stt.yaml", "intents.yaml", "slots.yaml", "profiles.yaml", "personas.yaml", "settings.yaml"]
-    )
-    assert cli("config", "validate", "--from-dir", str(out_dir)).exit_code == 0
-    assert json.loads(cli("config", "export").output)["wakewords"][0]["name"] == "computer"
 
-    (out_dir / "wakewords.yaml").write_text("version: 1\nwakewords:\n  - name: jarvis\n")
-    assert cli("config", "import", "--from-dir", str(out_dir), "--yes").exit_code == 0
-    assert [w["name"] for w in cli.json("wakeword", "list")] == ["jarvis"]
-    assert cli("config", "import", "--yes").exit_code == 0  # server config dir
-    assert [w["name"] for w in cli.json("wakeword", "list")] == ["computer"]
-    assert cli("config", "import", "--from-dir", str(out_dir), input="n\n").exit_code == 1  # aborted
+    snapshot_file = tmp_path / "snap.json"
+    assert cli("config", "save", "--out", str(snapshot_file)).exit_code == 0
+    snap = json.loads(snapshot_file.read_text())
+    assert snap["module"] == "opal-listen" and snap["format_version"] == "1.0.0"
+    assert snap["resources"]["wakewords"][0]["name"] == "computer"
+    assert cli("config", "validate", "--in", str(snapshot_file)).exit_code == 0
 
-    (out_dir / "intents.yaml").write_text("intents: [{name: x, phrases: ['{ghost}']}]")
-    invalid = cli("config", "validate", "--from-dir", str(out_dir))
-    assert invalid.exit_code == 1 and "unknown slot" in invalid.output
-
-    backup = cli.json("config", "backup")["filename"]
-    assert backup in [b["filename"] for b in cli.json("config", "backups")]
-    assert cli("config", "download", backup, "--out", str(tmp_path)).exit_code == 0
-    assert (tmp_path / backup).read_bytes()[:6] == b"SQLite"
     cli("wakeword", "add", "friday")
-    assert cli("config", "restore", backup, "--yes").exit_code == 0
+    assert cli("config", "load", "--in", str(snapshot_file), "--yes").exit_code == 0
     assert [w["name"] for w in cli.json("wakeword", "list")] == ["computer"]
-    assert cli("config", "delete-backup", backup, "--yes").exit_code == 0
+
+    assert cli("config", "save").exit_code == 0  # managed snapshot
+    cli("wakeword", "add", "friday")
+    assert cli("config", "load", "--yes").exit_code == 0  # managed source
+    assert [w["name"] for w in cli.json("wakeword", "list")] == ["computer"]
+    assert cli("config", "load", input="n\n").exit_code == 1  # aborted
+
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({**snap, "module": "opal-say"}))
+    invalid = cli("config", "validate", "--in", str(bad))
+    assert invalid.exit_code == 1 and "opal-say" in invalid.output
 
 
 def test_service_commands(cli: CliHarness) -> None:
@@ -449,8 +444,8 @@ def test_listen_tree_tracks_command_changes(cli: CliHarness) -> None:
         listen_app.registered_commands = [c for c in listen_app.registered_commands if c.name != marker]
 
 
-def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`settings patch` sends one atomic collection PATCH with If-Match and a typed map body."""
+def test_settings_set_wire_shape(cli: CliHarness, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`config setting set` sends a per-key PUT with If-Match and a {value} body."""
     calls: list[tuple[str, str, dict[str, Any]]] = []
     original = client.request
 
@@ -459,18 +454,22 @@ def test_settings_patch_wire_shape(cli: CliHarness, client: TestClient, monkeypa
         return original(method, url, **kw)
 
     monkeypatch.setattr(client, "request", spy)
-    result = cli("config", "setting", "patch", "cooldown_ms=2500", "filler_words=um")
+    result = cli("config", "setting", "set", "--name", "cooldown_ms", "--value", "2500")
     assert result.exit_code == 0, result.output
-    patches = [c for c in calls if c[0] == "PATCH"]
-    assert len(patches) == 1
-    _method, url, kw = patches[0]
-    assert url.endswith("/api/v1/setting/")
+    puts = [c for c in calls if c[0] == "PUT"]
+    assert len(puts) == 1
+    _method, url, kw = puts[0]
+    assert url.endswith("/api/v1/setting/cooldown_ms")
     assert kw["headers"]["If-Match"].startswith('"')
-    assert kw["json"] == {"cooldown_ms": 2500, "filler_words": "um"}
+    assert kw["json"] == {"value": "2500"}
     # the collection ETag was fetched first
-    etag_gets = [c for c in calls[: calls.index(patches[0])] if c[0] == "GET" and c[1].endswith("/api/v1/setting/")]
-    assert etag_gets, "expected a GET /api/v1/setting/ ETag probe before the PATCH"
-    assert cli.json("config", "setting", "show", "cooldown_ms")["value"] == 2500
-    # atomicity: one invalid key means none are applied
-    assert cli("config", "setting", "patch", "cooldown_ms=1", "not_a_setting=2").exit_code != 0
-    assert cli.json("config", "setting", "show", "cooldown_ms")["value"] == 2500
+    etag_gets = [c for c in calls[: calls.index(puts[0])] if c[0] == "GET" and c[1].endswith("/api/v1/setting/")]
+    assert etag_gets, "expected a GET /api/v1/setting/ ETag probe before the PUT"
+    assert cli.json("config", "setting", "show", "--name", "cooldown_ms")["value"] == 2500
+    # retired spellings are gone: multi-key patch, flat setting aliases
+    assert cli("config", "setting", "update", "cooldown_ms=1").exit_code != 0
+    assert cli("setting", "get", "cooldown_ms").exit_code != 0
+    assert cli("setting", "unset", "cooldown_ms").exit_code != 0
+    # an invalid value is rejected and nothing is written
+    assert cli("config", "setting", "set", "--name", "cooldown_ms", "--value", "soon").exit_code != 0
+    assert cli.json("config", "setting", "show", "--name", "cooldown_ms")["value"] == 2500

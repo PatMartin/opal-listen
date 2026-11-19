@@ -14,24 +14,24 @@ router = APIRouter(prefix="/api/v1/performance", tags=["performance"])
 _SCOPE = "performance_history"
 
 
-@router.get("/last", response_model=PerformanceResultRead | None, responses=OPAL_422_RESPONSE)
-def get_last_performance(svc: ListenerService = Depends(get_service)) -> PerformanceResultRead | None:
+@router.get("/last", response_model=PerformanceResultRead | None, responses=OPAL_422_RESPONSE, operation_id="get_performance_last")
+def get_performance_last(svc: ListenerService = Depends(get_service)) -> PerformanceResultRead | None:
     """Return the most recent performance result."""
     with svc.db.session() as session:
         row = recognition_store.last_performance(session)
         return PerformanceResultRead.model_validate(row) if row else None
 
 
-@router.get("/summary", response_model=PerformanceSummary)
+@router.get("/summary", response_model=PerformanceSummary, operation_id="get_performance_summary")
 def get_performance_summary(
-    limit: int = Query(default=100, le=1000), svc: ListenerService = Depends(get_service)
+    limit: int = Query(default=100, ge=1, le=500), svc: ListenerService = Depends(get_service)
 ) -> PerformanceSummary:
     """Aggregate stats over the last N results."""
     with svc.db.session() as session:
         return recognition_store.performance_summary(session, limit)
 
 
-@router.get("/history", response_model=PerformanceHistory)
+@router.get("/history", response_model=PerformanceHistory, operation_id="get_performance_history")
 def get_performance_history(
     limit: int = Query(default=100, ge=1, le=500, description="Maximum items to return."),
     svc: ListenerService = Depends(get_service),

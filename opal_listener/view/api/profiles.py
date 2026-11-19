@@ -57,11 +57,11 @@ def opal_profile_create(
 )
 def opal_profile_get(
     response: Response,
-    profile_id: int = Path(ge=1),
+    profile_id: str = Path(min_length=1),
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.db.session() as session:
-        item = OpalProfile.model_validate(catalog.get_or_404(session, Profile, profile_id, "profile"))
+        item = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
     response.headers["ETag"] = item_etag(item)
     return item
 
@@ -74,29 +74,29 @@ def opal_profile_get(
 )
 def opal_profile_patch(
     response: Response,
-    profile_id: int = Path(ge=1),
+    profile_id: str = Path(min_length=1),
     data: OpalProfilePatch = ...,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     with svc.config_change() as session:
-        current = OpalProfile.model_validate(catalog.get_or_404(session, Profile, profile_id, "profile"))
+        current = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
         require_matching_etag(if_match, item_etag(current), "profile")
-        result = OpalProfile.model_validate(catalog.update_profile(session, profile_id, data))
+        result = OpalProfile.model_validate(catalog.update_profile(session, catalog.parse_id(profile_id, "profile"), data))
     response.headers["ETag"] = item_etag(result)
     return result
 
 
 @router.delete("/{profile_id}", status_code=204, responses=_ITEM_ERRORS, operation_id="opal_profile_delete")
 def opal_profile_delete(
-    profile_id: int = Path(ge=1),
+    profile_id: str = Path(min_length=1),
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        current = OpalProfile.model_validate(catalog.get_or_404(session, Profile, profile_id, "profile"))
+        current = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
         require_matching_etag(if_match, item_etag(current), "profile")
-        catalog.delete_profile(session, profile_id)
+        catalog.delete_profile(session, catalog.parse_id(profile_id, "profile"))
     return Response(status_code=204)
 
 
@@ -107,13 +107,13 @@ def opal_profile_delete(
     operation_id="opal_profile_activate",
 )
 def opal_profile_activate(
-    profile_id: int = Path(ge=1),
+    profile_id: str = Path(min_length=1),
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> OpalProfile:
     """Set this profile as active, deactivating all others."""
     with svc.config_change() as session:
-        current = OpalProfile.model_validate(catalog.get_or_404(session, Profile, profile_id, "profile"))
+        current = OpalProfile.model_validate(catalog.get_by_ref(session, Profile, profile_id, "profile"))
         require_matching_etag(if_match, item_etag(current), "profile")
-        result = OpalProfile.model_validate(catalog.activate_profile(session, profile_id))
+        result = OpalProfile.model_validate(catalog.activate_profile(session, catalog.parse_id(profile_id, "profile")))
     return result

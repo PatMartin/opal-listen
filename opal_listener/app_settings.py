@@ -18,7 +18,6 @@ class AppSettings(BaseSettings):
 
     data_dir: Path = Path("var")
     database_file: str = "opal_listener.db"
-    backup_dir_name: str = "backups"
     config_dir: Path = PACKAGE_DIR / "config"
     vosk_model_path: str = "/resources/vosk/models/vosk-model-small-en-us-0.15"
     host: str = "0.0.0.0"
@@ -78,13 +77,8 @@ class AppSettings(BaseSettings):
     def database_url(self) -> str:
         return f"sqlite:///{self.database_path}"
 
-    @property
-    def backup_dir(self) -> Path:
-        return self.data_dir / self.backup_dir_name
-
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.backup_dir.mkdir(parents=True, exist_ok=True)
 
 
 def dotenv_baseline() -> dict[str, object]:
@@ -92,7 +86,6 @@ def dotenv_baseline() -> dict[str, object]:
     return {
         "OPAL_LISTENER_DATA_DIR": defaults.data_dir,
         "OPAL_LISTENER_DATABASE_FILE": defaults.database_file,
-        "OPAL_LISTENER_BACKUP_DIR_NAME": defaults.backup_dir_name,
         "OPAL_LISTENER_CONFIG_DIR": defaults.config_dir,
         "OPAL_LISTENER_VOSK_MODEL_PATH": defaults.vosk_model_path,
         "OPAL_LISTENER_HOST": defaults.host,

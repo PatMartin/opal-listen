@@ -25,8 +25,8 @@ def opal_health_get(svc: ListenerService = Depends(get_service)) -> OpalHealthRe
     return run_health_checks(svc)
 
 
-@router.get("/audio_devices", response_model=list[AudioDevice], responses=OPAL_422_RESPONSE)
-def get_audio_devices() -> list[AudioDevice]:
+@router.get("/audio_devices", response_model=list[AudioDevice], responses=OPAL_422_RESPONSE, operation_id="list_audio_devices")
+def list_audio_devices() -> list[AudioDevice]:
     return [AudioDevice(**d) for d in list_input_devices()]
 
 

@@ -20,9 +20,8 @@ from sqlmodel import Session, select
 from opal_listener.app_settings import AppSettings
 from opal_listener.data.db import Database
 from opal_listener.models import schemas as s
-from opal_listener.models.config_schemas import ConfigBundle
+from opal_listener.models.config_schemas import ConfigBundle  # noqa: F401 - type used by reload()/compile
 from opal_listener.models.tables import Intent, Profile, Setting, Wakeword, utc_now
-from opal_listener.service import backup as backup_ops
 from opal_listener.service import recognition_store
 from opal_listener.service.audio.capture import AudioCaptureError, AudioSource, MicrophoneSource
 from opal_listener.service.audio.pcm import iter_frames, load_wav_bytes
@@ -190,6 +189,8 @@ class ListenerService:
         self._stop = threading.Event()
         self._lifecycle_lock = threading.Lock()
         self._shutdown = False
+        # restart-only setting values as captured at startup (pending_restart provenance)
+        self._startup_setting_values: dict[str, Any] = {}
         self._dedup_seen: dict[tuple[object, ...], float] = {}
         self._dedup_lock = threading.Lock()
         # run identity: bumped on every start(); outcomes carry the generation that captured
@@ -225,8 +226,19 @@ class ListenerService:
             with self.db.session() as session:
                 self._prune_storage(session, self._snapshot.settings)
                 session.commit()
+        if self._snapshot:
+            self._startup_setting_values = {
+                k: v for k, v in self._snapshot.settings.items() if SETTINGS[k].restart_required
+            }
         if self._snapshot and self._snapshot.settings.get("auto_start_listener"):
             self.start()
+
+    def setting_pending_restart(self, key: str, configured: Any) -> bool:
+        """True when a restart-only setting's desired value diverges from the startup value."""
+        if not SETTINGS[key].restart_required:
+            return False
+        running = self._startup_setting_values.get(key, SETTINGS[key].default_value())
+        return configured != running
 
     def shutdown(self) -> None:
         with self._lifecycle_lock:
@@ -328,68 +340,12 @@ class ListenerService:
                 raise
             self._apply(snapshot)
 
-    def validate_bundle(self, bundle: ConfigBundle) -> s.OpalValidationReport:
-        report, _ = compile_bundle(bundle)
-        return s.OpalValidationReport(valid=report.ok, errors=report.errors, warnings=report.warnings)
+    def config_etag(self) -> str:
+        """Strong live-configuration revision (snapshot scope), the If-Match for config load."""
+        from opal_listener.service.snapshots import config_revision
 
-    def import_bundle(self, bundle: ConfigBundle) -> s.OpalImportResult:
-        """Validate, back up, then replace configuration in one transaction (rolled back on failure)."""
-        report, _ = compile_bundle(bundle)
-        if not report.ok:
-            raise ConfigInvalidError(report)
-        with self._config_lock:
-            backup_name = self.create_backup("pre_import")
-            with self.config_change() as session:
-                counts = replace_config(session, bundle)
-        return s.OpalImportResult(
-            status="imported", backup_filename=backup_name, counts=counts, warnings=report.warnings
-        )
-
-    # --- backups ------------------------------------------------------------------------------
-
-    def create_backup(self, label: str = "manual") -> str:
-        return backup_ops.create_backup(self.db.path, self.app_settings.backup_dir, label)
-
-    def _restore_file(self, filename: str) -> None:
-        path = backup_ops.safe_backup_path(self.app_settings.backup_dir, filename)
-        backup_ops.verify_backup(path)
-        self.db.dispose()
-        backup_ops.copy_database(path, self.db.path)
-        self.db.dispose()
-        self.db.migrate()
-        self.reload()
-
-    def restore_backup(self, filename: str) -> dict[str, str]:
-        path = backup_ops.safe_backup_path(self.app_settings.backup_dir, filename)
-        backup_ops.verify_backup(path)
-        with self._config_lock:
-            # quiesce the runtime first: no recognition/logging may write while the file swaps
-            was_running = self.running
-            if was_running and self.stop()["status"] != "stopped":
-                raise ServiceUnavailableError("listener is still stopping; retry restore")
-            try:
-                with self.db.maintenance():
-                    safety = self.create_backup("pre_restore")
-                    try:
-                        self._restore_file(filename)
-                    except Exception as exc:
-                        log.exception("restore of %s failed; rolling back to %s", filename, safety)
-                        try:
-                            self._restore_file(safety)
-                        except Exception:
-                            log.exception("rollback to %s failed", safety)
-                            # database state is unknown: never claim healthy readiness
-                            self._snapshot = None
-                        if isinstance(exc, ConfigInvalidError):
-                            raise InvalidRequestError(f"backup contains invalid configuration: {exc}") from exc
-                        raise
-            finally:
-                if was_running:
-                    try:
-                        self.start()
-                    except Exception:
-                        log.exception("listener failed to restart after restore")
-        return {"status": "restored", "filename": filename, "rollback_backup": safety}
+        with self.db.session() as session:
+            return config_revision(session)
 
     # --- providers ----------------------------------------------------------------------------
 
@@ -542,7 +498,8 @@ class ListenerService:
         if save_log:
             capture = bool(snapshot.settings["auto_capture_failures"]) and result.source != "text"
             with self.db.session() as session:
-                result.recognition_log_id = recognition_store.save_result(session, result, capture)
+                saved = recognition_store.save_result(session, result, capture)
+                result.recognition_log_id = str(saved) if saved is not None else None
                 self._results_since_prune += 1
                 if self._results_since_prune >= 100:
                     self._results_since_prune = 0
@@ -660,12 +617,16 @@ class ListenerService:
             self._publish_status()
             return {"status": "stopped"}
 
+    # internal run-state vocabulary -> contract PipelineStatus.state enum
+    _STATUS_STATES = {"listening": "running", "capturing": "running", "recovering": "error"}
+
     def status(self) -> s.PipelineStatus:
         st = self._stats
         snap = self._snapshot
+        state = self._STATUS_STATES.get(st.state, st.state)
         return s.PipelineStatus(
             running=self.running,
-            state=st.state if self.running else "stopped",
+            state=state if self.running or state == "error" else "stopped",
             provider=snap.provider_name if snap else "unknown",
             profile_name=snap.profile_name if snap else None,
             audio_device=st.audio_device,

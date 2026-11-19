@@ -83,9 +83,18 @@ def client(service: ListenerService, app_settings: AppSettings) -> Iterator[Test
 
 
 def patch_settings(client: TestClient, **changes: Any) -> Any:
-    """PATCH /api/v1/setting/ with the current strong ETag, per the OPAL v1.3 If-Match contract."""
-    etag = client.get("/api/v1/setting/").headers["etag"]
-    return client.patch("/api/v1/setting/", json=changes, headers={"If-Match": etag})
+    """Set several settings via per-key PUT (the v2 contract retired collection PATCH).
+
+    Returns the response of the last key written (all writes are expected to succeed).
+    """
+    response = None
+    for key, value in changes.items():
+        etag = client.get("/api/v1/setting/").headers["etag"]
+        response = client.put(
+            f"/api/v1/setting/{key}", json={"value": value}, headers={"If-Match": etag}
+        )
+        assert response.status_code == 200, response.text
+    return client.get("/api/v1/setting/")
 
 
 def etag_of(client: TestClient, path: str) -> str:

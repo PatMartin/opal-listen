@@ -277,33 +277,55 @@ def test_profiles_activate_and_filters(client: TestClient) -> None:
     assert client.delete(f"/api/v1/profile/{created['id']}", headers={"If-Match": created_etag}).status_code == 204
 
 
-def test_settings_patch_validation_and_atomicity(client: TestClient) -> None:
+def test_setting_put_validation(client: TestClient) -> None:
+    """Per-key PUT validation (v2: the atomic collection PATCH is retired)."""
     etag = _etag(client, "/api/v1/setting/")
-    updated = client.patch("/api/v1/setting/", json={"cooldown_ms": "2500"}, headers={"If-Match": etag}).json()
-    assert updated["cooldown_ms"] == "2500"
+    updated = client.put(
+        "/api/v1/setting/cooldown_ms", json={"value": "2500"}, headers={"If-Match": etag}
+    ).json()
+    assert updated["value"] == 2500 and updated["configured_value"] == 2500
     etag = _etag(client, "/api/v1/setting/")
-    assert client.patch("/api/v1/setting/", json={"cooldown_ms": "soon"}, headers={"If-Match": etag}).status_code == 422
-    assert client.patch("/api/v1/setting/", json={"stt_mode": "fancy"}, headers={"If-Match": etag}).status_code == 422
-    assert client.patch("/api/v1/setting/", json={"not_a_setting": "1"}, headers={"If-Match": etag}).status_code == 422
-    updated = client.patch("/api/v1/setting/", json={"auto_capture_failures": "no"}, headers={"If-Match": etag}).json()
-    assert updated["auto_capture_failures"] == "false"
-    assert client.patch("/api/v1/setting/", json={"cooldown_ms": "1500"}).status_code == 428  # missing If-Match
-    stale = client.patch("/api/v1/setting/", json={"cooldown_ms": "1500"}, headers={"If-Match": '"stale-etag"'})
+    assert (
+        client.put("/api/v1/setting/cooldown_ms", json={"value": "soon"}, headers={"If-Match": etag}).status_code
+        == 422
+    )
+    assert (
+        client.put("/api/v1/setting/not_a_setting", json={"value": "1"}, headers={"If-Match": etag}).status_code
+        == 404
+    )
+    updated = client.put(
+        "/api/v1/setting/auto_capture_failures", json={"value": "no"}, headers={"If-Match": etag}
+    ).json()
+    assert updated["value"] is False
+    assert client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}).status_code == 428  # no If-Match
+    stale = client.put(
+        "/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": '"stale-etag"'}
+    )
     assert stale.status_code == 412
-    assert client.patch("/api/v1/setting/", json={}, headers={"If-Match": etag}).status_code == 422
+    assert (
+        client.put("/api/v1/setting/cooldown_ms", json={}, headers={"If-Match": etag}).status_code == 422
+    )
+    # an invalid write is rejected: the value on record is unchanged
     etag = _etag(client, "/api/v1/setting/")
-    # a patch containing an invalid value is rejected atomically: nothing else is applied either
-    bad = client.patch(
-        "/api/v1/setting/",
-        json={"event_publication_enabled": "maybe", "cooldown_ms": "1"},
-        headers={"If-Match": etag},
+    bad = client.put(
+        "/api/v1/setting/event_publication_enabled", json={"value": "maybe"}, headers={"If-Match": etag}
     )
     assert bad.status_code == 422
     settings = client.get("/api/v1/setting/").json()
     assert settings["event_publication_enabled"] == "false" and settings["cooldown_ms"] == "2500"
     etag = _etag(client, "/api/v1/setting/")
-    restored = client.patch("/api/v1/setting/", json={"cooldown_ms": "1500"}, headers={"If-Match": etag}).json()
-    assert restored["cooldown_ms"] == "1500"
+    restored = client.put(
+        "/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": etag}
+    ).json()
+    assert restored["value"] == 1500
+
+
+def test_settings_collection_patch_is_retired(client: TestClient) -> None:
+    etag = _etag(client, "/api/v1/setting/")
+    assert (
+        client.patch("/api/v1/setting/", json={"cooldown_ms": "2500"}, headers={"If-Match": etag}).status_code
+        in (404, 405)
+    )
 
 
 def test_settings_key_endpoints(client: TestClient) -> None:
@@ -348,7 +370,9 @@ def test_settings_key_endpoints(client: TestClient) -> None:
 
 def test_model_path_change_is_validated(client: TestClient) -> None:
     etag = _etag(client, "/api/v1/setting/")
-    response = client.patch("/api/v1/setting/", json={"vosk_model_path": "/does/not/exist"}, headers={"If-Match": etag})
+    response = client.put(
+        "/api/v1/setting/vosk_model_path", json={"value": "/does/not/exist"}, headers={"If-Match": etag}
+    )
     assert response.status_code == 422
     assert "model directory not found" in json.dumps(response.json()["error"])
     profile = _by_name(client, "/api/v1/profile/", "default")
@@ -448,11 +472,11 @@ def test_failed_utterance_crud(client: TestClient) -> None:
     assert updated["reviewed"] is True
     assert client.get("/api/v1/failed_utterance/", params={"reviewed": True}).json()[0]["id"] == created["id"]
     assert client.get("/api/v1/failed_utterance/", params={"reviewed": False}).json() == []
-    bad_log = client.post("/api/v1/failed_utterance/", json={"transcript": "x", "recognition_log_id": 42})
+    bad_log = client.post("/api/v1/failed_utterance/", json={"transcript": "x", "recognition_log_id": "42"})
     assert bad_log.status_code == 404
     bad_intent = client.post(
         f"/api/v1/failed_utterance/{created['id']}/promote",
-        params={"intent_name": "nope"},
+        json={"intent_id": "nope"},
         headers={"If-Match": '"precondition"'},
     )
     assert bad_intent.status_code == 404

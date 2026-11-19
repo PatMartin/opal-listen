@@ -29,7 +29,7 @@ The server must therefore be running, either locally or on another machine.
 14. [`regression`: regression test management](#14-regression--regression-test-management)
 15. [`log`: recognition logs](#15-log--recognition-logs)
 16. [`service perf`: performance metrics](#16-service-perf--performance-metrics)
-17. [`config`: validation, backup, export and import](#17-config--validation-backup-export-and-import)
+17. [`config`: snapshots — save, load and validate](#17-config-snapshots--save-load-and-validate)
 18. [`service`: health and diagnostics](#18-service--health-and-diagnostics)
 19. [`event`: publish ZeroMQ events](#19-event--publish-zeromq-events)
 20. [`reaction`: intent-triggered shell commands](#20-reaction--intent-triggered-shell-commands)
@@ -229,12 +229,12 @@ opal listen intent add-phrase light_turn_on "turn on [the] {room_name} (light | 
 
 ### Confirmation prompts
 
-Destructive configuration commands (`config restore`, `config delete-backup`, `config import`) ask for
+Destructive configuration commands (`config load`) ask for
 confirmation. Pass `--yes` / `-y` to skip the prompt in scripts. If you answer "no", the command prints
 `Aborted!` and exits with code `1`.
 
 > `remove` commands for wakewords, intents, slots, profiles, failed utterances and regression tests do
-> **not** ask for confirmation. Take a backup first (`opal listen config backup`) if you're unsure.
+> **not** ask for confirmation. Take a snapshot first (`opal listen config save`) if you're unsure.
 
 ### Errors and exit codes
 
@@ -292,8 +292,8 @@ opal
     ├── regression  list | get | add | update | remove
     ├── service     start | stop | log | doctor | devices | live | ready | info | ping
     │               └── perf  last | summary | history
-    ├── config      validate | backup | backups | download | restore | delete-backup | export | import
-    │               └── setting   list | show | set | update | remove   (`patch` = hidden alias of `update`)
+    ├── config      save | load | validate
+    │               └── setting   list | show | set | remove
     ├── event       publish
     └── reaction    list | get | add | update | remove | enable | disable | test | log | path
 ```
@@ -649,7 +649,7 @@ opal listen profile remove test_profile
 
 > You can't clear a list (for example, go back to "all intents") with `update`, because an option that
 > is left out means "unchanged". To clear one, use the web GUI or the REST API, or edit the exported YAML
-> and import it (see [config](#16-config--validation-backup-export-and-import)).
+> and load it via `config save`/`config load` (see [config](#17-config-snapshots--save-load-and-validate)).
 
 ---
 
@@ -657,7 +657,7 @@ opal listen profile remove test_profile
 
 A persona is a named speaker identity registered with the service, optionally bound to an
 OPAL Say `voice_id` so spoken feedback keeps a consistent voice. Personas are portable
-configuration: they export/import with `config export`/`config import` (`personas.yaml`).
+configuration: they travel in `config save`/`config load` snapshots (`resources.personas`).
 
 | Command | Description |
 |---|---|
@@ -684,11 +684,11 @@ checks that a declared voice id is well-formed — existence is OPAL Say's conce
 ## 10. `config setting`: global settings
 
 Settings are typed global key/value pairs. The server validates the type, range and allowed choices on
-every change. Per the OPAL standard, the collection `GET`/`PATCH /api/v1/setting/` is a single atomic
-resource and each key is also addressable via `GET`/`PUT`/`DELETE /api/v1/setting/{key}`; all settings
-commands fetch the current strong `ETag` and send it back as `If-Match` automatically, so updates apply
-atomically and safely even if another client changed settings concurrently (a stale `If-Match` is
-rejected with `412`, a missing one with `428`).
+every change. Per the OPAL 2.0 standard, the collection `GET /api/v1/setting/` returns the flat map and
+each key is addressable via `GET`/`PUT`/`DELETE /api/v1/setting/{key}`; all settings commands fetch the
+current strong `ETag` and send it back as `If-Match` automatically, so updates apply safely even if
+another client changed settings concurrently (a stale `If-Match` is rejected with `412`, a missing one
+with `428`).
 
 The canonical commands live under `config setting`; the contract also declares two flat aliases,
 `opal listen setting get` (= `show`) and `opal listen setting unset` (= `remove`).
@@ -696,10 +696,9 @@ The canonical commands live under `config setting`; the contract also declares t
 | Command | Description |
 |---|---|
 | `config setting list` | Show all settings with their effective values |
-| `config setting show KEY` | Show one setting's value, registry default, `is_default` and `pending_restart` |
-| `config setting set KEY VALUE` | Set one setting (`PUT /settings/{key}`; sends the settings-map `If-Match`) |
-| `config setting update KEY=VALUE ...` | Set several settings atomically in one collection `PATCH` (all-or-nothing; `patch` is a hidden alias) |
-| `config setting remove KEY` | Revert a setting to its registry default (`DELETE /settings/{key}`) |
+| `config setting show --name KEY` | Show one setting's value, registry default, `is_default`, `source` and `pending_restart` |
+| `config setting set --name KEY --value VALUE` | Set one setting (`PUT /api/v1/setting/{key}`; sends the settings-map `If-Match`) |
+| `config setting remove --name KEY` | Revert a setting to its registry default (`DELETE /api/v1/setting/{key}`) |
 
 ### Known keys
 
@@ -740,40 +739,41 @@ Booleans accept `true/false`, `1/0`, `yes/no` and `on/off`.
 opal listen config setting list
 
 # Switch the Whisper refiner model, then switch back
-opal listen config setting set whisper_model medium.en
-opal listen config setting set whisper_model tiny.en
+opal listen config setting set --name whisper_model --value medium.en
+opal listen config setting set --name whisper_model --value tiny.en
 
 # Enable the optional second-pass refiner (requires the [whisper] extra)
-opal listen config setting set stt_refiner faster_whisper
+opal listen config setting set --name stt_refiner --value faster_whisper
 
 # Choose the microphone by index or by name substring (see 'system devices')
-opal listen config setting set audio_device 2
-opal listen config setting set audio_device "USB"
+opal listen config setting set --name audio_device --value 2
+opal listen config setting set --name audio_device --value "USB"
 
 # Start the microphone pipeline automatically when the server starts
-opal listen config setting set auto_start_listener true
+opal listen config setting set --name auto_start_listener --value true
 
 # Shorten the cooldown between commands
-opal listen config setting set cooldown_ms 1000
+opal listen config setting set --name cooldown_ms --value 1000
 
-# ... or change several settings atomically in one PATCH
-opal listen config setting patch cooldown_ms=1000 dedup_window_ms=3000
+# ... or change several settings one key at a time
+opal listen config setting set --name cooldown_ms --value 1000
+opal listen config setting set --name dedup_window_ms --value 3000
 
-# Inspect one setting's metadata (default, is_default, pending_restart)
-opal listen config setting show cooldown_ms
+# Inspect one setting's metadata (default, is_default, source, pending_restart)
+opal listen config setting show --name cooldown_ms
 
 # Revert a key to its registry default
-opal listen config setting remove cooldown_ms
+opal listen config setting remove --name cooldown_ms
 
 # Add a sound-alike word that should never trigger the wakeword
-opal listen config setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
+opal listen config setting set --name wakeword_distractors --value "commuter,compute,computing,commute,commuting"
 
 # Invalid values are rejected
-opal listen config setting set stt_mode fast
+opal listen config setting set --name stt_mode --value fast
 # Error: HTTP 422: setting 'stt_mode' must be one of grammar, open
 
 # Go back to the default value
-opal listen config setting set whisper_model tiny.en
+opal listen config setting set --name whisper_model --value tiny.en
 ```
 
 ---
@@ -999,7 +999,7 @@ Important `status` fields:
 | `audio_restarts`, `last_error` | Watchdog and recovery activity |
 | `last_audio_level` | Most recent input level in dBFS |
 
-> Use `opal listen config setting set auto_start_listener true` to start the pipeline every time the server
+> Use `opal listen config setting set --name auto_start_listener --value true` to start the pipeline every time the server
 > starts.
 
 ---
@@ -1118,7 +1118,7 @@ Every recognition (microphone, audio file, or text with `--save`) is stored in t
 recognition-log row; `max_recognition_logs` limits how many rows are kept and
 `transcript_retention_days` controls how long transcript text stays on them (rows and latency
 aggregates survive regardless). `unreviewed_failure_ttl_days` expires stale failed utterances.
-The v1.7.1 contract no
+The v2.0.0 contract no
 longer exposes a REST surface for browsing them — use `service perf` (per-recognition latencies,
 confidences and match flags, newest first) and `failed list` (captured `no_match` utterances) instead.
 
@@ -1175,87 +1175,63 @@ Example `summary` output (abbreviated):
 
 ---
 
-## 17. `config`: validation, backup, export and import
+## 17. `config`: snapshots — save, load and validate
+
+The v2 contract replaces the old backup/export/import routes with OPAL configuration
+snapshots: one portable envelope (`format_version`, `module`, `created_at`, `settings`,
+`resources`) covering wakewords, intents, slots, profiles, personas, regression tests and
+settings.
 
 | Command | Description |
 |---|---|
-| `validate [--from-dir DIR]` | Validate the server configuration, or local YAML files. Exits `1` if invalid. |
-| `backup` | Create a SQLite backup on the server |
-| `backups` | List the server's backups (filename, size_bytes, created_at) |
-| `download FILE [-o PATH]` | Download a backup to the local machine |
-| `restore FILE [-y]` | Replace the database with a backup |
-| `delete-backup FILE [-y]` | Delete a backup on the server |
-| `export [--out-dir DIR]` | Export the configuration as JSON (stdout), or as YAML files |
-| `import [--from-dir DIR] [-y]` | Replace the configuration from YAML files |
-
-Backup filenames look like `opal_listener_20260930T093000123456_manual.db`. The suffix shows why the
-backup was made, e.g. `manual` or `pre_import`.
+| `validate [--in FILE]` | Validate the live configuration, or a candidate snapshot file (JSON or YAML). Exits `1` if invalid. |
+| `save [--out FILE]` | Snapshot the desired configuration: replace the server's managed snapshot, or with `--out` write the envelope to a local file instead |
+| `load [--in FILE] [-y]` | Atomically replace the desired configuration from the managed snapshot, or `--in FILE` for a local snapshot |
 
 ### Validation
 
 ```bash
-# Validate the server's configuration (config dir and database)
+# Validate the server's live configuration
 opal listen config validate
 
-# Validate local YAML files before importing them
-opal listen config validate --from-dir ./my-config
+# Validate a snapshot file before loading it
+opal listen config validate --in ./snapshot.json
 ```
 
 Output lists errors in red and warnings in yellow, then `configuration is valid` or
 `configuration is invalid` (exit code `1`).
 
-### Backups
+### Snapshots
 
 ```bash
-# Create a backup on the server
-opal listen config backup              # ✓ backup created: opal_listener_..._manual.db
+# Capture the live configuration into the server's managed snapshot
+opal listen config save
 
-# List backups, newest first
-opal listen config backups
+# Write a portable snapshot to a local file (leaves the managed snapshot untouched)
+opal listen config save --out ./before-change.json
 
-# Download a backup into a directory, or to a specific file
-opal listen config download opal_listener_20260930T093000123456_manual.db -o ~/backups/
-opal listen config download opal_listener_20260930T093000123456_manual.db -o ./before-upgrade.db
-
-# Restore a backup. The current state is saved first, and the restore is rolled back on failure.
-opal listen config restore opal_listener_20260930T093000123456_manual.db
-# Replace the current database with opal_listener_...db? [y/N]: y
+# Check it, then load it back. The load is atomic: a failed apply rolls everything back.
+opal listen config validate --in ./before-change.json
+opal listen config load --in ./before-change.json
+# Replace wakewords, intents, slots, profiles, personas and settings? [y/N]: y
 
 # Same, without the prompt (for scripts)
-opal listen config restore opal_listener_20260930T093000123456_manual.db --yes
+opal listen config load --in ./before-change.json --yes
 
-# Delete an old backup
-opal listen config delete-backup opal_listener_20260929T181500000000_pre_import.db -y
+# Restore the server's managed snapshot
+opal listen config load --yes
 ```
 
-### Export and import
+`config load` fetches the live-configuration revision and sends it as `If-Match`, so a load
+racing another writer fails with `412` instead of clobbering their change. A snapshot whose
+`module` isn't `opal-listen` or whose `format_version` isn't `1.0.0` is rejected before
+anything is touched.
 
-The configuration is made of seven YAML files: `wakewords.yaml`, `intents.yaml`, `slots.yaml`,
-`profiles.yaml`, `stt.yaml` and `settings.yaml`.
+> `--in` reads the snapshot on the **client** machine. Without it, `load` uses the managed
+> snapshot stored on the **server** (`config save` without `--out` refreshes it).
 
-```bash
-# Export as one JSON bundle to stdout
-opal listen config export > bundle.json
-
-# Export as seven YAML files, ready for editing or version control
-opal listen config export --out-dir ./my-config
-
-# Edit, validate, then import. The server makes a pre-import backup automatically.
-$EDITOR ./my-config/intents.yaml
-opal listen config validate --from-dir ./my-config
-opal listen config import --from-dir ./my-config --yes
-
-# Re-import the server's own config directory (OPAL_LISTENER_CONFIG_DIR)
-opal listen config import
-```
-
-After an import, the CLI prints the backup filename, a count of imported items, and any warnings.
-
-> `--from-dir` reads YAML files on the **client** machine and uploads them. Without it, `import` uses
-> the YAML directory on the **server**.
-
-> `import` **replaces** wakewords, intents, slots, profiles, personas and settings. Items that are not in the YAML
-> files are deleted.
+> `load` **replaces** wakewords, intents, slots, profiles, personas and settings. Items that
+> are not in the snapshot are deleted.
 
 ---
 
@@ -1302,7 +1278,7 @@ opal listen service ready
 
 # Find the microphone index or name to use for the audio_device setting
 opal listen service devices
-opal listen config setting set audio_device 2
+opal listen config setting set --name audio_device --value 2
 ```
 
 Example `doctor` output:
@@ -1436,7 +1412,7 @@ opal listen reaction log --limit 5
 ```
 
 Remember: armed reactions only fire when the dispatch policy selects `local` — `opal listen config
-setting set intent_dispatch local` (or `both`). With the default `intent_dispatch=auto` the legacy
+setting set --name intent_dispatch --value local` (or `both`). With the default `intent_dispatch=auto` the legacy
 `reactions_enabled true` flag selects the same target. The switch is a setting so it can be flipped
 at runtime without editing files.
 
@@ -1495,8 +1471,8 @@ opal listen profile activate default                          # switch back befo
 
 # --- settings -----------------------------------------------------------------------------
 opal listen config setting list
-opal listen config setting set whisper_model medium.en
-opal listen config setting set whisper_model tiny.en
+opal listen config setting set --name whisper_model --value medium.en
+opal listen config setting set --name whisper_model --value tiny.en
 
 # --- recognition --------------------------------------------------------------------------
 opal listen test text "computer, turn on the kitchen light"
@@ -1585,13 +1561,13 @@ opal listen test listen-debug -n 5
 
 ```bash
 # On the source machine
-opal listen config export --out-dir ./opal-config
+opal listen config save --out ./opal-config/snapshot.json
 git -C ./opal-config init && git -C ./opal-config add . && git -C ./opal-config commit -m "opal config"
 
 # Against the target machine
 export OPAL_LISTEN_API_URL=http://new-pi.local:8000
-opal listen config validate --from-dir ./opal-config
-opal listen config import --from-dir ./opal-config --yes
+opal listen config validate --in ./opal-config/snapshot.json
+opal listen config load --in ./opal-config/snapshot.json --yes
 opal listen test regression
 ```
 
@@ -1638,9 +1614,9 @@ echo "all checks passed"
 ### CI: guard your configuration
 
 ```bash
-# Fails the job (exit 1) if the YAML is invalid or any regression test fails
-opal listen config validate --from-dir ./opal-config
-opal listen config import --from-dir ./opal-config --yes
+# Fails the job (exit 1) if the snapshot is invalid or any regression test fails
+opal listen config validate --in ./opal-config/snapshot.json
+opal listen config load --in ./opal-config/snapshot.json --yes
 opal listen test regression
 ```
 
@@ -1685,7 +1661,7 @@ opal listen --json regression list \
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
-| Long operations time out | Increase `--timeout`, e.g. `opal listen --timeout 300 config import -y`. |
+| Long operations time out | Increase `--timeout`, e.g. `opal listen --timeout 300 config load --in snapshot.json -y`. |
 
 ---
 
@@ -1740,7 +1716,6 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config setting list` | `GET /api/v1/setting/` |
 | `config setting show` | `GET /api/v1/setting/{key}` |
 | `config setting set` | `PUT /api/v1/setting/{key}` (If-Match) |
-| `config setting update` (`patch`) | `PATCH /api/v1/setting/` (If-Match; atomic, may set several keys) |
 | `config setting remove` (`setting unset`) | `DELETE /api/v1/setting/{key}` (If-Match) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
@@ -1766,14 +1741,9 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `service perf last` | `GET /api/v1/performance/last` |
 | `service perf summary` | `GET /api/v1/performance/summary` |
 | `service perf history` | `GET /api/v1/performance/history` (cursor-paginated: `items`/`next_cursor`/`has_more`) |
-| `config validate` | `GET /api/v1/backup/validate` (or `POST` with `--from-dir`) |
-| `config backup` | `POST /api/v1/backup/create` |
-| `config backups` | `GET /api/v1/backup/list` |
-| `config download` | `GET /api/v1/backup/download/{filename}` |
-| `config restore` | `POST /api/v1/backup/restore/{filename}` |
-| `config delete-backup` | `DELETE /api/v1/backup/{filename}` |
-| `config export` | `GET /api/v1/backup/export` |
-| `config import` | `POST /api/v1/backup/import` |
+| `config validate` | `POST /api/v1/config/validate` (live, or `{snapshot}` with `--in`) |
+| `config save` | `POST /api/v1/config/save` (`managed`, or `response` with `--out`) |
+| `config load` | `POST /api/v1/config/load` (If-Match; managed, or `{snapshot}` with `--in`) |
 | `service doctor` | `GET /api/v1/health/` |
 | `service devices` | `GET /api/v1/health/audio_devices` |
 | `service live` | `GET /api/v1/health/live` (liveness probe) |

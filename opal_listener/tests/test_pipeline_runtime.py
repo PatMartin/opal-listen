@@ -373,7 +373,7 @@ def test_watchdog_restarts_silent_audio_source(client: TestClient, fake_provider
     client.post("/api/v1/recognition/start")
     try:
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["audio_restarts"] >= 1)
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
     finally:
         client.post("/api/v1/recognition/stop")
     assert len(sources) >= 2
@@ -391,7 +391,7 @@ def test_runtime_recovers_when_device_returns(client: TestClient, fake_provider:
     service._source_factory = factory
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: len(attempts) >= 2 and client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: len(attempts) >= 2 and client.get("/api/v1/recognition/status").json()["state"] == "running")
     finally:
         client.post("/api/v1/recognition/stop")
     status = client.get("/api/v1/recognition/status").json()
@@ -403,7 +403,7 @@ def test_config_change_applies_to_running_pipeline(client: TestClient, fake_prov
     service._source_factory = lambda settings: ScriptedSource([])
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         version = service.snapshot.version
         client.post(
             "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
@@ -576,7 +576,7 @@ def test_capture_setting_change_restarts_source(client: TestClient, fake_provide
     service._source_factory = factory
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         assert len(sources) == 1
         patch_settings(client, **{key: value})
         wait_for(lambda: len(sources) >= 2)
@@ -602,7 +602,7 @@ def test_pipeline_only_change_does_not_restart_source(client: TestClient, fake_p
     service._source_factory = factory
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         patch_settings(client, cooldown_ms="1000")
         time.sleep(0.3)  # give the runtime several iterations to (not) react
         assert len(sources) == 1  # pipeline rebuilt in place — capture stream untouched
@@ -625,7 +625,9 @@ def test_capture_restart_waits_for_session_end(client: TestClient, fake_provider
     fake_provider.script.append("turn on the kitchen light")
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "capturing")
+        # the public status maps internal "capturing" to contract "running": read the
+        # internal stat so the settings change provably lands mid-session
+        wait_for(lambda: service._stats.state == "capturing")
         patch_settings(client, audio_block_ms="200")  # lands mid-session
         wait_for(lambda: log_counts(client)["total"] >= 1)
         wait_for(lambda: len(sources) >= 2)
@@ -689,7 +691,7 @@ def test_provider_inspection_during_recognition(client: TestClient, fake_provide
     service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         active = service._providers["fake"][1]  # type: ignore[attr-defined]
         provider, snap = service.provider_status()
         assert provider is active and snap is service.snapshot  # inspection returns the live instance
@@ -710,7 +712,7 @@ def test_test_audio_does_not_disturb_live_listener(client: TestClient, fake_prov
     wav = write_wav_bytes(b"".join(COMMAND))
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         results: list[Any] = []
         worker = threading.Thread(target=lambda: results.append(service.test_audio(wav)))
         worker.start()
@@ -1078,7 +1080,7 @@ def test_failed_capture_restart_uses_last_known_good(client: TestClient, fake_pr
     service._source_factory = factory
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         patch_settings(client, audio_device="bad-device")
         wait_for(lambda: client.get("/api/v1/recognition/status").json()["audio_restarts"] >= 1)
         status = client.get("/api/v1/recognition/status").json()
@@ -1089,7 +1091,7 @@ def test_failed_capture_restart_uses_last_known_good(client: TestClient, fake_pr
         # a later change retries the reopen and recovers
         patch_settings(client, audio_device="usb-ok")
         wait_for(lambda: len(sources) >= 3)
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
         assert sources[0].started is False  # LKG finally retired once the new stream works
         assert sources[2].started is True
     finally:
@@ -1129,7 +1131,7 @@ def test_failed_capture_restart_keeps_frames_flowing(client: TestClient, fake_pr
     service._source_factory = factory
     client.post("/api/v1/recognition/start")
     try:
-        wait_for(lambda: status()["state"] == "listening")
+        wait_for(lambda: status()["state"] == "running")
         patch_settings(client, audio_device="bad-device")
         wait_for(lambda: status()["audio_restarts"] >= 1)
         assert "restart failed" in status()["last_error"]

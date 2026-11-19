@@ -117,28 +117,28 @@
 const ROUTES = [
   ["list_wakewords", "GET", "/api/v1/wakeword/", "wakeword list", "wakewords"],
   ["create_wakeword", "POST", "/api/v1/wakeword/", "wakeword add", "wakewords"],
-  ["get_wakeword", "GET", "/api/v1/wakeword/{wakeword_id}", "wakeword get", "wakewords"],
+  ["show_wakeword", "GET", "/api/v1/wakeword/{wakeword_id}", "wakeword get", "wakewords"],
   ["update_wakeword", "PATCH", "/api/v1/wakeword/{wakeword_id}", "wakeword update", "wakewords"],
-  ["delete_wakeword", "DELETE", "/api/v1/wakeword/{wakeword_id}", "wakeword remove", "wakewords"],
+  ["remove_wakeword", "DELETE", "/api/v1/wakeword/{wakeword_id}", "wakeword remove", "wakewords"],
   ["list_intents", "GET", "/api/v1/intent/", "intent list", "intents"],
   ["create_intent", "POST", "/api/v1/intent/", "intent add", "intents"],
-  ["get_intent", "GET", "/api/v1/intent/{intent_id}", "intent get", "intents"],
+  ["show_intent", "GET", "/api/v1/intent/{intent_id}", "intent get", "intents"],
   ["update_intent", "PATCH", "/api/v1/intent/{intent_id}", "intent update", "intents"],
-  ["delete_intent", "DELETE", "/api/v1/intent/{intent_id}", "intent remove", "intents"],
+  ["remove_intent", "DELETE", "/api/v1/intent/{intent_id}", "intent remove", "intents"],
   ["list_phrases", "GET", "/api/v1/intent/{intent_id}/phrase", "intent phrases", "intents"],
   ["add_phrase", "POST", "/api/v1/intent/{intent_id}/phrase", "intent add-phrase", "intents"],
-  ["delete_phrase", "DELETE", "/api/v1/intent/{intent_id}/phrase/{phrase_id}", "intent remove-phrase", "intents"],
+  ["remove_phrase", "DELETE", "/api/v1/intent/{intent_id}/phrase/{phrase_id}", "intent remove-phrase", "intents"],
   ["list_slots", "GET", "/api/v1/slot/", "slot list", "slots"],
   ["create_slot", "POST", "/api/v1/slot/", "slot add", "slots"],
-  ["get_slot", "GET", "/api/v1/slot/{slot_id}", "slot get", "slots"],
+  ["show_slot", "GET", "/api/v1/slot/{slot_id}", "slot get", "slots"],
   ["update_slot", "PATCH", "/api/v1/slot/{slot_id}", "slot update", "slots"],
-  ["delete_slot", "DELETE", "/api/v1/slot/{slot_id}", "slot remove", "slots"],
+  ["remove_slot", "DELETE", "/api/v1/slot/{slot_id}", "slot remove", "slots"],
   ["list_slot_values", "GET", "/api/v1/slot/{slot_id}/value", "slot values", "slots"],
   ["add_slot_value", "POST", "/api/v1/slot/{slot_id}/value", "slot add-value", "slots"],
-  ["delete_slot_value", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}", "slot remove-value", "slots"],
+  ["remove_slot_value", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}", "slot remove-value", "slots"],
   ["list_aliases", "GET", "/api/v1/slot/{slot_id}/value/{value_id}/alias", "slot aliases", "slots"],
   ["add_alias", "POST", "/api/v1/slot/{slot_id}/value/{value_id}/alias", "slot add-alias", "slots"],
-  ["delete_alias", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}", "slot remove-alias", "slots"],
+  ["remove_alias", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}", "slot remove-alias", "slots"],
   ["opal_profile_list", "GET", "/api/v1/profile/", "profile list", "profiles"],
   ["opal_profile_create", "POST", "/api/v1/profile/", "profile add", "profiles"],
   ["opal_profile_get", "GET", "/api/v1/profile/{profile_id}", "profile get", "profiles"],
@@ -146,44 +146,37 @@ const ROUTES = [
   ["opal_profile_delete", "DELETE", "/api/v1/profile/{profile_id}", "profile remove", "profiles"],
   ["opal_profile_activate", "POST", "/api/v1/profile/{profile_id}/activate", "profile activate", "profiles"],
   ["opal_setting_list", "GET", "/api/v1/setting/", "config setting list", "settings"],
-  ["opal_setting_patch", "PATCH", "/api/v1/setting/", "config setting update", "settings"],
   ["opal_setting_get", "GET", "/api/v1/setting/{key}", "config setting show", "settings"],
   ["opal_setting_put", "PUT", "/api/v1/setting/{key}", "config setting set", "settings"],
   ["opal_setting_delete", "DELETE", "/api/v1/setting/{key}", "config setting remove", "settings"],
-  ["test_text", "POST", "/api/v1/recognition/test_text", "test text", "test"],
-  ["test_audio", "POST", "/api/v1/recognition/test_audio", "test audio", "test"],
-  ["start_pipeline", "POST", "/api/v1/recognition/start", "pipeline start", "pipeline"],
-  ["stop_pipeline", "POST", "/api/v1/recognition/stop", "pipeline stop", "pipeline"],
-  ["get_status", "GET", "/api/v1/recognition/status", "pipeline status", "pipeline"],
-  ["stream_results", "GET", "/api/v1/recognition/stream", "test listen / listen-debug", "test"],
+  ["test_recognition_text", "POST", "/api/v1/recognition/test_text", "test text", "test"],
+  ["test_recognition_audio", "POST", "/api/v1/recognition/test_audio", "test audio", "test"],
+  ["start_recognition", "POST", "/api/v1/recognition/start", "pipeline start", "pipeline"],
+  ["stop_recognition", "POST", "/api/v1/recognition/stop", "pipeline stop", "pipeline"],
+  ["show_recognition_status", "GET", "/api/v1/recognition/status", "pipeline status", "pipeline"],
+  ["stream_recognition", "GET", "/api/v1/recognition/stream", "test listen / listen-debug", "test"],
   ["list_failed_utterances", "GET", "/api/v1/failed_utterance/", "failed list", "failed"],
   ["create_failed_utterance", "POST", "/api/v1/failed_utterance/", "failed add", "failed"],
-  ["get_failed_utterance", "GET", "/api/v1/failed_utterance/{fu_id}", "failed get", "failed"],
-  ["update_failed_utterance", "PATCH", "/api/v1/failed_utterance/{fu_id}", "failed update", "failed"],
-  ["delete_failed_utterance", "DELETE", "/api/v1/failed_utterance/{fu_id}", "failed remove", "failed"],
-  ["promote_to_phrase", "POST", "/api/v1/failed_utterance/{fu_id}/promote", "failed promote", "failed"],
+  ["show_failed_utterance", "GET", "/api/v1/failed_utterance/{failed_utterance_id}", "failed get", "failed"],
+  ["update_failed_utterance", "PATCH", "/api/v1/failed_utterance/{failed_utterance_id}", "failed update", "failed"],
+  ["remove_failed_utterance", "DELETE", "/api/v1/failed_utterance/{failed_utterance_id}", "failed remove", "failed"],
+  ["promote_failed_utterance", "POST", "/api/v1/failed_utterance/{failed_utterance_id}/promote", "failed promote", "failed"],
   ["list_regression_tests", "GET", "/api/v1/regression/", "regression list", "regression"],
   ["create_regression_test", "POST", "/api/v1/regression/", "regression add", "regression"],
-  ["get_regression_test", "GET", "/api/v1/regression/{test_id}", "regression get", "regression"],
+  ["show_regression_test", "GET", "/api/v1/regression/{test_id}", "regression get", "regression"],
   ["update_regression_test", "PATCH", "/api/v1/regression/{test_id}", "regression update", "regression"],
-  ["delete_regression_test", "DELETE", "/api/v1/regression/{test_id}", "regression remove", "regression"],
+  ["remove_regression_test", "DELETE", "/api/v1/regression/{test_id}", "regression remove", "regression"],
   ["run_regression_tests", "POST", "/api/v1/regression/run", "test regression", "regression"],
-  ["get_last_performance", "GET", "/api/v1/performance/last", "service perf last", "perf"],
+  ["get_performance_last", "GET", "/api/v1/performance/last", "service perf last", "perf"],
   ["get_performance_summary", "GET", "/api/v1/performance/summary", "service perf summary", "perf"],
   ["get_performance_history", "GET", "/api/v1/performance/history", "service perf history", "perf"],
   ["opal_health_get", "GET", "/api/v1/health/", "service doctor", "system"],
-  ["get_audio_devices", "GET", "/api/v1/health/audio_devices", "service devices", "system"],
+  ["list_audio_devices", "GET", "/api/v1/health/audio_devices", "service devices", "system"],
   ["opal_health_live_get", "GET", "/api/v1/health/live", "service live", "system"],
   ["opal_health_ready_get", "GET", "/api/v1/health/ready", "service ready", "system"],
-  ["opal_backup_list", "GET", "/api/v1/backup/list", "config backups", "config"],
-  ["opal_backup_create", "POST", "/api/v1/backup/create", "config backup", "config"],
-  ["opal_backup_download", "GET", "/api/v1/backup/download/{filename}", "config download", "config"],
-  ["opal_backup_restore", "POST", "/api/v1/backup/restore/{filename}", "config restore", "config"],
-  ["opal_backup_delete", "DELETE", "/api/v1/backup/{filename}", "config delete-backup", "config"],
-  ["opal_backup_export", "GET", "/api/v1/backup/export", "config export", "config"],
-  ["opal_backup_import", "POST", "/api/v1/backup/import", "config import", "config"],
-  ["opal_backup_validate_stored", "GET", "/api/v1/backup/validate", "config validate", "config"],
-  ["opal_backup_validate", "POST", "/api/v1/backup/validate", "config validate --from-dir", "config"],
+  ["opal_config_save", "POST", "/api/v1/config/save", "config save", "config"],
+  ["opal_config_load", "POST", "/api/v1/config/load", "config load", "config"],
+  ["opal_config_validate", "POST", "/api/v1/config/validate", "config validate", "config"],
   ["opal_persona_list", "GET", "/api/v1/persona/", "persona list", "personas"],
   ["opal_persona_create", "POST", "/api/v1/persona/", "persona add", "personas"],
   ["opal_persona_get", "GET", "/api/v1/persona/{persona_id}", "persona get", "personas"],
@@ -202,7 +195,7 @@ const NAV = [
   ["Overview", [["system", "System"], ["pipeline", "Pipeline"]]],
   ["Configure", [["wakewords", "Wakewords"], ["intents", "Intents"], ["slots", "Slots"], ["profiles", "Profiles"], ["personas", "Personas"], ["settings", "Settings"]]],
   ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["regression", "Regression"], ["perf", "Performance"]]],
-  ["Admin", [["config", "Config & backups"], ["api", "API & parity"]]],
+  ["Admin", [["config", "Config snapshots"], ["api", "API & parity"]]],
 ];
 const VAD_KEYS = { energy_threshold_dbfs: -45, noise_margin_db: 10, speech_start_ms: 150, silence_end_ms: 700,
   no_speech_timeout_ms: 4000, max_utterance_ms: 8000, pre_roll_ms: 1000, use_stt_endpoint: true };
@@ -437,7 +430,7 @@ VIEWS.pipeline = async () => {
     try { el.innerHTML = kv(await api("GET", "/api/v1/recognition/status")); } catch (e) { el.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   }), 0);
   return `<h2>Pipeline</h2><div class="sub">Live microphone pipeline: wakeword → VAD → STT → intent. Status refreshes every 2 s.</div>
-    ${card("Control", ["start_pipeline", "stop_pipeline"], `<div class="row">${btn("Start", "pipeStart")} ${btn("Stop", "pipeStop", {}, "danger")}
+    ${card("Control", ["start_recognition", "stop_pipeline"], `<div class="row">${btn("Start", "pipeStart")} ${btn("Stop", "pipeStop", {}, "danger")}
       <a href="#/test">Watch live results on the Test page →</a></div>`)}
     ${card("Status", ["get_status"], `<div id="pipeStatus"><p class="muted">Loading…</p></div>`)}`;
 };
@@ -482,7 +475,7 @@ async function intentDetail(id) {
   const [intent, phrases] = await Promise.all([api("GET", `/api/v1/intent/${id}`), api("GET", `/api/v1/intent/${id}/phrase`)]);
   return `<p><a href="#/intents">← Intents</a></p><h2>${esc(intent.name)}</h2><div class="sub">${esc(intent.description || "")}</div>
     <div class="cols">
-    ${card("Settings", ["get_intent", "update_intent"], `<form data-form="intentUpdate" data-id="${intent.id}">
+    ${card("Settings", ["show_intent", "update_intent"], `<form data-form="intentUpdate" data-id="${intent.id}">
       <label class="block"><span>name</span><input name="name" value="${esc(intent.name)}"></label>
       <label class="block"><span>description</span><input name="description" value="${esc(intent.description || "")}"></label>
       <div class="row"><label>threshold <input type="number" name="confidence_threshold" step="0.01" min="0" max="1" value="${intent.confidence_threshold}"></label>
@@ -521,7 +514,7 @@ async function slotDetail(id) {
   const aliasCell = v => v.aliases.map(a => `<span class="chip">${esc(a.alias)}${btn("×", "aliasDelete", { slot: slot.id, value: v.id, id: a.id }, "")}</span>`).join("") +
     `<form data-form="aliasAdd" data-slot="${slot.id}" data-value="${v.id}" class="row" style="display:inline-flex"><input name="alias" placeholder="new alias" size="12" required><button class="small" type="submit">+</button></form>`;
   return `<p><a href="#/slots">← Slots</a></p><h2>${esc(slot.name)}</h2><div class="sub">${esc(slot.slot_type)} slot · ${esc(slot.description || "")}</div>
-    ${card("Settings", ["get_slot", "update_slot", "delete_slot"], `<form data-form="slotUpdate" data-id="${slot.id}" class="row">
+    ${card("Settings", ["show_slot", "update_slot", "delete_slot"], `<form data-form="slotUpdate" data-id="${slot.id}" class="row">
       <input name="name" value="${esc(slot.name)}">
       <select name="slot_type">${["list", "number", "text"].map(t => `<option ${t === slot.slot_type ? "selected" : ""}>${t}</option>`).join("")}</select>
       <input name="description" value="${esc(slot.description || "")}" placeholder="description" style="flex:1">
@@ -602,7 +595,7 @@ VIEWS.test = async () => {
       <p class="hint">16-bit PCM WAV, mono or stereo, any rate (resampled to 16 kHz).</p>`)}
     </div>
     <div id="testResult"></div>
-    ${card("Live listen", ["stream_results", "start_pipeline", "stop_pipeline"], `<div class="row">
+    ${card("Live listen", ["stream_recognition", "start_pipeline", "stop_pipeline"], `<div class="row">
       ${btn("Listen", "listenStart", { debug: 0 })} ${btn("Listen (debug)", "listenStart", { debug: 1 })} ${btn("Stop", "listenStop", {}, "danger")}
       <label><input type="checkbox" id="autoStart" checked> start the pipeline if it is not running (and stop it afterwards)</label></div>
       <div class="row" style="margin-top:10px"><span id="liveState" class="badge">idle</span><div class="meter"><div id="meterBar"></div></div><span id="meterText" class="op">– dBFS</span></div>
@@ -663,7 +656,7 @@ VIEWS.perf = async () => {
   const flat = Object.fromEntries(Object.entries(summary).filter(([, v]) => typeof v !== "object" || v === null));
   const latency = Object.entries(summary).filter(([, v]) => v && typeof v === "object").map(([k, v]) => ({ metric: k, ...v }));
   return `<h2>Performance</h2><div class="sub">Latency (ms), confidence and match rate. Summary covers the last 100 recognitions.</div>
-    ${opsLine(["get_last_performance", "get_performance_summary", "get_performance_history"])}
+    ${opsLine(["get_performance_last", "get_performance_summary", "get_performance_history"])}
     <div class="cols">
       ${card("Last recognition", ["get_last_performance"], last ? kv(last) : '<p class="muted">No recognitions yet.</p>')}
       ${card("Summary", ["get_performance_summary"], kv(flat) + table(latency, [["metric", "latency"], ["avg", "avg"], ["p50", "p50"], ["p95", "p95"], ["max", "max"]]))}
@@ -687,21 +680,18 @@ function chart(rows) {
 }
 
 VIEWS.config = async () => {
-  const backups = await api("GET", "/api/v1/backup/list");
-  return `<h2>Config & backups</h2><div class="sub">Every change is validated before it is applied; imports and restores take an automatic backup and roll back on failure.</div>
-    ${opsLine(["opal_backup_validate_stored", "opal_backup_validate", "opal_backup_export", "opal_backup_import", "opal_backup_list", "opal_backup_create", "opal_backup_download", "opal_backup_restore", "opal_backup_delete"])}
-    ${card("Validate", ["opal_backup_validate_stored"], `${btn("Validate server config dir + database", "configValidate")}<div id="validateResult"></div>`)}
-    ${card("Configuration bundle (JSON)", ["opal_backup_export", "opal_backup_validate", "opal_backup_import"], `<div class="row">
+  return `<h2>Config snapshots</h2><div class="sub">Snapshots capture persistent desired configuration only (settings + profiles, personas, wakewords, intents, slots, regression tests); loads are atomic and If-Match protected.</div>
+    ${opsLine(["opal_config_validate", "opal_config_save", "opal_config_load"])}
+    ${card("Managed snapshot", ["opal_config_save", "opal_config_load"],
+      `${btn("Save managed snapshot", "configSaveManaged")} ${btn("Load managed snapshot", "configLoadManaged", {}, "danger")}
+      <div id="managedResult"></div><p class="hint">One managed snapshot is kept server-side; saving does not change live configuration, loading replaces it atomically.</p>`)}
+    ${card("Validate", ["opal_config_validate"], `${btn("Validate live configuration", "configValidate")}<div id="validateResult"></div>`)}
+    ${card("Snapshot envelope (JSON)", ["opal_config_save", "opal_config_validate", "opal_config_load"], `<div class="row">
         ${btn("Export", "configExport", {}, "ghost")} ${btn("Download JSON", "configDownload", {}, "ghost")}
         <label class="muted">load file <input type="file" id="bundleFile" accept=".json,application/json"></label></div>
-      <textarea class="mono" id="bundleText" style="min-height:220px;margin-top:8px" placeholder="Export, load a file, or paste a bundle {wakewords, stt, intents, slots, profiles, settings}"></textarea>
-      <div class="row">${btn("Validate bundle", "bundleValidate", {}, "ghost")} ${btn("Import bundle", "bundleImport", {}, "danger")}
-        ${btn("Import server ./config/ YAML", "configImportServer", {}, "danger")}</div>
-      <div id="bundleResult"></div><p class="hint">YAML files: use <code>opal listen config export --out-dir</code> / <code>import --from-dir</code>.</p>`)}
-    ${card("Backups", ["opal_backup_list", "opal_backup_create", "opal_backup_download", "opal_backup_restore", "opal_backup_delete"],
-      `<p>${btn("Create backup", "backupCreate")}</p>` + table(backups, [["filename", "file"], ["size_bytes", "bytes"], ["created_at", "created"]],
-        { actions: r => btn("Download", "backupDownload", { name: r.filename }, "ghost small") +
-          btn("Restore", "backupRestore", { name: r.filename }, "small") + btn("Delete", "backupDelete", { name: r.filename }, "danger small"), empty: "No backups." }))}`;
+      <textarea class="mono" id="bundleText" style="min-height:220px;margin-top:8px" placeholder="Export, load a file, or paste a snapshot {format_version, module, created_at, settings, resources}"></textarea>
+      <div class="row">${btn("Validate snapshot", "bundleValidate", {}, "ghost")} ${btn("Load snapshot", "bundleImport", {}, "danger")}</div>
+      <div id="bundleResult"></div><p class="hint">Files: <code>opal listen config save --out FILE</code> / <code>config load --in FILE</code> / <code>config validate --in FILE</code>.</p>`)}`;
 };
 
 VIEWS.api = async () => {
@@ -798,7 +788,7 @@ const ACT = {
     const body = { name: $(`[data-ww="${d.id}"]`).value, confidence_threshold: Number($(`[data-ww-th="${d.id}"]`).value), enabled: $(`[data-ww-en="${d.id}"]`).checked };
     await apiWithEtag("PATCH", `/api/v1/wakeword/${d.id}`, { body }); toast("wakeword saved"); render();
   },
-  wwGet: async d => modal(`<h3>Wakeword ${esc(d.id)}</h3>${op("get_wakeword")}${kv(await api("GET", `/api/v1/wakeword/${d.id}`))}<p>${btn("Close", "closeModal")}</p>`),
+  wwGet: async d => modal(`<h3>Wakeword ${esc(d.id)}</h3>${op("show_wakeword")}${kv(await api("GET", `/api/v1/wakeword/${d.id}`))}<p>${btn("Close", "closeModal")}</p>`),
   wwDelete: async d => { confirmOr(`Delete wakeword '${d.name}'?`); await apiWithEtag("DELETE", `/api/v1/wakeword/${d.id}`); toast("wakeword deleted"); render(); },
 
   intentDelete: async d => { confirmOr(`Delete intent '${d.name}' and its phrases?`); await apiWithEtag("DELETE", `/api/v1/intent/${d.id}`); toast("intent deleted"); location.hash = "#/intents"; },
@@ -829,7 +819,7 @@ const ACT = {
   regressionEdit: async d => {
     const [t, intents] = await Promise.all([api("GET", `/api/v1/regression/${d.id}`), api("GET", "/api/v1/intent/")]);
     const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option ${n === t.expected_intent ? "selected" : ""}>${esc(n)}</option>`).join("");
-    modal(`<h3>Regression test ${t.id}</h3><div class="ops">${op("get_regression_test")} ${op("update_regression_test")}</div>
+    modal(`<h3>Regression test ${t.id}</h3><div class="ops">${op("show_regression_test")} ${op("update_regression_test")}</div>
       <form data-form="regressionUpdate" data-id="${t.id}">
       <label class="block"><span>name</span><input name="name" value="${esc(t.name)}"></label>
       <label class="block"><span>phrase</span><input name="phrase" value="${esc(t.phrase)}"></label>
@@ -842,7 +832,7 @@ const ACT = {
 
   failedEdit: async d => {
     const f = await api("GET", `/api/v1/failed_utterance/${d.id}`);
-    modal(`<h3>Failed utterance ${f.id}</h3><div class="ops">${op("get_failed_utterance")} ${op("update_failed_utterance")}</div>
+    modal(`<h3>Failed utterance ${f.id}</h3><div class="ops">${op("show_failed_utterance")} ${op("update_failed_utterance")}</div>
       <p><code>${esc(f.transcript)}</code> <span class="muted">log ${cell(f.recognition_log_id)} · ${cell(f.created_at)}</span></p>
       <form data-form="failedUpdate" data-id="${f.id}">
       <label class="block"><span>expected intent</span><input name="expected_intent" value="${esc(f.expected_intent || "")}"></label>
@@ -853,7 +843,7 @@ const ACT = {
   },
   failedPromote: async d => {
     const [f, intents] = await Promise.all([api("GET", `/api/v1/failed_utterance/${d.id}`), api("GET", "/api/v1/intent/")]);
-    modal(`<h3>Promote to training phrase</h3>${op("promote_to_phrase")}<p><code>${esc(f.transcript)}</code></p>
+    modal(`<h3>Promote to training phrase</h3>${op("promote_failed_utterance")}<p><code>${esc(f.transcript)}</code></p>
       <form data-form="failedPromote" data-id="${f.id}">
       <label class="block"><span>intent</span><select name="intent_name">${intents.map(i => `<option ${i.name === f.expected_intent ? "selected" : ""}>${esc(i.name)}</option>`).join("")}</select></label>
       <label><input type="checkbox" name="create_regression" checked> also create a regression test</label>
@@ -862,58 +852,62 @@ const ACT = {
   },
   failedDelete: async d => { confirmOr(`Delete failed utterance ${d.id}?`); await api("DELETE", `/api/v1/failed_utterance/${d.id}`); toast("deleted"); render(); },
   failedFromResult: async d => {
-    const f = await api("POST", "/api/v1/failed_utterance/", { body: { transcript: d.text, recognition_log_id: d.log ? Number(d.log) : null } });
+    const f = await api("POST", "/api/v1/failed_utterance/", { body: { transcript: d.text, recognition_log_id: d.log || null } });
     toast(`recorded as failed utterance ${f.id}`);
   },
 
   configValidate: async () => {
-    const r = await api("GET", "/api/v1/backup/validate");
+    const r = await api("POST", "/api/v1/config/validate", { body: { source: "live" } });
     $("#validateResult").innerHTML = validationHtml(r);
   },
-  configExport: async () => { $("#bundleText").value = JSON.stringify(await api("GET", "/api/v1/backup/export"), null, 2); toast("configuration exported"); },
+  configSaveManaged: async () => {
+    const r = await api("POST", "/api/v1/config/save", { body: { destination: "managed" } });
+    $("#managedResult").innerHTML = `<p><span class="badge ok">saved</span> revision <code>${esc(r.revision)}</code></p>`;
+  },
+  configLoadManaged: async () => {
+    confirmOr("Replace the live configuration with the managed snapshot? (atomic; rejected on stale revision)");
+    const r = await api("POST", "/api/v1/config/load", { body: { source: "managed" }, headers: { "If-Match": await configRevision() } });
+    $("#managedResult").innerHTML = loadHtml(r);
+    render(); refreshHeader();
+  },
+  configExport: async () => {
+    const r = await api("POST", "/api/v1/config/save", { body: { destination: "response" } });
+    $("#bundleText").value = JSON.stringify(r.snapshot, null, 2); toast("snapshot captured");
+  },
   configDownload: async () => {
-    const bundle = await api("GET", "/api/v1/backup/export");
-    download(`opal_listener_config_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.json`, JSON.stringify(bundle, null, 2));
+    const r = await api("POST", "/api/v1/config/save", { body: { destination: "response" } });
+    download(`opal_listener_snapshot_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.json`, JSON.stringify(r.snapshot, null, 2));
   },
   bundleValidate: async () => {
-    const r = await api("POST", "/api/v1/backup/validate", { body: parseJson($("#bundleText").value, "bundle") });
+    const r = await api("POST", "/api/v1/config/validate", { body: { source: "body", snapshot: parseJson($("#bundleText").value, "snapshot") } });
     $("#bundleResult").innerHTML = validationHtml(r);
   },
   bundleImport: async () => {
-    const bundle = parseJson($("#bundleText").value, "bundle");
-    confirmOr("Replace wakewords, intents, slots, profiles and settings with this bundle? (a backup is taken first)");
-    const r = await apiWithEtag("POST", "/api/v1/backup/import", { etagPath: "/api/v1/backup/export", body: bundle });
-    $("#bundleResult").innerHTML = importHtml(r);
-    refreshHeader();
+    const snapshot = parseJson($("#bundleText").value, "snapshot");
+    confirmOr("Replace wakewords, intents, slots, profiles, personas and settings with this snapshot? (atomic; rejected on stale revision)");
+    const r = await api("POST", "/api/v1/config/load", { body: { source: "body", snapshot }, headers: { "If-Match": await configRevision() } });
+    $("#bundleResult").innerHTML = loadHtml(r);
+    render(); refreshHeader();
   },
-  configImportServer: async () => {
-    confirmOr("Replace the configuration with the server's ./config/ YAML files? (a backup is taken first)");
-    const r = await apiWithEtag("POST", "/api/v1/backup/import", { etagPath: "/api/v1/backup/export" });
-    $("#bundleResult").innerHTML = importHtml(r);
-    refreshHeader();
-  },
-  backupCreate: async () => { toast(`backup created: ${(await api("POST", "/api/v1/backup/create")).filename}`); render(); },
-  backupRestore: async d => {
-    confirmOr(`Restore ${d.name}? The current database is backed up first and restored automatically if this fails.`);
-    const r = await apiWithEtag("POST", `/api/v1/backup/restore/${enc(d.name)}`, { etagPath: "/api/v1/backup/export" });
-    toast(`restored ${r.filename} (previous state: ${r.rollback_backup})`); render(); refreshHeader();
-  },
-  backupDownload: async d => {
-    const res = await fetch(`${S.base}/api/v1/backup/download/${enc(d.name)}`, { headers: S.token ? { Authorization: `Bearer ${S.token}` } : {} });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(await res.blob()); a.download = d.name; a.click(); URL.revokeObjectURL(a.href);
-  },
-  backupDelete: async d => { confirmOr(`Delete backup ${d.name}?`); await api("DELETE", `/api/v1/backup/${enc(d.name)}`); toast("backup deleted"); render(); },
 };
 
-function validationHtml(r) {
-  return `<p>${r.valid ? '<span class="badge ok">valid</span>' : '<span class="badge err">invalid</span>'} ${esc(JSON.stringify(r.sources || {}))}</p>` +
-    r.errors.map(e => `<div class="err">error: ${esc(e)}</div>`).join("") + r.warnings.map(w => `<div class="warn">warning: ${esc(w)}</div>`).join("");
+// Live-configuration revision for config load's mandatory If-Match (non-mutating probe).
+async function configRevision() {
+  return (await api("POST", "/api/v1/config/save", { body: { destination: "response" } })).revision;
 }
-function importHtml(r) {
-  return `<p><span class="badge ok">${esc(r.status)}</span> backup <code>${esc(r.backup_filename)}</code></p>${kv(r.counts)}` +
-    r.warnings.map(w => `<div class="warn">warning: ${esc(w)}</div>`).join("");
+
+function issueHtml(i, cls, label) {
+  return `<div class="${cls}">${label}: <code>${esc(i.path)}</code> ${esc(i.message)}</div>`;
+}
+function validationHtml(r) {
+  return `<p>${r.valid ? '<span class="badge ok">valid</span>' : '<span class="badge err">invalid</span>'}</p>` +
+    (r.errors || []).map(i => issueHtml(i, "err", "error")).join("") +
+    (r.warnings || []).map(i => issueHtml(i, "warn", "warning")).join("");
+}
+function loadHtml(r) {
+  return `<p><span class="badge ok">loaded</span> revision <code>${esc(r.revision)}</code></p>${kv(r.applied)}` +
+    (r.pending_restart_fields || []).map(k => `<div class="warn">pending restart: ${esc(k)}</div>`).join("") +
+    (r.warnings || []).map(i => issueHtml(i, "warn", "warning")).join("");
 }
 
 const FORM = {
@@ -1012,7 +1006,7 @@ const FORM = {
     const intents = await api("GET", "/api/v1/intent/");
     const target = intents.find(i => i.name === v.intent_name);
     if (!target) throw new Error(`intent '${v.intent_name}' not found`);
-    const r = await apiWithEtag("POST", `/api/v1/failed_utterance/${f.dataset.id}/promote`, { etagPath: `/api/v1/intent/${target.id}/phrase`, query: { intent_name: v.intent_name, create_regression: v.create_regression } });
+    const r = await apiWithEtag("POST", `/api/v1/failed_utterance/${f.dataset.id}/promote`, { etagPath: `/api/v1/intent/${target.id}/phrase`, body: { intent_id: target.id, create_regression: v.create_regression } });
     closeModal(); toast(`added phrase '${r.phrase.phrase}'` + (r.regression_test ? ` and regression test ${r.regression_test.id}` : "")); render();
   },
 

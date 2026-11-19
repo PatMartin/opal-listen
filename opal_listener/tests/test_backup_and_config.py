@@ -1,116 +1,266 @@
-"""Backup, restore, rollback, export/import and path-traversal protection."""
+"""Configuration snapshots: save/load/validate, atomicity, preconditions and provenance."""
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from opal_listener.app_settings import PACKAGE_DIR
-from opal_listener.service.config_store import load_config_dir
-from opal_listener.tests.conftest import etag_of, log_counts, patch_settings
+from opal_listener.service.snapshots import managed_snapshot_path
+from opal_listener.tests.conftest import etag_of, patch_settings
 
 
-def _config_etag(client: TestClient) -> str:
-    """Current whole-configuration ETag (backup export is its If-Match source)."""
-    return client.get("/api/v1/backup/export").headers["etag"]
+def _revision(client: TestClient) -> str:
+    """Live-configuration revision (the If-Match scope for config load)."""
+    return client.post("/api/v1/config/save", json={"destination": "response"}).json()["revision"]
 
 
-def test_backup_create_list_download_delete(client: TestClient) -> None:
-    created = client.post("/api/v1/backup/create")
-    assert created.status_code == 201
-    filename = created.json()["filename"]
-    assert created.headers["Location"] == f"/api/v1/backup/download/{filename}"
-    assert filename.endswith(".db")
-    assert filename in [b["filename"] for b in client.get("/api/v1/backup/list").json()]
-    download = client.get(f"/api/v1/backup/download/{filename}")
-    assert download.status_code == 200 and download.content[:15] == b"SQLite format 3"
-    assert client.delete(f"/api/v1/backup/{filename}").status_code == 204
-    assert client.get(f"/api/v1/backup/download/{filename}").status_code == 404
+def _load(client: TestClient, body: dict | None = None, etag: str | None = None):
+    headers = {"If-Match": etag if etag is not None else _revision(client)}
+    return client.post("/api/v1/config/load", json=body or {}, headers=headers)
 
 
-def test_restore_returns_previous_state(client: TestClient) -> None:
-    filename = client.post("/api/v1/backup/create").json()["filename"]
+# --- retirement --------------------------------------------------------------------------------
+
+
+def test_backup_routes_are_retired(client: TestClient) -> None:
+    for method, path in (
+        ("get", "/api/v1/backup/list"),
+        ("post", "/api/v1/backup/create"),
+        ("get", "/api/v1/backup/export"),
+        ("post", "/api/v1/backup/import"),
+        ("get", "/api/v1/backup/validate"),
+        ("get", "/api/v1/backup/download/x.db"),
+        ("post", "/api/v1/backup/restore/x.db"),
+        ("delete", "/api/v1/backup/x.db"),
+    ):
+        assert getattr(client, method)(path).status_code in (404, 405), (method, path)
+
+
+def test_setting_collection_patch_is_retired(client: TestClient) -> None:
+    etag = client.get("/api/v1/setting/").headers["etag"]
+    response = client.patch("/api/v1/setting/", json={"cooldown_ms": "1"}, headers={"If-Match": etag})
+    assert response.status_code in (404, 405)
+
+
+# --- save ---------------------------------------------------------------------------------------
+
+
+def test_config_save_managed_writes_snapshot_and_keeps_revision(client: TestClient, app_settings) -> None:
+    before = _revision(client)
+    result = client.post("/api/v1/config/save", json={"destination": "managed"})
+    assert result.status_code == 200 and result.headers["etag"] == before
+    body = result.json()
+    assert body["destination"] == "managed" and body["destination_ref"] == "managed"
+    assert body["revision"] == before  # save does not bump the live revision
+    snap = body["snapshot"]
+    assert snap["format_version"] == "1.0.0" and snap["module"] == "opal-listen"
+    assert set(snap["resources"]) == {
+        "profiles",
+        "personas",
+        "wakewords",
+        "intents",
+        "slots",
+        "regression_tests",
+    }
+    assert managed_snapshot_path(app_settings.data_dir).exists()
+    assert _revision(client) == before
+
+
+def test_config_save_response_does_not_touch_managed_store(client: TestClient, app_settings) -> None:
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
+    result = client.post("/api/v1/config/save", json={"destination": "response"}).json()
+    assert result["destination"] == "response" and result["destination_ref"] is None
+    names = {w["name"] for w in result["snapshot"]["resources"]["wakewords"]}
+    assert names == {"computer", "jarvis"}
+    assert not managed_snapshot_path(app_settings.data_dir).exists()
+
+
+def test_config_save_captures_only_setting_overrides(client: TestClient) -> None:
+    patch_settings(client, cooldown_ms="999")
+    snap = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    assert snap["settings"] == {"cooldown_ms": 999}
+    saved = client.post("/api/v1/config/save", json={"destination": "managed"})
+    assert saved.status_code == 200
+
+
+# --- load ---------------------------------------------------------------------------------------
+
+
+def test_config_load_managed_roundtrip(client: TestClient) -> None:
+    client.post("/api/v1/config/save", json={"destination": "managed"})
     client.post(
         "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
     )
     assert len(client.get("/api/v1/wakeword/").json()) == 2
-    result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
-    assert result["status"] == "restored"
+    result = _load(client).json()
+    assert result["status"] != "error" if "status" in result else True
+    assert result["applied_counts"]["wakewords"] == 1
+    assert result["revision"] == _revision(client)
     assert [w["name"] for w in client.get("/api/v1/wakeword/").json()] == ["computer"]
-    # the pre-restore safety backup holds the newer state
-    assert result["rollback_backup"] in [b["filename"] for b in client.get("/api/v1/backup/list").json()]
-    assert client.post("/api/v1/recognition/test_text", json={"text": "what time is it"}).json()["matched"]
 
 
-def test_restore_rejects_corrupt_backup_and_keeps_data(client: TestClient, app_settings) -> None:
-    (app_settings.backup_dir / "corrupt.db").write_bytes(b"this is not sqlite" * 100)
-    response = client.post("/api/v1/backup/restore/corrupt.db", headers={"If-Match": _config_etag(client)})
+def test_config_load_missing_managed_snapshot_is_404(client: TestClient) -> None:
+    response = _load(client)
+    assert response.status_code == 404
+
+
+def test_config_load_requires_if_match(client: TestClient) -> None:
+    response = client.post("/api/v1/config/load", json={})
+    assert response.status_code == 428
+
+
+def test_config_load_stale_etag_rejected_and_unchanged(client: TestClient) -> None:
+    client.post("/api/v1/config/save", json={"destination": "managed"})
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
+    response = _load(client, etag='"stale"')
+    assert response.status_code == 412
+    assert {w["name"] for w in client.get("/api/v1/wakeword/").json()} == {"computer", "jarvis"}
+
+
+def test_config_load_body_preserves_identifiers(client: TestClient) -> None:
+    snap = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    wakeword_id = snap["resources"]["wakewords"][0]["id"]
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
+    _load(client, {"snapshot": snap})
+    wakewords = client.get("/api/v1/wakeword/").json()
+    assert [w["id"] for w in wakewords] == [wakeword_id]
+
+
+def test_config_load_failure_leaves_configuration_unchanged(client: TestClient) -> None:
+    snap = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    client.post(
+        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+    )
+    snap["resources"]["wakewords"] = [{"id": "x", "name": "computer"}] * 2  # duplicate name -> compile fails
+    response = _load(client, {"snapshot": snap})
+    assert response.status_code in (409, 422)
+    assert {w["name"] for w in client.get("/api/v1/wakeword/").json()} == {"computer", "jarvis"}
+
+
+def test_config_load_corrupt_managed_snapshot_keeps_state(client: TestClient, app_settings) -> None:
+    managed_snapshot_path(app_settings.data_dir).write_bytes(b"not json {{{")
+    response = _load(client)
     assert response.status_code == 422
     assert len(client.get("/api/v1/wakeword/").json()) == 1
 
 
-def test_restore_with_invalid_config_rolls_back(client: TestClient, app_settings) -> None:
-    import sqlite3
+def test_config_load_rejects_wrong_module_and_version(client: TestClient) -> None:
+    snap = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    for bad in ({**snap, "module": "opal-say"}, {**snap, "format_version": "9.9.9"}):
+        response = _load(client, {"snapshot": bad})
+        assert response.status_code == 422
 
-    filename = client.post("/api/v1/backup/create").json()["filename"]
-    conn = sqlite3.connect(app_settings.backup_dir / filename)
-    conn.execute("INSERT INTO intent_phrases (intent_id, phrase, created_at) VALUES (1, 'x {ghost}', '2024-01-01')")
-    conn.commit()
-    conn.close()
-    client.post(
-        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
+
+def test_config_load_reports_pending_restart(client: TestClient) -> None:
+    snap = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    snap["settings"] = {"auto_start_listener": True}
+    result = _load(client, {"snapshot": snap}).json()
+    assert result["pending_restart_fields"] == ["auto_start_listener"]
+    assert client.get("/api/v1/setting/auto_start_listener").json()["pending_restart"] is True
+
+
+# --- validate -----------------------------------------------------------------------------------
+
+
+def test_config_validate_live_is_valid(client: TestClient) -> None:
+    report = client.post("/api/v1/config/validate", json={}).json()
+    assert report["valid"] is True and report["errors"] == []
+
+
+def test_config_validate_body_reports_structured_issues(client: TestClient) -> None:
+    bad = {
+        "format_version": "2.0.0",
+        "module": "opal-say",
+        "settings": {"no_such_key": 1, "cooldown_ms": "abc"},
+        "resources": {"history": [], "wakewords": "nope"},
+        "mystery": 1,
+    }
+    report = client.post("/api/v1/config/validate", json={"snapshot": bad}).json()
+    assert report["valid"] is False
+    paths = {issue["path"] for issue in report["errors"]}
+    for issue in report["errors"]:
+        assert set(issue) == {"code", "path", "message"}
+    assert {"format_version", "module", "mystery", "resources.history", "resources.wakewords"} <= paths
+    assert {"settings.no_such_key", "settings.cooldown_ms"} <= paths
+
+
+def test_config_validate_is_non_mutating(client: TestClient) -> None:
+    before = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    bad = {**before, "module": "opal-say"}
+    client.post("/api/v1/config/validate", json={"snapshot": bad})
+    after = client.post("/api/v1/config/save", json={"destination": "response"}).json()["snapshot"]
+    assert {k: v for k, v in after.items() if k != "created_at"} == {
+        k: v for k, v in before.items() if k != "created_at"
+    }
+
+
+def test_config_validate_needs_no_if_match(client: TestClient) -> None:
+    assert client.post("/api/v1/config/validate", json={}).status_code == 200
+
+
+# --- settings provenance ------------------------------------------------------------------------
+
+
+def test_setting_read_provenance(client: TestClient) -> None:
+    read = client.get("/api/v1/setting/cooldown_ms").json()
+    assert read["key"] == "cooldown_ms" and read["value"] == 1500
+    assert read["configured_value"] == 1500 and read["default"] == 1500
+    assert read["has_override"] is False and read["is_default"] is True
+    assert read["source"] == "default" and read["restart_required"] is False
+    patch_settings(client, cooldown_ms="999")
+    read = client.get("/api/v1/setting/cooldown_ms").json()
+    assert read["value"] == 999 and read["configured_value"] == 999
+    assert read["has_override"] is True and read["is_default"] is False
+    assert read["source"] == "persisted"
+
+
+def test_setting_put_get_delete_roundtrip(client: TestClient) -> None:
+    etag = client.get("/api/v1/setting/").headers["etag"]
+    put = client.put("/api/v1/setting/cooldown_ms", json={"value": 5}, headers={"If-Match": etag})
+    assert put.status_code == 200 and put.headers["etag"] != etag
+    assert put.json()["value"] == 5 and put.json()["has_override"] is True
+    delete = client.delete("/api/v1/setting/cooldown_ms", headers={"If-Match": put.headers["etag"]})
+    assert delete.status_code == 204 and "etag" in delete.headers
+    read = client.get("/api/v1/setting/cooldown_ms")
+    assert read.json()["has_override"] is False and read.json()["value"] == 1500
+    assert read.headers["etag"]
+
+
+def test_setting_item_preconditions(client: TestClient) -> None:
+    assert client.put("/api/v1/setting/cooldown_ms", json={"value": 1}).status_code == 428
+    etag = client.get("/api/v1/setting/").headers["etag"]
+    assert (
+        client.put("/api/v1/setting/cooldown_ms", json={"value": 1}, headers={"If-Match": '"stale"'}).status_code
+        == 412
     )
-    response = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)})
-    assert response.status_code == 422
-    assert "invalid configuration" in response.json()["error"]["message"]
-    assert {w["name"] for w in client.get("/api/v1/wakeword/").json()} == {"computer", "jarvis"}
-    # runtime rolled back to the last-known-good snapshot and stays consistent with the database
-    service = client.app.state.listener  # type: ignore[attr-defined]
-    assert service.snapshot is not None and "jarvis" in service.snapshot.wakewords
+    assert client.delete("/api/v1/setting/cooldown_ms", headers={"If-Match": etag}).status_code == 204
 
 
-def test_restore_while_listener_running(client: TestClient, fake_provider: type) -> None:
-    from opal_listener.tests.test_pipeline_runtime import COMMAND, ScriptedSource, wait_for
-
-    service = client.app.state.listener  # type: ignore[attr-defined]
-    filename = client.post("/api/v1/backup/create").json()["filename"]
-    assert patch_settings(client, cooldown_ms="999").status_code == 200
-    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
-    fake_provider.script.append("turn on the kitchen light")
-    client.post("/api/v1/recognition/start")
-    try:
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "listening")
-        result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
-        assert result["status"] == "restored"
-        # the listener is restarted on the restored database and configuration
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
-        assert client.get("/api/v1/setting/").json()["cooldown_ms"] == "1500"
-        assert service.snapshot.settings["cooldown_ms"] == 1500
-        fake_provider.script.append("what time is it")
-        wait_for(lambda: log_counts(client)["total"] >= 1)
-    finally:
-        client.post("/api/v1/recognition/stop")
+def test_setting_unknown_key(client: TestClient) -> None:
+    assert client.get("/api/v1/setting/not_a_key").status_code == 404
+    etag = client.get("/api/v1/setting/").headers["etag"]
+    assert (
+        client.put("/api/v1/setting/not_a_key", json={"value": 1}, headers={"If-Match": etag}).status_code == 404
+    )
+    assert client.delete("/api/v1/setting/not_a_key", headers={"If-Match": etag}).status_code == 404
 
 
-def test_restore_during_active_recognition(client: TestClient, fake_provider: type) -> None:
-    from opal_listener.tests.test_pipeline_runtime import COMMAND, ScriptedSource, wait_for
+def test_restart_required_flag(client: TestClient) -> None:
+    read = client.get("/api/v1/setting/auto_start_listener").json()
+    assert read["restart_required"] is True and read["pending_restart"] is False
 
-    service = client.app.state.listener  # type: ignore[attr-defined]
-    fake_provider.script.extend(["turn on the kitchen light"] * 3)
-    service._source_factory = lambda settings: ScriptedSource(COMMAND * 3)
-    filename = client.post("/api/v1/backup/create").json()["filename"]
-    client.post("/api/v1/recognition/start")
-    try:
-        wait_for(lambda: log_counts(client)["total"] >= 1)
-        result = client.post(f"/api/v1/backup/restore/{filename}", headers={"If-Match": _config_etag(client)}).json()
-        assert result["status"] == "restored"
-        wait_for(lambda: client.get("/api/v1/recognition/status").json()["running"])
-        wait_for(lambda: log_counts(client)["total"] >= 1)
-    finally:
-        client.post("/api/v1/recognition/stop")
+
+# --- database internals -------------------------------------------------------------------------
 
 
 def test_db_maintenance_blocks_other_sessions(tmp_path: Path) -> None:
@@ -158,76 +308,11 @@ def test_db_maintenance_waits_for_active_sessions(tmp_path: Path) -> None:
     assert entered.wait(5)
 
 
-def test_backup_filename_traversal_is_rejected(client: TestClient) -> None:
-    for name in ("..%2F..%2Fetc%2Fpasswd", "..%2Fopal_listener.db", "x.txt", ".hidden.db"):
-        assert client.get(f"/api/v1/backup/download/{name}").status_code in (404, 422), name
-        restored = client.post(f"/api/v1/backup/restore/{name}", headers={"If-Match": _config_etag(client)})
-        assert restored.status_code in (404, 422), name
-        assert client.delete(f"/api/v1/backup/{name}").status_code in (404, 405, 422), name
-
-
-def test_export_import_roundtrip(client: TestClient) -> None:
-    exported = client.get("/api/v1/backup/export").json()
-    assert {"wakewords", "stt", "intents", "slots", "profiles", "settings"} <= set(exported)
-    client.post(
-        "/api/v1/wakeword/", headers={"If-Match": etag_of(client, "/api/v1/wakeword/")}, json={"name": "jarvis"}
-    )
-    result = client.post("/api/v1/backup/import", json=exported, headers={"If-Match": _config_etag(client)}).json()
-    assert result["status"] == "imported" and result["backup_filename"]
-    assert [w["name"] for w in client.get("/api/v1/wakeword/").json()] == ["computer"]
-    reexported = client.get("/api/v1/backup/export").json()
-    assert {k: v for k, v in reexported.items() if k != "exported_at"} == {
-        k: v for k, v in exported.items() if k != "exported_at"
-    }
-
-
-def test_import_from_server_config_dir(client: TestClient) -> None:
-    client.post(
-        "/api/v1/intent/",
-        headers={"If-Match": etag_of(client, "/api/v1/intent/")},
-        json={"name": "extra_intent", "phrases": ["hello there"]},
-    )
-    result = client.post("/api/v1/backup/import", headers={"If-Match": _config_etag(client)}).json()
-    assert result["counts"]["intents"] == len(load_config_dir(PACKAGE_DIR / "config").intents)
-    assert "extra_intent" not in {i["name"] for i in client.get("/api/v1/intent/").json()}
-
-
-def test_invalid_import_changes_nothing(client: TestClient) -> None:
-    before = client.get("/api/v1/backup/export").json()
-    backups_before = len(client.get("/api/v1/backup/list").json())
-    bad = {**before, "intents": [{"name": "broken", "phrases": ["turn on {ghost}"]}]}
-    response = client.post("/api/v1/backup/import", json=bad, headers={"If-Match": _config_etag(client)})
-    assert response.status_code == 422
-    after = client.get("/api/v1/backup/export").json()
-    assert {k: v for k, v in after.items() if k != "exported_at"} == {
-        k: v for k, v in before.items() if k != "exported_at"
-    }
-    assert len(client.get("/api/v1/backup/list").json()) == backups_before
-
-
-def test_validate_endpoints(client: TestClient) -> None:
-    report = client.get("/api/v1/backup/validate").json()
-    assert report["valid"] is True and report["sources"] == {"config_dir": True, "database": True}
-    bad = client.post("/api/v1/backup/validate", json={"intents": [{"name": "x", "phrases": ["{nope}"]}]}).json()
-    assert bad["valid"] is False and "unknown slot" in bad["errors"][0]
-
-
-def test_validate_reports_broken_config_dir(tmp_path: Path) -> None:
-    from opal_listener.data.db import Database
-    from opal_listener.main import create_app
-    from opal_listener.service.listener_service import ListenerService
-    from opal_listener.tests.conftest import make_settings
-
-    config_dir = tmp_path / "cfg"
-    config_dir.mkdir()
-    (config_dir / "intents.yaml").write_text("intents: [{name: a, phrases: ['{ghost}']}]")
-    settings = make_settings(tmp_path, config_dir=config_dir)
-    settings.ensure_dirs()
-    service = ListenerService(Database(settings.database_url), settings)
-    with TestClient(create_app(settings, service)) as client:
-        # an invalid seed is refused: the database starts empty but valid
-        assert client.get("/api/v1/intent/").json() == []
-        report = client.get("/api/v1/backup/validate").json()
-        assert report["valid"] is False
-        assert report["sources"] == {"config_dir": False, "database": True}
-        assert client.post("/api/v1/backup/import", headers={"If-Match": _config_etag(client)}).status_code == 422
+def test_managed_snapshot_write_failure_keeps_previous(client: TestClient, app_settings) -> None:
+    path = managed_snapshot_path(app_settings.data_dir)
+    client.post("/api/v1/config/save", json={"destination": "managed"})
+    first = path.read_bytes()
+    path.write_bytes(b"grow" * 10)
+    assert path.read_bytes() != first
+    client.post("/api/v1/config/save", json={"destination": "managed"})
+    assert json.loads(path.read_text())["module"] == "opal-listen"

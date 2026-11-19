@@ -7,8 +7,8 @@ from typing import Any
 from sqlmodel import Session, col, select
 
 from opal_listener.models import schemas as s
-from opal_listener.models.tables import FailedUtterance, IntentPhrase, RegressionTest, utc_now
-from opal_listener.service.catalog import get_intent_by_name, get_or_404
+from opal_listener.models.tables import FailedUtterance, Intent, IntentPhrase, RegressionTest, utc_now
+from opal_listener.service.catalog import get_or_404
 from opal_listener.service.errors import InvalidRequestError
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.service.nlu.normalizer import normalize_text, split_wakeword
@@ -83,10 +83,10 @@ def delexicalize(text: str, slot_names: set[str], snapshot: RuntimeSnapshot) -> 
 
 
 def promote(
-    session: Session, service: ListenerService, fu_id: int, intent_name: str, create_regression: bool
+    session: Session, service: ListenerService, fu_id: int, intent: Intent, create_regression: bool
 ) -> tuple[FailedUtterance, IntentPhrase, RegressionTest | None]:
     fu = get_or_404(session, FailedUtterance, fu_id, "failed utterance")
-    intent = get_intent_by_name(session, intent_name)
+    intent_name = intent.name
     snapshot = service.snapshot
     _, command = split_wakeword(normalize_text(fu.transcript), snapshot.wakewords)
     command = normalize_text(command, snapshot.filler_words)

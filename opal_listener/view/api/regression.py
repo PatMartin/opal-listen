@@ -5,6 +5,7 @@ from sqlmodel import col, select
 
 from opal_listener.models.opal_standard import OPAL_404_RESPONSE, OPAL_422_RESPONSE, OPAL_PRECONDITION_RESPONSES
 from opal_listener.models.schemas import (
+    IdPath,
     RegressionRunResult,
     RegressionTestCreate,
     RegressionTestRead,
@@ -12,7 +13,7 @@ from opal_listener.models.schemas import (
 )
 from opal_listener.models.tables import RegressionTest
 from opal_listener.service import review
-from opal_listener.service.catalog import get_or_404
+from opal_listener.service.catalog import get_by_ref
 from opal_listener.service.concurrency import collection_etag, item_etag, require_matching_etag
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.view.api.deps import get_service
@@ -25,7 +26,7 @@ def _list(session: object) -> list[RegressionTestRead]:
     return [RegressionTestRead.model_validate(r) for r in rows]
 
 
-@router.get("/", response_model=list[RegressionTestRead], responses=OPAL_422_RESPONSE)
+@router.get("/", response_model=list[RegressionTestRead], responses=OPAL_422_RESPONSE, operation_id="list_regression_tests")
 def list_regression_tests(response: Response, svc: ListenerService = Depends(get_service)) -> list[RegressionTestRead]:
     with svc.db.session() as session:
         items = _list(session)
@@ -33,7 +34,7 @@ def list_regression_tests(response: Response, svc: ListenerService = Depends(get
     return items
 
 
-@router.post("/", response_model=RegressionTestRead, status_code=201, responses=OPAL_PRECONDITION_RESPONSES)
+@router.post("/", response_model=RegressionTestRead, status_code=201, responses=OPAL_PRECONDITION_RESPONSES, operation_id="create_regression_test")
 def create_regression_test(
     data: RegressionTestCreate,
     response: Response,
@@ -50,34 +51,34 @@ def create_regression_test(
     return result
 
 
-@router.post("/run", response_model=RegressionRunResult)
+@router.post("/run", response_model=RegressionRunResult, operation_id="run_regression_tests")
 def run_regression_tests(enabled_only: bool = True, svc: ListenerService = Depends(get_service)) -> RegressionRunResult:
     """Run all (enabled) regression tests against the current intent model."""
     with svc.db.session() as session:
         return review.run_regression(session, svc, enabled_only)
 
 
-@router.get("/{test_id}", response_model=RegressionTestRead, responses=OPAL_404_RESPONSE)
-def get_regression_test(
-    test_id: int, response: Response, svc: ListenerService = Depends(get_service)
+@router.get("/{test_id}", response_model=RegressionTestRead, responses=OPAL_404_RESPONSE, operation_id="show_regression_test")
+def show_regression_test(
+    test_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> RegressionTestRead:
     with svc.db.session() as session:
-        item = RegressionTestRead.model_validate(get_or_404(session, RegressionTest, test_id, "regression test"))
+        item = RegressionTestRead.model_validate(get_by_ref(session, RegressionTest, test_id, "regression test"))
     response.headers["ETag"] = item_etag(item)
     return item
 
 
 @router.patch(
-    "/{test_id}", response_model=RegressionTestRead, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
+    "/{test_id}", response_model=RegressionTestRead, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}, operation_id="update_regression_test"
 )
 def update_regression_test(
-    test_id: int,
+    test_id: IdPath,
     data: RegressionTestUpdate,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> RegressionTestRead:
     with svc.db.session() as session:
-        obj = get_or_404(session, RegressionTest, test_id, "regression test")
+        obj = get_by_ref(session, RegressionTest, test_id, "regression test")
         require_matching_etag(if_match, item_etag(RegressionTestRead.model_validate(obj)), "regression test")
         for key, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
             setattr(obj, key, value)
@@ -86,14 +87,14 @@ def update_regression_test(
         return RegressionTestRead.model_validate(obj)
 
 
-@router.delete("/{test_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES})
-def delete_regression_test(
-    test_id: int,
+@router.delete("/{test_id}", status_code=204, responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES}, operation_id="remove_regression_test")
+def remove_regression_test(
+    test_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.db.session() as session:
-        obj = get_or_404(session, RegressionTest, test_id, "regression test")
+        obj = get_by_ref(session, RegressionTest, test_id, "regression test")
         require_matching_etag(if_match, item_etag(RegressionTestRead.model_validate(obj)), "regression test")
         session.delete(obj)
         session.commit()

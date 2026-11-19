@@ -21,6 +21,8 @@ class SettingDef:
     choices: tuple[str, ...] | None = None
     minimum: float | None = None
     maximum: float | None = None
+    # True when the value is only read during service startup (a live edit needs a restart).
+    restart_required: bool = False
 
     def default_value(self) -> Scalar:
         return self.default() if callable(self.default) else self.default
@@ -55,7 +57,8 @@ SETTINGS: dict[str, SettingDef] = {
         SettingDef("audio_device", str, "", "stt", "Input device index or name substring ('' = default)"),
         SettingDef("audio_capture_rate", int, 0, "stt", "Capture sample rate (0 = auto)", minimum=0, maximum=192000),
         SettingDef("audio_block_ms", int, 100, "stt", "Audio frame size in ms", minimum=20, maximum=500),
-        SettingDef("auto_start_listener", bool, False, "settings", "Start the microphone pipeline on startup"),
+        SettingDef("auto_start_listener", bool, False, "settings", "Start the microphone pipeline on startup",
+                   restart_required=True),
         SettingDef("cooldown_ms", int, 1500, "settings", "Ignore wakewords for this long after a session",
                    minimum=0, maximum=60000),
         SettingDef("dedup_window_ms", int, 2000, "settings", "Flag identical results within this window",

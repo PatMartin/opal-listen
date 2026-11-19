@@ -1,4 +1,4 @@
-"""Atomic portable settings: collection GET/PATCH plus per-key GET/PUT/DELETE (OPAL v1.3)."""
+"""Portable settings: collection GET plus per-key GET/PUT/DELETE (OPAL kernel v2)."""
 
 from __future__ import annotations
 
@@ -27,11 +27,16 @@ from opal_listener.service.settings_registry import (
 )
 from opal_listener.view.api.deps import get_service
 
-router = APIRouter(prefix="/api/v1/setting", tags=["settings"])
+router = APIRouter(prefix="/api/v1/setting", tags=["config"])
 
 
 def _all_settings(session: Any) -> dict[str, str]:
     return {row.key: row.value for row in session.exec(select(Setting).order_by(Setting.key)).all()}
+
+
+def _map_etag(session: Any) -> str:
+    """Strong revision of the whole settings map; the If-Match scope for per-key writes."""
+    return compute_etag(_all_settings(session))
 
 
 def _row(session: Any, key: str) -> Setting | None:
@@ -49,20 +54,26 @@ def _ensure_row(session: Any, key: str) -> Setting:
     return row
 
 
-def _setting_read(row: Setting, key: str) -> SettingRead:
-    default = SETTINGS[key].default_value()
+def _setting_read(svc: ListenerService, row: Setting, key: str) -> SettingRead:
+    definition = SETTINGS[key]
+    default = definition.default_value()
     try:
-        value = parse_setting(key, row.value)
+        configured = parse_setting(key, row.value)
     except SettingValueError:
-        value = row.value
+        configured = row.value
+    has_override = configured != default
     return SettingRead(
         id=row.id or 0,
         key=key,
-        value=value,
+        value=configured,
+        configured_value=configured,
         updated_at=row.updated_at,
         default=default,
-        is_default=value == default,
-        pending_restart=False,
+        has_override=has_override,
+        is_default=not has_override,
+        source="persisted" if has_override else "default",
+        restart_required=definition.restart_required,
+        pending_restart=svc.setting_pending_restart(key, configured),
     )
 
 
@@ -80,51 +91,22 @@ def opal_setting_list(response: Response, svc: ListenerService = Depends(get_ser
     return data
 
 
-@router.patch(
-    "/",
-    response_model=OpalSettingsMap,
-    responses={**OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="opal_setting_patch",
-)
-def opal_setting_patch(
-    changes: OpalSettingsMap,
-    response: Response,
-    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
-    svc: ListenerService = Depends(get_service),
-) -> dict[str, str]:
-    """Atomically patch one or more settings. Requires a strong If-Match (missing 428, stale 412)."""
-    patch = changes.model_dump()
-    if not patch:
-        raise InvalidRequestError("at least one setting must be provided")
-    with svc.config_change() as session:
-        current = _all_settings(session)
-        require_matching_etag(if_match, compute_etag(current), "settings")
-        for key, raw_value in patch.items():
-            try:
-                parsed = parse_setting(key, raw_value)
-            except SettingValueError as exc:
-                raise InvalidRequestError(str(exc)) from exc
-            row = session.exec(select(Setting).where(Setting.key == key)).first() or Setting(key=key, value="")
-            row.value = to_storage(parsed)
-            row.updated_at = utc_now()
-            session.add(row)
-        session.flush()
-        result = _all_settings(session)
-    response.headers["ETag"] = compute_etag(result)
-    return result
-
-
 @router.get(
     "/{key}",
     operation_id="opal_setting_get",
     response_model=SettingRead,
     responses={**OPAL_404_RESPONSE, **OPAL_422_RESPONSE},
 )
-def opal_setting_get(key: str = Path(min_length=1), svc: ListenerService = Depends(get_service)) -> SettingRead:
-    """Read one setting with its registry default metadata (kernel opal_setting_get)."""
+def opal_setting_get(
+    key: str = Path(min_length=1), response: Response = ..., svc: ListenerService = Depends(get_service)
+) -> SettingRead:
+    """Read one setting record: effective value, configured value, default and provenance."""
     with svc.db.session() as session:
         row = _ensure_row(session, _known_key(key))
-        return _setting_read(row, key)
+        etag = _map_etag(session)
+        read = _setting_read(svc, row, key)
+    response.headers["ETag"] = etag
+    return read
 
 
 @router.put(
@@ -135,25 +117,28 @@ def opal_setting_get(key: str = Path(min_length=1), svc: ListenerService = Depen
 )
 def opal_setting_put(
     update: SettingUpdate,
+    response: Response,
     key: str = Path(min_length=1),
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> SettingRead:
-    """Create or replace one setting value. Requires the settings-map If-Match (428/412)."""
+    """Create or replace one setting override. Requires the settings-map If-Match (428/412)."""
     key = _known_key(key)
     try:
         parsed = parse_setting(key, update.value)
     except SettingValueError as exc:
         raise InvalidRequestError(str(exc)) from exc
     with svc.config_change() as session:
-        require_matching_etag(if_match, compute_etag(_all_settings(session)), "settings")
+        require_matching_etag(if_match, _map_etag(session), "settings")
         row = _ensure_row(session, key)
         row.value = to_storage(parsed)
         row.updated_at = utc_now()
         session.add(row)
         session.flush()
         session.refresh(row)
-        read = _setting_read(row, key)
+        read = _setting_read(svc, row, key)
+        etag = _map_etag(session)
+    response.headers["ETag"] = etag
     return read
 
 
@@ -161,21 +146,23 @@ def opal_setting_put(
     "/{key}",
     status_code=204,
     operation_id="opal_setting_delete",
-    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
+    responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES, **OPAL_422_RESPONSE},
 )
 def opal_setting_delete(
+    response: Response,
     key: str = Path(min_length=1),
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
-    """Revert one setting to its registry default. Requires the settings-map If-Match."""
+    """Delete the persistent override (revert to default). 204 even with no override; If-Match required."""
     key = _known_key(key)
     with svc.config_change() as session:
-        require_matching_etag(if_match, compute_etag(_all_settings(session)), "settings")
+        require_matching_etag(if_match, _map_etag(session), "settings")
         row = _row(session, key)
         if row is not None:
             row.value = to_storage(SETTINGS[key].default_value())
             row.updated_at = utc_now()
             session.add(row)
             session.flush()
-    return Response(status_code=204)
+        etag = _map_etag(session)
+    return Response(status_code=204, headers={"ETag": etag})

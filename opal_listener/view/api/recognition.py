@@ -16,8 +16,8 @@ from opal_listener.view.api.deps import get_service
 router = APIRouter(prefix="/api/v1/recognition", tags=["recognition"])
 
 
-@router.post("/test_text", response_model=RecognitionResult)
-def test_text(
+@router.post("/test_text", response_model=RecognitionResult, operation_id="test_recognition_text")
+def test_recognition_text(
     data: TextTestRequest,
     save_log: bool = Query(default=True, description="Store the result in recognition logs"),
     svc: ListenerService = Depends(get_service),
@@ -25,8 +25,8 @@ def test_text(
     return svc.test_text(data.text, save_log=save_log)
 
 
-@router.post("/test_audio", response_model=RecognitionResult)
-def test_audio(
+@router.post("/test_audio", response_model=RecognitionResult, operation_id="test_recognition_audio")
+def test_recognition_audio(
     file: UploadFile = File(...),
     save_log: bool = Query(default=True, description="Store the result in recognition logs"),
     require_wakeword: bool = Query(default=False, description="Return no_match if no wakeword is detected"),
@@ -40,23 +40,23 @@ def test_audio(
     return svc.test_audio(data, save_log=save_log, require_wakeword=require_wakeword)
 
 
-@router.post("/start", responses=OPAL_422_RESPONSE)
-def start_pipeline(svc: ListenerService = Depends(get_service)) -> dict[str, str]:
+@router.post("/start", responses=OPAL_422_RESPONSE, operation_id="start_recognition")
+def start_recognition(svc: ListenerService = Depends(get_service)) -> dict[str, str]:
     return svc.start()
 
 
-@router.post("/stop", responses=OPAL_422_RESPONSE)
-def stop_pipeline(svc: ListenerService = Depends(get_service)) -> dict[str, str]:
+@router.post("/stop", responses=OPAL_422_RESPONSE, operation_id="stop_recognition")
+def stop_recognition(svc: ListenerService = Depends(get_service)) -> dict[str, str]:
     return svc.stop()
 
 
-@router.get("/status", response_model=PipelineStatus, responses=OPAL_422_RESPONSE)
-def get_status(svc: ListenerService = Depends(get_service)) -> PipelineStatus:
+@router.get("/status", response_model=PipelineStatus, responses=OPAL_422_RESPONSE, operation_id="show_recognition_status")
+def show_recognition_status(svc: ListenerService = Depends(get_service)) -> PipelineStatus:
     return svc.status()
 
 
-@router.get("/stream")
-async def stream_results(
+@router.get("/stream", operation_id="stream_recognition")
+async def stream_recognition(
     request: Request,
     debug: bool = Query(default=False, description="Include audio levels and partial transcripts"),
     svc: ListenerService = Depends(get_service),

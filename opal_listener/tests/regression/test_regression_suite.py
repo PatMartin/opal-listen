@@ -64,7 +64,7 @@ def test_failed_utterance_promotion_loop(client: TestClient) -> None:
     phrases_etag = client.get(f"/api/v1/intent/{intent['id']}/phrase").headers["etag"]
     promoted = client.post(
         f"/api/v1/failed_utterance/{fu['id']}/promote",
-        params={"intent_name": "light_turn_on"},
+        json={"intent_id": intent["id"], "create_regression": True},
         headers={"If-Match": phrases_etag},
     ).json()
     assert promoted["phrase"]["phrase"] == "illuminate the {room_name}"

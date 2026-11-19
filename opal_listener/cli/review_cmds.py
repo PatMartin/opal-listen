@@ -40,16 +40,15 @@ def failed_list(
     reviewed: bool | None = typer.Option(None, "--reviewed/--unreviewed"),
     promoted: bool | None = typer.Option(None, "--promoted/--not-promoted"),
     limit: int = typer.Option(50, "--limit", max=500),
-    offset: int = typer.Option(0, "--offset", min=0),
 ) -> None:
     """List failed utterances (newest first)."""
-    params = {"limit": limit, "offset": offset, "reviewed": reviewed, "promoted": promoted}
+    params = {"limit": limit, "reviewed": reviewed, "promoted": promoted}
     items = state(ctx).api.get(FAILED, params={k: v for k, v in params.items() if v is not None})
     render(ctx, items, FAILED_COLUMNS, "Failed utterances")
 
 
 @failed_app.command("get")
-def failed_get(ctx: typer.Context, fu_id: int) -> None:
+def failed_get(ctx: typer.Context, fu_id: str) -> None:
     """Show a failed utterance."""
     render_kv(ctx, state(ctx).api.get(f"{FAILED}{fu_id}"))
 
@@ -60,7 +59,7 @@ def failed_add(
     transcript: str,
     expected_intent: str | None = typer.Option(None, "--expected-intent"),
     notes: str | None = typer.Option(None, "--notes"),
-    log_id: int | None = typer.Option(None, "--log-id", help="Related recognition log id"),
+    log_id: str | None = typer.Option(None, "--log-id", help="Related recognition log id"),
 ) -> None:
     """Record a failed utterance manually."""
     body = {
@@ -76,7 +75,7 @@ def failed_add(
 @failed_app.command("update")
 def failed_update(
     ctx: typer.Context,
-    fu_id: int,
+    fu_id: str,
     expected_intent: str | None = typer.Option(None, "--expected-intent"),
     notes: str | None = typer.Option(None, "--notes"),
     reviewed: bool | None = typer.Option(None, "--reviewed/--unreviewed"),
@@ -88,7 +87,7 @@ def failed_update(
 
 
 @failed_app.command("remove")
-def failed_remove(ctx: typer.Context, fu_id: int) -> None:
+def failed_remove(ctx: typer.Context, fu_id: str) -> None:
     """Delete a failed utterance."""
     state(ctx).api.delete(f"{FAILED}{fu_id}")
     done(ctx, f"failed utterance {fu_id} removed")
@@ -97,8 +96,8 @@ def failed_remove(ctx: typer.Context, fu_id: int) -> None:
 @failed_app.command("promote")
 def failed_promote(
     ctx: typer.Context,
-    fu_id: int,
-    intent: str = typer.Option(..., "--intent", help="Intent that should have matched"),
+    fu_id: str,
+    intent: str = typer.Option(..., "--intent", help="Intent (id or name) that should have matched"),
     regression: bool = typer.Option(True, "--regression/--no-regression", help="Also create a regression test"),
 ) -> None:
     """Add a failed utterance as a training phrase (slot values become {placeholders})."""
@@ -106,7 +105,7 @@ def failed_promote(
     target = api.resolve("/api/v1/intent/", intent)
     result = api.post_with_etag(
         f"{FAILED}{fu_id}/promote",
-        params={"intent_name": intent, "create_regression": regression},
+        json={"intent_id": target["id"], "create_regression": regression},
         etag_path=f"/api/v1/intent/{target['id']}/phrase",
     )
     done(ctx, f"promoted as '{result['phrase']['phrase']}' for intent '{intent}'", result)
@@ -122,7 +121,7 @@ def regression_list(ctx: typer.Context) -> None:
 
 
 @regression_app.command("get")
-def regression_get(ctx: typer.Context, test_id: int) -> None:
+def regression_get(ctx: typer.Context, test_id: str) -> None:
     """Show a regression test."""
     render_kv(ctx, state(ctx).api.get(f"{REGRESSION}{test_id}"))
 
@@ -151,7 +150,7 @@ def regression_add(
 @regression_app.command("update")
 def regression_update(
     ctx: typer.Context,
-    test_id: int,
+    test_id: str,
     name: str | None = typer.Option(None, "--name"),
     phrase: str | None = typer.Option(None, "--phrase"),
     expect_intent: str | None = typer.Option(None, "--expect-intent"),
@@ -171,7 +170,7 @@ def regression_update(
 
 
 @regression_app.command("remove")
-def regression_remove(ctx: typer.Context, test_id: int) -> None:
+def regression_remove(ctx: typer.Context, test_id: str) -> None:
     """Delete a regression test."""
     state(ctx).api.delete_with_etag(f"{REGRESSION}{test_id}")
     done(ctx, f"regression test {test_id} removed")
@@ -199,7 +198,7 @@ def perf_last(ctx: typer.Context) -> None:
 
 
 @perf_app.command("summary")
-def perf_summary(ctx: typer.Context, limit: int = typer.Option(100, "--limit", max=1000)) -> None:
+def perf_summary(ctx: typer.Context, limit: int = typer.Option(100, "--limit", max=500)) -> None:
     """Average latency/confidence and match rate over the last N recognitions."""
     summary = state(ctx).api.get(f"{PERF}/summary", params={"limit": limit})
     if state(ctx).json_output:

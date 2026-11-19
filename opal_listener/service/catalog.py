@@ -31,6 +31,21 @@ def get_or_404(session: Session, model: type[T], obj_id: int, label: str) -> T:
     return obj
 
 
+def parse_id(ref: str, label: str) -> int:
+    """Resolve an opaque public id to its integer PK; an unknown/malformed ref is a 404."""
+    try:
+        obj_id = int(ref)
+    except (TypeError, ValueError):
+        raise NotFoundError(f"{label} {ref} not found") from None
+    if obj_id < 1:
+        raise NotFoundError(f"{label} {ref} not found")
+    return obj_id
+
+
+def get_by_ref(session: Session, model: type[T], ref: str, label: str) -> T:
+    return get_or_404(session, model, parse_id(ref, label), label)
+
+
 def _ensure_unique(session: Session, model: Any, name: str, label: str, exclude_id: int | None = None) -> None:
     existing = session.exec(select(model).where(model.name == name)).first()
     if existing is not None and existing.id != exclude_id:

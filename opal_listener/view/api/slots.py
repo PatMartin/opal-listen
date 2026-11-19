@@ -9,6 +9,7 @@ from opal_listener.models.opal_standard import (
     OPAL_PRECONDITION_RESPONSES,
 )
 from opal_listener.models.schemas import (
+    IdPath,
     SlotAliasCreate,
     SlotAliasRead,
     SlotCreate,
@@ -32,7 +33,7 @@ router = APIRouter(prefix="/api/v1/slot", tags=["slots"])
     "/",
     response_model=list[SlotReadWithValues],
     responses=OPAL_422_RESPONSE,
-    operation_id="list_slots_api_v1_slots__get",
+    operation_id="list_slots",
 )
 def list_slots(response: Response, svc: ListenerService = Depends(get_service)) -> list[SlotReadWithValues]:
     with svc.db.session() as session:
@@ -46,7 +47,7 @@ def list_slots(response: Response, svc: ListenerService = Depends(get_service)) 
     response_model=SlotRead,
     status_code=201,
     responses={**OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="create_slot_api_v1_slots__post",
+    operation_id="create_slot",
 )
 def create_slot(
     data: SlotCreate,
@@ -66,11 +67,11 @@ def create_slot(
     "/{slot_id}",
     response_model=SlotReadWithValues,
     responses=OPAL_404_RESPONSE,
-    operation_id="get_slot_api_v1_slots__slot_id__get",
+    operation_id="show_slot",
 )
-def get_slot(slot_id: int, response: Response, svc: ListenerService = Depends(get_service)) -> SlotReadWithValues:
+def show_slot(slot_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)) -> SlotReadWithValues:
     with svc.db.session() as session:
-        item = SlotReadWithValues.model_validate(catalog.get_or_404(session, Slot, slot_id, "slot"))
+        item = SlotReadWithValues.model_validate(catalog.get_by_ref(session, Slot, slot_id, "slot"))
     response.headers["ETag"] = item_etag(item)
     return item
 
@@ -79,18 +80,18 @@ def get_slot(slot_id: int, response: Response, svc: ListenerService = Depends(ge
     "/{slot_id}",
     response_model=SlotRead,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="update_slot_api_v1_slots__slot_id__patch",
+    operation_id="update_slot",
 )
 def update_slot(
-    slot_id: int,
+    slot_id: IdPath,
     data: SlotUpdate,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> SlotRead:
     with svc.config_change() as session:
-        current = SlotReadWithValues.model_validate(catalog.get_or_404(session, Slot, slot_id, "slot"))
+        current = SlotReadWithValues.model_validate(catalog.get_by_ref(session, Slot, slot_id, "slot"))
         require_matching_etag(if_match, item_etag(current), "slot")
-        result = SlotRead.model_validate(catalog.update_slot(session, slot_id, data))
+        result = SlotRead.model_validate(catalog.update_slot(session, catalog.parse_id(slot_id, "slot"), data))
     return result
 
 
@@ -98,17 +99,17 @@ def update_slot(
     "/{slot_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="delete_slot_api_v1_slots__slot_id__delete",
+    operation_id="remove_slot",
 )
-def delete_slot(
-    slot_id: int,
+def remove_slot(
+    slot_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        current = SlotReadWithValues.model_validate(catalog.get_or_404(session, Slot, slot_id, "slot"))
+        current = SlotReadWithValues.model_validate(catalog.get_by_ref(session, Slot, slot_id, "slot"))
         require_matching_etag(if_match, item_etag(current), "slot")
-        catalog.delete_slot(session, slot_id)
+        catalog.delete_slot(session, catalog.parse_id(slot_id, "slot"))
     return Response(status_code=204)
 
 
@@ -116,13 +117,13 @@ def delete_slot(
     "/{slot_id}/value",
     response_model=list[SlotValueReadWithAliases],
     responses=OPAL_404_RESPONSE,
-    operation_id="list_slot_values_api_v1_slots__slot_id__values_get",
+    operation_id="list_slot_values",
 )
 def list_slot_values(
-    slot_id: int, response: Response, svc: ListenerService = Depends(get_service)
+    slot_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[SlotValueReadWithAliases]:
     with svc.db.session() as session:
-        slot = catalog.get_or_404(session, Slot, slot_id, "slot")
+        slot = catalog.get_by_ref(session, Slot, slot_id, "slot")
         items = [SlotValueReadWithAliases.model_validate(v) for v in slot.values]
     response.headers["ETag"] = collection_etag(items)
     return items
@@ -133,20 +134,20 @@ def list_slot_values(
     response_model=SlotValueRead,
     status_code=201,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="add_slot_value_api_v1_slots__slot_id__values_post",
+    operation_id="add_slot_value",
 )
 def add_slot_value(
-    slot_id: int,
+    slot_id: IdPath,
     data: SlotValueCreate,
     response: Response,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> SlotValueRead:
     with svc.config_change() as session:
-        slot = catalog.get_or_404(session, Slot, slot_id, "slot")
+        slot = catalog.get_by_ref(session, Slot, slot_id, "slot")
         current_values = [SlotValueReadWithAliases.model_validate(v) for v in slot.values]
         require_matching_etag(if_match, collection_etag(current_values), "slot values")
-        result = SlotValueRead.model_validate(catalog.add_slot_value(session, slot_id, data))
+        result = SlotValueRead.model_validate(catalog.add_slot_value(session, catalog.parse_id(slot_id, "slot"), data))
     response.headers["Location"] = f"/api/v1/slot/{slot_id}/value/{result.id}"
     return result
 
@@ -155,19 +156,19 @@ def add_slot_value(
     "/{slot_id}/value/{value_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="delete_slot_value_api_v1_slots__slot_id__values__value_id__delete",
+    operation_id="remove_slot_value",
 )
-def delete_slot_value(
-    slot_id: int,
-    value_id: int,
+def remove_slot_value(
+    slot_id: IdPath,
+    value_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        slot = catalog.get_or_404(session, Slot, slot_id, "slot")
+        slot = catalog.get_by_ref(session, Slot, slot_id, "slot")
         current_values = [SlotValueReadWithAliases.model_validate(v) for v in slot.values]
         require_matching_etag(if_match, collection_etag(current_values), "slot values")
-        catalog.delete_slot_value(session, slot_id, value_id)
+        catalog.delete_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
     return Response(status_code=204)
 
 
@@ -175,13 +176,13 @@ def delete_slot_value(
     "/{slot_id}/value/{value_id}/alias",
     response_model=list[SlotAliasRead],
     responses=OPAL_404_RESPONSE,
-    operation_id="list_aliases_api_v1_slots__slot_id__values__value_id__aliases_get",
+    operation_id="list_aliases",
 )
 def list_aliases(
-    slot_id: int, value_id: int, response: Response, svc: ListenerService = Depends(get_service)
+    slot_id: IdPath, value_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[SlotAliasRead]:
     with svc.db.session() as session:
-        value = catalog.get_slot_value(session, slot_id, value_id)
+        value = catalog.get_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
         items = [SlotAliasRead.model_validate(a) for a in value.aliases]
     response.headers["ETag"] = collection_etag(items)
     return items
@@ -192,21 +193,21 @@ def list_aliases(
     response_model=SlotAliasRead,
     status_code=201,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="add_alias_api_v1_slots__slot_id__values__value_id__aliases_post",
+    operation_id="add_alias",
 )
 def add_alias(
-    slot_id: int,
-    value_id: int,
+    slot_id: IdPath,
+    value_id: IdPath,
     data: SlotAliasCreate,
     response: Response,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> SlotAliasRead:
     with svc.config_change() as session:
-        value = catalog.get_slot_value(session, slot_id, value_id)
+        value = catalog.get_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
         current_aliases = [SlotAliasRead.model_validate(a) for a in value.aliases]
         require_matching_etag(if_match, collection_etag(current_aliases), "aliases")
-        result = SlotAliasRead.model_validate(catalog.add_alias(session, slot_id, value_id, data))
+        result = SlotAliasRead.model_validate(catalog.add_alias(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"), data))
     response.headers["Location"] = f"/api/v1/slot/{slot_id}/value/{value_id}/alias/{result.id}"
     return result
 
@@ -215,18 +216,18 @@ def add_alias(
     "/{slot_id}/value/{value_id}/alias/{alias_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="delete_alias_api_v1_slots__slot_id__values__value_id__aliases__alias_id__delete",
+    operation_id="remove_alias",
 )
-def delete_alias(
-    slot_id: int,
-    value_id: int,
-    alias_id: int,
+def remove_alias(
+    slot_id: IdPath,
+    value_id: IdPath,
+    alias_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        value = catalog.get_slot_value(session, slot_id, value_id)
+        value = catalog.get_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
         current_aliases = [SlotAliasRead.model_validate(a) for a in value.aliases]
         require_matching_etag(if_match, collection_etag(current_aliases), "aliases")
-        catalog.delete_alias(session, slot_id, value_id, alias_id)
+        catalog.delete_alias(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"), catalog.parse_id(alias_id, "alias"))
     return Response(status_code=204)

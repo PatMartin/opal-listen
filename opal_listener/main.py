@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -16,10 +17,6 @@ from sqlalchemy.exc import IntegrityError
 
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings, get_app_settings
 from opal_listener.data.db import Database
-from opal_listener.models.opal_standard import (
-    OpalConfigExport,
-    OpalEngine,
-)
 from opal_listener.service.errors import (
     DomainError,
     OpalValidationError,
@@ -42,16 +39,18 @@ from opal_listener.view.opal_middleware import OpalContextMiddleware
 log = logging.getLogger(__name__)
 STATIC_DIR = PACKAGE_DIR / "view" / "static"
 
-# Schemas referenced by the contract but not produced by any route; kept so the generated
-# OpenAPI remains a superset of the contract.
-_ORPHAN_CONTRACT_SCHEMAS = (OpalConfigExport, OpalEngine)
-
-# Contract schema entries that are bare $refs to kernel components (v1.7.1): the generated
+# Contract schema entries that are bare $refs to kernel components: the generated
 # spec must carry the same alias names pointing at the kernel-named schemas.
 _ORPHAN_SCHEMA_REFS: dict[str, str] = {
     "PersonaCreate": "OpalPersonaCreate",
     "PersonaUpdate": "OpalPersonaUpdate",
     "PersonaRead": "OpalPersonaRead",
+}
+
+# The contract pins this v1-era generated multipart-body schema name; the canonical
+# operationId makes FastAPI emit it under the operation-derived name, so copy it over.
+_ORPHAN_SCHEMA_COPIES: dict[str, str] = {
+    "Body_test_audio_api_v1_recognition_test_audio_post": "Body_test_recognition_audio",
 }
 
 # OPAL SUITE STANDARD response-header documentation (openapi/shared/opal_kernel.yaml components/headers).
@@ -103,48 +102,47 @@ _ITEM_ETAG = _etag_doc(
 _MEMBER_ETAG = _etag_doc("Strong revision of this collection; required as If-Match for member deletions.")
 
 # Operations that return a strong ETag (set in code via collection_etag/item_etag), per operation.
+_SETTINGS_ETAG = _etag_doc("Strong revision of the whole settings map; required as If-Match for writes.")
 _ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
-    "list_wakewords_api_v1_wakewords__get": _COLLECTION_ETAG,
-    "list_intents_api_v1_intents__get": _COLLECTION_ETAG,
-    "list_slots_api_v1_slots__get": _COLLECTION_ETAG,
+    "list_wakewords": _COLLECTION_ETAG,
+    "list_intents": _COLLECTION_ETAG,
+    "list_slots": _COLLECTION_ETAG,
     "opal_profile_list": _COLLECTION_ETAG,
     "opal_persona_list": _COLLECTION_ETAG,
-    "get_wakeword_api_v1_wakewords__wakeword_id__get": _ITEM_ETAG,
-    "get_intent_api_v1_intents__intent_id__get": _ITEM_ETAG,
-    "get_slot_api_v1_slots__slot_id__get": _ITEM_ETAG,
+    "show_wakeword": _ITEM_ETAG,
+    "show_intent": _ITEM_ETAG,
+    "show_slot": _ITEM_ETAG,
     "opal_profile_get": _ITEM_ETAG,
     "opal_profile_patch": _ITEM_ETAG,
     "opal_persona_get": _ITEM_ETAG,
-    "list_phrases_api_v1_intents__intent_id__phrases_get": _MEMBER_ETAG,
-    "list_slot_values_api_v1_slots__slot_id__values_get": _MEMBER_ETAG,
-    "list_aliases_api_v1_slots__slot_id__values__value_id__aliases_get": _MEMBER_ETAG,
-    "opal_setting_list": _etag_doc(
-        "Strong revision of the whole settings map; required as If-Match for PATCH /api/v1/setting/."
-    ),
-    "opal_setting_patch": _etag_doc("Updated settings-map revision after the atomic patch."),
+    "list_phrases": _MEMBER_ETAG,
+    "list_slot_values": _MEMBER_ETAG,
+    "list_aliases": _MEMBER_ETAG,
+    "opal_setting_list": _SETTINGS_ETAG,
+    "opal_setting_get": _SETTINGS_ETAG,
+    "opal_setting_put": _SETTINGS_ETAG,
+    "opal_config_save": _etag_doc("Captured live-configuration revision at save time."),
+    "opal_config_load": _etag_doc("Live-configuration revision after the load."),
 }
+
+# Operations whose only documented ETag rides on a 204 response.
+_ETAG_204_OPERATIONS: dict[str, dict[str, Any]] = {"opal_setting_delete": _SETTINGS_ETAG}
 
 # Operations that set a Location header on their 201 responses.
 _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
-    **{
-        opid: {"description": "Resource URL", "schema": {"type": "string"}}
-        for opid in (
-            "create_wakeword_api_v1_wakewords__post",
-            "create_intent_api_v1_intents__post",
-            "add_phrase_api_v1_intents__intent_id__phrases_post",
-            "create_slot_api_v1_slots__post",
-            "add_slot_value_api_v1_slots__slot_id__values_post",
-            "add_alias_api_v1_slots__slot_id__values__value_id__aliases_post",
-            "opal_profile_create",
-            "opal_persona_create",
-            "create_failed_utterance_api_v1_failed_utterances__post",
-            "create_regression_test_api_v1_regression__post",
-        )
-    },
-    "opal_backup_create": {
-        "description": "URI of the created backup (/api/v1/backup/download/{filename}).",
-        "schema": {"type": "string"},
-    },
+    opid: {"description": "Resource URL", "schema": {"type": "string"}}
+    for opid in (
+        "create_wakeword",
+        "create_intent",
+        "add_phrase",
+        "create_slot",
+        "add_slot_value",
+        "add_alias",
+        "opal_profile_create",
+        "opal_persona_create",
+        "create_failed_utterance",
+        "create_regression_test",
+    )
 }
 
 
@@ -215,7 +213,7 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
 
     OpalContextMiddleware stamps the four X-Opal-* correlation headers on every response
     (success, error, and streaming alike); ETag-bearing reads and Location-bearing creates
-    are annotated per operation, matching openapi/opal_listen_v1.7.1.yaml.
+    are annotated per operation, matching openapi/opal_listen_v2.0.0.yaml.
     """
     components = schema.setdefault("components", {})
     components.setdefault("headers", {}).update(_OPAL_HEADER_COMPONENTS)
@@ -231,6 +229,8 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
                 headers.update(_OPAL_RESPONSE_HEADERS)
                 if status == "200" and opid in _ETAG_OPERATION_HEADERS:
                     headers["ETag"] = _ETAG_OPERATION_HEADERS[opid]
+                if status == "204" and opid in _ETAG_204_OPERATIONS:
+                    headers["ETag"] = _ETAG_204_OPERATIONS[opid]
                 if status == "201" and opid in _LOCATION_OPERATION_HEADERS:
                     headers["Location"] = _LOCATION_OPERATION_HEADERS[opid]
 
@@ -270,15 +270,9 @@ def _inject_orphan_schemas(schema: dict[str, Any]) -> None:
     components = schema.setdefault("components", {}).setdefault("schemas", {})
     for name, target in _ORPHAN_SCHEMA_REFS.items():
         components.setdefault(name, {"$ref": f"#/components/schemas/{target}"})
-    for model in _ORPHAN_CONTRACT_SCHEMAS:
-        name = model.__name__
-        if name in components:
-            continue
-        sub = model.model_json_schema(ref_template="#/components/schemas/{model}")
-        defs = sub.pop("$defs", {})
-        components[name] = sub
-        for def_name, def_schema in defs.items():
-            components.setdefault(def_name, def_schema)
+    for name, source in _ORPHAN_SCHEMA_COPIES.items():
+        if name not in components and source in components:
+            components[name] = copy.deepcopy(components[source])
 
 
 def create_app(settings: AppSettings | None = None, service: ListenerService | None = None) -> FastAPI:
@@ -299,7 +293,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="1.7.1",
+        version="2.0.0",
         lifespan=lifespan,
     )
     app.state.listener = service

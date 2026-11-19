@@ -293,14 +293,9 @@ opal
     │   └── history                  [--limit N] [--cursor TOKEN]
     │
     ├── config
-    │   ├── validate                 [--from-dir DIR]
-    │   ├── backup
-    │   ├── backups
-    │   ├── download FILENAME        [--out PATH]
-    │   ├── restore FILENAME         [--yes]
-    │   ├── delete-backup FILENAME   [--yes]
-    │   ├── export                   [--out-dir DIR]
-    │   └── import                   [--from-dir DIR] [--yes]
+    │   ├── validate                 [--in FILE]
+    │   ├── save                     [--out FILE]
+    │   └── load                     [--in FILE] [--yes]
     │
     ├── system
     │   ├── doctor
@@ -777,34 +772,32 @@ opal listen --xpub tcp://127.0.0.1:5555 \
 
 This **bypasses the REST API** and opens a short-lived ZeroMQ PUB connection. It wraps plain text or JSON into OPAL Event's two-frame event envelope. The command only confirms local send—not subscriber delivery. Topic strings must follow lower-case dot-separated conventions.
 
-### Use case 12: Back up a working voice configuration before getting creative
+### Use case 12: Save a working voice configuration before getting creative
 
 Once voice commands work, protect that work.
 
 ~~~bash
-# Server-side SQLite backup
-opal listen config backup
-opal listen config backups
+# Managed snapshot on the server, or a portable file locally:
+opal listen config save
+opal listen config save --out ./listener-snapshot.json
 
-# Export the six editable YAML catalogs:
-opal listen config export --out-dir ./listener-config
-
-# Check them before import:
-opal listen config validate --from-dir ./listener-config
-
-# Save a JSON export for inspection or versioned snapshots:
-opal listen config export > listener-config.json
+# Check it before loading:
+opal listen config validate --in ./listener-snapshot.json
 ~~~
 
-The YAML export has `wakewords.yaml`, `intents.yaml`, `slots.yaml`, `profiles.yaml`, `stt.yaml` and `settings.yaml`.
+The snapshot envelope holds wakewords, intents, slots, profiles, personas,
+regression tests and settings in one versioned JSON document.
 
-When you're ready to apply the edited YAML:
+When you're ready to apply it:
 
 ~~~bash
-opal listen config import --from-dir ./listener-config
+opal listen config load --in ./listener-snapshot.json
 ~~~
 
-The import requires confirmation and makes a safety backup. It **replaces** the imported catalogs; missing entries may be deleted. Don't treat it as a merge operation. Restore a server-side backup with `opal listen config restore FILENAME` after reading the prompt and checking what will be replaced.
+The load requires confirmation and applies atomically — a failed apply rolls
+everything back. It **replaces** the loaded catalogs; missing entries may be
+deleted. Don't treat it as a merge operation. Restore the server's managed
+snapshot with `opal listen config load` after reading the prompt.
 
 ### A CLI cheat sheet for regular use
 
@@ -821,9 +814,9 @@ The import requires confirmation and makes a safety backup. It **replaces** the 
 | "Train on a useful mistake?" | `opal listen failed promote ID --intent NAME` |
 | "Did I break anything?" | `opal listen test regression` |
 | "How fast?" | `opal listen service perf summary` |
-| "Change one setting?" | `opal listen setting set KEY VALUE` |
+| "Change one setting?" | `opal listen config setting set --name KEY --value VALUE` |
 | "Switch environments?" | `opal listen profile activate noisy_room` |
-| "Save what works?" | `opal listen config backup` |
+| "Save what works?" | `opal listen config save` |
 
 ## Architecture, API, and configuration
 
@@ -848,7 +841,7 @@ The import requires confirmation and makes a safety backup. It **replaces** the 
                                             HTTP or ZeroMQ
 ~~~
 
-The **CLI uses REST** for catalog management, recognition tests, pipeline control, logs, performance, and backups. `test listen` consumes a server-sent event stream, so you can watch live results remotely without microphone processing on the CLI machine.
+The **CLI uses REST** for catalog management, recognition tests, pipeline control, performance, and config snapshots. `test listen` consumes a server-sent event stream, so you can watch live results remotely without microphone processing on the CLI machine.
 
 The browser console at `/ui/opal-listen.html` is bundled with the service, not a separate SPA build.
 
@@ -860,7 +853,7 @@ Process-level settings come from environment variables or a local `.env` file. M
 | --- | --- |
 | `OPAL_LISTENER_HOST` | `0.0.0.0`; restrict to `127.0.0.1` for local-only use |
 | `OPAL_LISTENER_PORT` | `8000` |
-| `OPAL_LISTENER_DATA_DIR` | `var`, containing SQLite and backups |
+| `OPAL_LISTENER_DATA_DIR` | `var`, containing SQLite and the managed snapshot |
 | `OPAL_LISTENER_VOSK_MODEL_PATH` | Set explicitly to your extracted model |
 | `OPAL_LISTEN_API_URL` | CLI target, `http://localhost:8000` |
 | `OPAL_EVENT_TRANSPORT` | `http` by default; alternative `zmq` |
@@ -879,7 +872,7 @@ The CLI's `setting set` updates a **single key**, reading the current strong ETa
 - **Audio capture + VAD:** PortAudio through `sounddevice`, framing/resampling, adaptive noise handling, endpoint decisions, and watchdog recovery.
 - **NLU engine:** normalize text, expand phrase templates, match intents, parse numbers, and canonicalize slot aliases.
 - **Profiles + catalogs:** reusable YAML-backed wakewords, intents, slots, and environment-specific thresholds.
-- **SQLite:** persisted catalogs, recognition logs, failed utterances, regression cases, metrics, and backups.
+- **SQLite:** persisted catalogs, recognition logs, failed utterances, regression cases, and metrics.
 - **SSE + event publication:** local live observation plus optional external OPAL Event integration.
 - **Optional Whisper refinement:** a second transcription pass; not required for the local-first starter experience.
 
@@ -913,7 +906,7 @@ opal-listen/
 ├── opal-listen.png                   project artwork
 ├── README.md                         this guide
 ├── pyproject.toml                    package / CLI entry points
-├── openapi/                          OpenAPI reference (opal_listen_v1.6.0.yaml + shared kernel)
+├── openapi/                          OpenAPI reference (opal_listen_v2.0.0.yaml + shared kernel)
 ├── docs/
 │   ├── QUICKSTART.md                 setup walkthrough
 │   ├── CLI.md                        exhaustive CLI reference
@@ -945,7 +938,7 @@ opal-listen/
 - [CLI reference](docs/CLI.md) — all flags, resource commands, outputs, and scripts.
 - [User guide](docs/USER_GUIDE.md) — extensive guidance for running and tuning the listener.
 - [Design](docs/design.md) — internal architecture and tradeoffs.
-- [OpenAPI](openapi/opal_listen_v1.6.0.yaml) — REST interface description.
+- [OpenAPI](openapi/opal_listen_v2.0.0.yaml) — REST interface description.
 - [OPAL Event](https://github.com/PatMartin/opal-event) — turn recognized intents into guarded actions.
 
 ---

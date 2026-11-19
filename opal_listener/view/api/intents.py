@@ -9,6 +9,7 @@ from opal_listener.models.opal_standard import (
     OPAL_PRECONDITION_RESPONSES,
 )
 from opal_listener.models.schemas import (
+    IdPath,
     IntentCreate,
     IntentPhraseCreate,
     IntentPhraseRead,
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/api/v1/intent", tags=["intents"])
     "/",
     response_model=list[IntentReadWithPhrases],
     responses=OPAL_422_RESPONSE,
-    operation_id="list_intents_api_v1_intents__get",
+    operation_id="list_intents",
 )
 def list_intents(response: Response, svc: ListenerService = Depends(get_service)) -> list[IntentReadWithPhrases]:
     with svc.db.session() as session:
@@ -43,7 +44,7 @@ def list_intents(response: Response, svc: ListenerService = Depends(get_service)
     response_model=IntentReadWithPhrases,
     status_code=201,
     responses={**OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="create_intent_api_v1_intents__post",
+    operation_id="create_intent",
 )
 def create_intent(
     data: IntentCreate,
@@ -63,13 +64,13 @@ def create_intent(
     "/{intent_id}",
     response_model=IntentReadWithPhrases,
     responses=OPAL_404_RESPONSE,
-    operation_id="get_intent_api_v1_intents__intent_id__get",
+    operation_id="show_intent",
 )
-def get_intent(
-    intent_id: int, response: Response, svc: ListenerService = Depends(get_service)
+def show_intent(
+    intent_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> IntentReadWithPhrases:
     with svc.db.session() as session:
-        item = IntentReadWithPhrases.model_validate(catalog.get_or_404(session, Intent, intent_id, "intent"))
+        item = IntentReadWithPhrases.model_validate(catalog.get_by_ref(session, Intent, intent_id, "intent"))
     response.headers["ETag"] = item_etag(item)
     return item
 
@@ -78,18 +79,18 @@ def get_intent(
     "/{intent_id}",
     response_model=IntentRead,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="update_intent_api_v1_intents__intent_id__patch",
+    operation_id="update_intent",
 )
 def update_intent(
-    intent_id: int,
+    intent_id: IdPath,
     data: IntentUpdate,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> IntentRead:
     with svc.config_change() as session:
-        current = IntentReadWithPhrases.model_validate(catalog.get_or_404(session, Intent, intent_id, "intent"))
+        current = IntentReadWithPhrases.model_validate(catalog.get_by_ref(session, Intent, intent_id, "intent"))
         require_matching_etag(if_match, item_etag(current), "intent")
-        result = IntentRead.model_validate(catalog.update_intent(session, intent_id, data))
+        result = IntentRead.model_validate(catalog.update_intent(session, catalog.parse_id(intent_id, "intent"), data))
     return result
 
 
@@ -97,17 +98,17 @@ def update_intent(
     "/{intent_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="delete_intent_api_v1_intents__intent_id__delete",
+    operation_id="remove_intent",
 )
-def delete_intent(
-    intent_id: int,
+def remove_intent(
+    intent_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        current = IntentReadWithPhrases.model_validate(catalog.get_or_404(session, Intent, intent_id, "intent"))
+        current = IntentReadWithPhrases.model_validate(catalog.get_by_ref(session, Intent, intent_id, "intent"))
         require_matching_etag(if_match, item_etag(current), "intent")
-        catalog.delete_intent(session, intent_id)
+        catalog.delete_intent(session, catalog.parse_id(intent_id, "intent"))
     return Response(status_code=204)
 
 
@@ -115,13 +116,13 @@ def delete_intent(
     "/{intent_id}/phrase",
     response_model=list[IntentPhraseRead],
     responses=OPAL_404_RESPONSE,
-    operation_id="list_phrases_api_v1_intents__intent_id__phrases_get",
+    operation_id="list_phrases",
 )
 def list_phrases(
-    intent_id: int, response: Response, svc: ListenerService = Depends(get_service)
+    intent_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[IntentPhraseRead]:
     with svc.db.session() as session:
-        intent = catalog.get_or_404(session, Intent, intent_id, "intent")
+        intent = catalog.get_by_ref(session, Intent, intent_id, "intent")
         items = [IntentPhraseRead.model_validate(p) for p in intent.phrases]
     response.headers["ETag"] = collection_etag(items)
     return items
@@ -132,20 +133,20 @@ def list_phrases(
     response_model=IntentPhraseRead,
     status_code=201,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="add_phrase_api_v1_intents__intent_id__phrases_post",
+    operation_id="add_phrase",
 )
 def add_phrase(
-    intent_id: int,
+    intent_id: IdPath,
     data: IntentPhraseCreate,
     response: Response,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> IntentPhraseRead:
     with svc.config_change() as session:
-        intent = catalog.get_or_404(session, Intent, intent_id, "intent")
+        intent = catalog.get_by_ref(session, Intent, intent_id, "intent")
         current_phrases = [IntentPhraseRead.model_validate(p) for p in intent.phrases]
         require_matching_etag(if_match, collection_etag(current_phrases), "phrases")
-        result = IntentPhraseRead.model_validate(catalog.add_phrase(session, intent_id, data))
+        result = IntentPhraseRead.model_validate(catalog.add_phrase(session, catalog.parse_id(intent_id, "intent"), data))
     response.headers["Location"] = f"/api/v1/intent/{intent_id}/phrase/{result.id}"
     return result
 
@@ -154,17 +155,17 @@ def add_phrase(
     "/{intent_id}/phrase/{phrase_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="delete_phrase_api_v1_intents__intent_id__phrases__phrase_id__delete",
+    operation_id="remove_phrase",
 )
-def delete_phrase(
-    intent_id: int,
-    phrase_id: int,
+def remove_phrase(
+    intent_id: IdPath,
+    phrase_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        intent = catalog.get_or_404(session, Intent, intent_id, "intent")
+        intent = catalog.get_by_ref(session, Intent, intent_id, "intent")
         current_phrases = [IntentPhraseRead.model_validate(p) for p in intent.phrases]
         require_matching_etag(if_match, collection_etag(current_phrases), "phrases")
-        catalog.delete_phrase(session, intent_id, phrase_id)
+        catalog.delete_phrase(session, catalog.parse_id(intent_id, "intent"), catalog.parse_id(phrase_id, "phrase"))
     return Response(status_code=204)

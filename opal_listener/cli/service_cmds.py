@@ -2,32 +2,27 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import httpx
 import typer
+import yaml
 
 from opal_listener.app_settings import get_app_settings
 from opal_listener.cli.client import CliError
 from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state
-from opal_listener.models.config_schemas import ConfigBundle
-from opal_listener.service.config_store import ConfigFileError, bundle_to_files, load_config_dir
 from opal_listener.service.errors import NotFoundError
 from opal_listener.service.lifecycle import ServiceProcessManager, stop_pid
 
-BACKUP = "/api/v1/backup"
+CONFIG = "/api/v1/config"
 HEALTH = "/api/v1/health"
 
-config_app = typer.Typer(help="Validate, back up, restore, export and import configuration.", no_args_is_help=True)
+config_app = typer.Typer(
+    help="Save, load and validate persistent configuration snapshots.", no_args_is_help=True
+)
 service_app = typer.Typer(help="Run, probe and inspect the server process.", no_args_is_help=True)
-
-
-def _local_bundle(directory: Path) -> ConfigBundle:
-    try:
-        return load_config_dir(directory)
-    except ConfigFileError as exc:
-        raise CliError("invalid config files:\n" + "\n".join(exc.errors)) from exc
 
 
 def _confirm(ctx: typer.Context, yes: bool, message: str) -> None:
@@ -35,126 +30,107 @@ def _confirm(ctx: typer.Context, yes: bool, message: str) -> None:
         raise typer.Abort()
 
 
-@config_app.command("validate")
-def config_validate(
+def _read_snapshot(path: Path) -> dict[str, Any]:
+    """Read a snapshot envelope from JSON or YAML (contract `local_in` binding for --in)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CliError(f"cannot read {path}: {exc}") from exc
+    try:
+        data = yaml.safe_load(text) if path.suffix.lower() in (".yaml", ".yml") else json.loads(text)
+    except (yaml.YAMLError, json.JSONDecodeError) as exc:
+        raise CliError(f"{path} is not valid JSON/YAML: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CliError(f"{path} does not contain a snapshot object")
+    return data
+
+
+def _config_revision(api: Any) -> str:
+    """Live-configuration revision for the config load If-Match (non-mutating probe)."""
+    return api.post(f"{CONFIG}/save", json={"destination": "response"})["revision"]
+
+
+@config_app.command("save")
+def config_save(
     ctx: typer.Context,
-    from_dir: Path | None = typer.Option(
-        None,
-        "--from-dir",
-        exists=True,
-        file_okay=False,
-        help="Validate local YAML files instead of the server's",
+    out: Path | None = typer.Option(
+        None, "--out", "-o", dir_okay=False, help="Write the snapshot envelope to FILE"
     ),
 ) -> None:
-    """Validate configuration (server config dir + database, or local YAML files). Exit 1 if invalid."""
+    """Capture a configuration snapshot.
+
+    Without --out the single managed snapshot on the server is replaced; with --out the
+    envelope is written to FILE and the managed snapshot is left untouched.
+    """
     api = state(ctx).api
-    if from_dir is not None:
-        report = api.post(f"{BACKUP}/validate", json=_local_bundle(from_dir).model_dump(mode="json"))
-    else:
-        report = api.get(f"{BACKUP}/validate")
-    if state(ctx).json_output:
-        print_json(report)
-    else:
-        for error in report["errors"]:
-            console.print(f"[red]error[/red]   {escape(error)}")
-        for warning in report["warnings"]:
-            console.print(f"[yellow]warning[/yellow] {escape(warning)}")
-        console.print(
-            "[green]configuration is valid[/green]" if report["valid"] else "[red]configuration is invalid[/red]"
+    if out is None:
+        result = api.post(f"{CONFIG}/save", json={"destination": "managed"})
+        done(
+            ctx,
+            f"snapshot saved to managed store (revision {result['revision']})",
+            result,
         )
-    if not report["valid"]:
-        raise CliError("validation failed")
-
-
-@config_app.command("backup")
-def config_backup(ctx: typer.Context) -> None:
-    """Create a SQLite backup on the server."""
-    result = state(ctx).api.post(f"{BACKUP}/create")
-    done(ctx, f"backup created: {result['filename']}", result)
-
-
-@config_app.command("backups")
-def config_backups(ctx: typer.Context) -> None:
-    """List backups."""
-    render(ctx, state(ctx).api.get(f"{BACKUP}/list"), ("filename", "size_bytes", "created_at"), "Backups")
-
-
-@config_app.command("restore")
-def config_restore(
-    ctx: typer.Context,
-    filename: str,
-    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
-) -> None:
-    """Restore a backup (a safety backup is taken first; rolls back automatically on failure)."""
-    _confirm(ctx, yes, f"Replace the current database with {filename}?")
-    result = state(ctx).api.post_with_etag(f"{BACKUP}/restore/{filename}", etag_path=f"{BACKUP}/export")
-    done(ctx, f"restored {filename} (previous state saved as {result.get('rollback_backup')})", result)
-
-
-@config_app.command("download")
-def config_download(
-    ctx: typer.Context,
-    filename: str,
-    out: Path = typer.Option(Path("."), "--out", "-o", help="Target file or directory"),
-) -> None:
-    """Download a backup file."""
-    content = state(ctx).api.get(f"{BACKUP}/download/{filename}")
-    target = out / filename if out.is_dir() else out
-    target.write_bytes(content if isinstance(content, bytes) else bytes(str(content), "utf-8"))
-    done(ctx, f"saved {target}", {"status": "ok", "path": str(target)})
-
-
-@config_app.command("delete-backup")
-def config_delete_backup(
-    ctx: typer.Context,
-    filename: str,
-    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
-) -> None:
-    """Delete a backup file."""
-    _confirm(ctx, yes, f"Delete backup {filename}?")
-    state(ctx).api.delete(f"{BACKUP}/{filename}")
-    done(ctx, f"deleted {filename}")
-
-
-@config_app.command("export")
-def config_export(
-    ctx: typer.Context,
-    out_dir: Path | None = typer.Option(None, "--out-dir", file_okay=False, help="Write the seven YAML files here"),
-) -> None:
-    """Export configuration (JSON to stdout, or YAML files with --out-dir)."""
-    bundle = ConfigBundle.model_validate(state(ctx).api.get(f"{BACKUP}/export"))
-    if out_dir is None:
-        print_json(bundle.model_dump(mode="json"))
         return
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for filename, text in bundle_to_files(bundle).items():
-        (out_dir / filename).write_text(text, encoding="utf-8")
-    done(ctx, f"exported configuration to {out_dir}", {"status": "ok", "path": str(out_dir)})
+    result = api.post(f"{CONFIG}/save", json={"destination": "response"})
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result["snapshot"], indent=2) + "\n", encoding="utf-8")
+    done(ctx, f"snapshot written to {out} (revision {result['revision']})", {"path": str(out)})
 
 
-@config_app.command("import")
-def config_import(
+@config_app.command("load")
+def config_load(
     ctx: typer.Context,
-    from_dir: Path | None = typer.Option(
-        None,
-        "--from-dir",
-        exists=True,
-        file_okay=False,
-        help="Import local YAML files (default: server ./config/)",
+    in_file: Path | None = typer.Option(
+        None, "--in", "-i", exists=True, dir_okay=False, help="Snapshot file to load (JSON or YAML)"
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
 ) -> None:
-    """Replace configuration from YAML (validated first; automatic pre-import backup)."""
-    body = _local_bundle(from_dir).model_dump(mode="json") if from_dir else None
-    _confirm(ctx, yes, "Replace wakewords, intents, slots, profiles and settings?")
-    result = state(ctx).api.post_with_etag(f"{BACKUP}/import", etag_path=f"{BACKUP}/export", json=body)
+    """Atomically replace desired configuration from the managed snapshot or --in FILE."""
+    api = state(ctx).api
+    body: dict[str, Any] = {}
+    if in_file is not None:
+        body = {"snapshot": _read_snapshot(in_file)}
+    _confirm(ctx, yes, "Replace wakewords, intents, slots, profiles, personas and settings?")
+    result = api.post(
+        f"{CONFIG}/load", json=body, headers={"If-Match": _config_revision(api)}
+    )
     if state(ctx).json_output:
         print_json(result)
         return
-    done(ctx, f"imported configuration (backup: {result['backup_filename']})")
-    render_kv(ctx, result["counts"], "Imported")
-    for warning in result["warnings"]:
-        console.print(f"[yellow]warning[/yellow] {escape(warning)}")
+    done(ctx, "configuration loaded", result)
+    for field in result.get("pending_restart_fields") or []:
+        console.print(f"[yellow]pending restart[/yellow] {escape(field)}")
+    for issue in result.get("warnings") or []:
+        console.print(f"[yellow]warning[/yellow] {escape(issue['path'])}: {escape(issue['message'])}")
+
+
+@config_app.command("validate")
+def config_validate(
+    ctx: typer.Context,
+    in_file: Path | None = typer.Option(
+        None, "--in", "-i", exists=True, dir_okay=False, help="Snapshot file to check (JSON or YAML)"
+    ),
+) -> None:
+    """Validate the live configuration or a candidate snapshot file. Exit 1 if invalid."""
+    api = state(ctx).api
+    body: dict[str, Any] = {}
+    if in_file is not None:
+        body = {"snapshot": _read_snapshot(in_file)}
+    report = api.post(f"{CONFIG}/validate", json=body)
+    if state(ctx).json_output:
+        print_json(report)
+    else:
+        for issue in report["errors"]:
+            console.print(f"[red]error[/red]   {escape(issue['path'])}: {escape(issue['message'])}")
+        for issue in report["warnings"]:
+            console.print(f"[yellow]warning[/yellow] {escape(issue['path'])}: {escape(issue['message'])}")
+        console.print(
+            "[green]configuration is valid[/green]"
+            if report["valid"]
+            else "[red]configuration is invalid[/red]"
+        )
+    if not report["valid"]:
+        raise CliError("validation failed")
 
 
 STATUS_ICON = {"ok": "[green]✓[/green]", "warning": "[yellow]![/yellow]", "error": "[red]✗[/red]"}

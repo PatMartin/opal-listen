@@ -135,10 +135,9 @@ prefix is `OPAL_LISTENER_`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `OPAL_LISTENER_VOSK_MODEL_PATH` | `/nabu/ears/vosk/models/vosk-model-small-en-us-0.15` | Default Vosk model directory |
-| `OPAL_LISTENER_DATA_DIR` | `var` | Directory for the SQLite database and `backups/` |
+| `OPAL_LISTENER_DATA_DIR` | `var` | Directory for the SQLite database and the managed snapshot |
 | `OPAL_LISTENER_DATABASE_FILE` | `opal_listener.db` | Database file name inside the data dir |
-| `OPAL_LISTENER_BACKUP_DIR_NAME` | `backups` | Backup subdirectory inside the data dir |
-| `OPAL_LISTENER_CONFIG_DIR` | `opal_listener/config` | YAML used to seed an empty database and by `import` without a body |
+| `OPAL_LISTENER_CONFIG_DIR` | `opal_listener/config` | YAML used to seed an empty database |
 | `OPAL_LISTENER_HOST` | `0.0.0.0` | Bind address. Use `127.0.0.1` for local-only access. |
 | `OPAL_LISTENER_PORT` | `8000` | API port |
 | `OPAL_LISTENER_CORS_ORIGINS` | `["*"]` | Browser origins allowed to call the API (JSON list) |
@@ -170,7 +169,7 @@ opal-listen-svc                 # or: python -m opal_listener
 
 On first start the server:
 
-1. Creates the data dir (`var/`) and `var/backups/`.
+1. Creates the data dir (`var/`).
 2. Runs the Alembic migrations on `var/opal_listener.db` (SQLite, WAL mode).
 3. Seeds the empty database from `opal_listener/config/*.yaml`: the wakeword `computer`, the
    light/temperature/timer/time/cancel intents, the `room_name`/`temperature`/`duration_minutes` slots and
@@ -273,7 +272,7 @@ The container:
 
 - runs as the non-root user `opal` in the `audio` group
 - gets `/dev/snd` for the microphone
-- stores SQLite and backups in the `listener_data` volume (`/data`)
+- stores SQLite and the managed snapshot in the `listener_data` volume (`/data`)
 - reads `opal_listener/config` as its seed (`/config`, read-only)
 - has a health check on `/api/v1/info/ping`
 
@@ -287,7 +286,7 @@ docker compose exec listener opal listen service doctor
 ```bash
 git pull
 pip install -e ".[dev]"
-opal listen config backup            # optional safety copy
+opal listen config save              # optional safety snapshot
 sudo systemctl restart opal-listen-svc # migrations run automatically on startup
 opal listen service doctor            # the "migrations" check shows the current revision
 ```
@@ -320,7 +319,7 @@ flowchart LR
     end
     DB[("SQLite<br/>WAL + Alembic")]
     YAML[/"config/*.yaml"/]
-    BK[/"backups/*.db"/]
+    SNAP[/"managed config snapshot"/]
     BROKER(["external ZeroMQ<br/>XPUB/XSUB broker"])
 
     CLI -- REST/SSE --> API
@@ -338,8 +337,8 @@ flowchart LR
     ZPUB -- PUB --xpub--> BROKER
     APP -- SUB --> BROKER
     LS <--> DB
-    CFG <-- import/export --> YAML
-    LS -- backup / restore --> BK
+    CFG <-- seed --> YAML
+    LS -- save / load --> SNAP
 ```
 
 The code is organized in three layers:
@@ -347,7 +346,7 @@ The code is organized in three layers:
 | Layer | Package | Responsibility |
 |---|---|---|
 | View | `opal_listener/view/api/*`, `view/static/opal-listen.html` | Thin FastAPI routers (one per resource) and the single-file GUI |
-| Service | `opal_listener/service/*` | Business logic: runtime, pipeline, NLU, providers, audio, backups, health |
+| Service | `opal_listener/service/*` | Business logic: runtime, pipeline, NLU, providers, audio, config snapshots, health |
 | Data | `opal_listener/data/*`, `opal_listener/models/*` | SQLite access, Alembic migrations, SQLModel tables, Pydantic schemas |
 
 The CLI (`opal_listener/cli/*`) is a pure HTTP client, except `event publish` which bypasses REST entirely
@@ -357,7 +356,7 @@ and writes straight to the ZeroMQ bus (see [6. Live results](#6-live-results-ser
 
 | Component | What it does |
 |---|---|
-| `ListenerService` | Owns the runtime snapshot, provider instances, the live runtime thread, watchdog/recovery, cooldown/dedup, logging, performance tracking, validated config changes, import/backup/restore and event publishing. |
+| `ListenerService` | Owns the runtime snapshot, provider instances, the live runtime thread, watchdog/recovery, cooldown/dedup, logging, performance tracking, validated config changes, snapshot save/load and event publishing. |
 | `ListenerProvider` (`providers/base.py`) | Pluggable speech engine. It creates wakeword detectors and grammar-constrained transcribers. `vosk` is built in. Third-party providers register through the `opal_listener.providers` entry point. |
 | `VoskListenerProvider` | Model cache, two-stage wakeword detector, grammar transcriber and out-of-vocabulary filtering. |
 | `SttRefiner` (`whisper_refiner.py`) | Optional second-pass STT with faster-whisper. |
@@ -511,7 +510,7 @@ SQLite database (default `var/opal_listener.db`), managed by Alembic, with forei
 | `regression_tests` | expected intent/slots per phrase |
 | `performance_results` | latency and confidence per recognition |
 
-Backups are SQLite online backups in `var/backups/`, named `opal_listener_<UTC timestamp>_<label>.db`.
+The managed configuration snapshot is a single JSON envelope in the data dir, replaced atomically by `POST /api/v1/config/save`.
 
 ### 3.8 Reliability features
 
@@ -524,7 +523,7 @@ Backups are SQLite online backups in `var/backups/`, named `opal_listener_<UTC t
 | Graceful no_match | Every path returns a `RecognitionResult` with a `no_match_reason`. It never errors. |
 | Failure capture | With `auto_capture_failures=true`, `no_match` results from mic and audio sources are stored as failed utterances. Text tests are not captured. |
 | Bounded resources | Bounded audio and SSE queues, upload size limit, log retention. |
-| Safe backups | Filenames are validated against a strict pattern and resolved inside the backup dir (no path traversal). Restores are integrity-checked and roll back automatically on failure. |
+| Atomic config loads | `config load` validates the whole snapshot first and requires `If-Match`; a failed apply rolls every table back, so the previous configuration is untouched. |
 | Health checks | SQLite, migrations, slots, intents, config warnings, provider, vocabulary, microphone, listener, disk. |
 
 ---
@@ -744,7 +743,7 @@ to the `local` target. With the default `intent_dispatch=auto` that means the le
 `reactions_enabled` flag; to be explicit set the policy directly:
 
 ```bash
-opal listen config setting set intent_dispatch local   # or "both" for local + event bus
+opal listen config setting set --name intent_dispatch --value local   # or "both" for local + event bus
 ```
 
 ```yaml
@@ -790,9 +789,8 @@ A malformed file logs a warning and yields an empty reaction set — it never st
 - **Base URL:** `http://<host>:8000`. All resources are under `/api/v1`.
 - **Trailing slashes:** collection endpoints end with `/` (for example `/api/v1/intent/`). Calling them
   without the slash triggers a redirect.
-- **IDs:** resources are addressed by integer id in the API. (The CLI also accepts names.)
-- **Content type:** JSON (`Content-Type: application/json`), except `test_audio` (multipart form) and
-  `backup/download` (binary).
+- **IDs:** resources are addressed by opaque string id in the API. (The CLI also accepts names.)
+- **Content type:** JSON (`Content-Type: application/json`), except `test_audio` (multipart form).
 - **Timestamps:** ISO 8601, UTC, for example `2026-09-30T12:34:56.123456`.
 - **Authentication:** optional Bearer token (see [Authentication](#authentication)).
 - **Correlation headers (OPAL SUITE STANDARD v1.2):** every response carries `X-Opal-Transaction-Id` and
@@ -826,7 +824,7 @@ Missing/wrong credentials → `401` `OpalError` (`code: unauthorized`) with `WWW
 browser `EventSource` used by `/api/v1/recognition/stream` cannot set headers, so that one route also
 accepts `?token=`. The CLI reads the same `OPAL_LISTENER_API_TOKEN` env var; the UI stores a token typed
 into the header form in `localStorage`. The token is env-only — it never appears in `GET /api/v1/setting/`,
-config exports, or responses.
+config snapshots, or responses.
 
 ### 5.2 Errors
 
@@ -847,7 +845,7 @@ Every error response uses the OPAL standard `OpalError` envelope:
 | `412` | `precondition_failed` | Stale `If-Match` on a mutation |
 | `422` | `invalid_request` | Request validation, invalid correlation header/cursor, or the configuration would become invalid |
 | `428` | `precondition_required` | Missing/empty `If-Match` on a mutation that requires one |
-| `500` | `internal_error` | Unhandled server error or failed backup operation |
+| `500` | `internal_error` | Unhandled server error |
 | `503` | `service_unavailable` | Listener provider/model unavailable; health probes return `OpalHealthProbe` instead |
 
 `details` carries the specifics where they exist (e.g. `unknown slot 'colour'`, per-field validation
@@ -1576,7 +1574,7 @@ curl -s "$API/api/v1/service/log?lines=5"
 
 Returns `404` when no managed log file exists.
 
-> v1.7.1 removed the `/api/v1/log` recognition-log read API (`list`/`count`/`get`). Recognition
+> v2.0.0 removed the `/api/v1/log` recognition-log read API (`list`/`count`/`get`). Recognition
 > rows are still stored internally; browse equivalents are `/api/v1/performance/*` and
 > `/api/v1/failed_utterance/`.
 
@@ -1859,120 +1857,69 @@ curl -si $API/api/v1/health/ready   # -i to see the 503 on failure
 
 ---
 
-### 5.16 Backup and configuration — `/api/v1/backup`
+### 5.16 Configuration snapshots — `/api/v1/config`
 
-#### `GET /api/v1/backup/list` — list backups (newest first)
+The v2 contract replaces the old `/api/v1/backup/*` routes with OPAL configuration
+snapshots. A snapshot is one portable envelope:
+
+```json
+{"format_version": "1.0.0", "module": "opal-listen", "created_at": "2026-09-30T09:30:00Z",
+ "settings": {"cooldown_ms": 1500, "...": "..."},
+ "resources": {"wakewords": [], "intents": [], "slots": [], "profiles": [],
+               "personas": [], "regression_tests": []}}
+```
+
+It covers **persistent desired configuration only** — no logs, failed utterances,
+performance data, sessions or database files.
+
+#### `POST /api/v1/config/save` — capture a snapshot
+
+`destination: managed` (the default) atomically replaces the server's single managed
+snapshot; `destination: response` returns the envelope in the body without storing it
+(the CLI maps `config save --out FILE` here).
 
 ```bash
-curl -s $API/api/v1/backup/list
+curl -s -X POST $API/api/v1/config/save -H 'Content-Type: application/json' -d '{}'
 ```
 ```json
-[
-  {"filename": "opal_listener_20260930T093000123456_manual.db", "size_bytes": 172032, "created_at": "2026-09-30T09:30:00"},
-  {"filename": "opal_listener_20260929T181500000000_pre_import.db", "size_bytes": 163840, "created_at": "2026-09-29T18:15:00"}
-]
+{"snapshot": {"format_version": "1.0.0", "module": "opal-listen", "...": "..."},
+ "managed": true, "revision": "\"<sha256>\"", "destination": "managed"}
 ```
 
-Automatic backups are labeled `pre_import` or `pre_restore`.
+The response `ETag` is the live-configuration revision.
 
-#### `POST /api/v1/backup/create` — create a backup
+#### `POST /api/v1/config/load` — atomically replace configuration
 
-This is a consistent SQLite online backup, safe while the server runs.
+Requires `If-Match` equal to the live-configuration revision (a stale one is `412`, a
+missing one `428`). An empty body loads the managed snapshot; `{snapshot: {...}}` loads an
+inline candidate. The apply is all-or-nothing: validation happens first and any failure
+rolls the whole thing back — the previous configuration is untouched.
 
 ```bash
-curl -s -X POST $API/api/v1/backup/create
+ETAG=$(curl -s -X POST $API/api/v1/config/save -d '{}' -o /dev/null -D - | grep -i '^etag:' | tr -d ' 
+')
+curl -s -X POST $API/api/v1/config/load   -H "Content-Type: application/json" -H "If-Match: $ETAG" -d @snapshot.json
 ```
 ```json
-{"status": "created", "filename": "opal_listener_20260930T093000123456_manual.db"}
+{"applied": true, "pending_restart_fields": ["auto_start_listener"], "warnings": []}
 ```
 
-#### `GET /api/v1/backup/download/{filename}` — download a backup file
+A snapshot whose `module` is not `opal-listen` or whose `format_version` is not `1.0.0` is
+rejected with `422` before anything changes; a missing managed snapshot is `404`.
+
+#### `POST /api/v1/config/validate` — report issues without changing anything
+
+`{}` (or no body) validates the live desired configuration; `{snapshot: {...}}` validates a
+candidate envelope. Never mutates.
 
 ```bash
-curl -s -OJ $API/api/v1/backup/download/opal_listener_20260930T093000123456_manual.db
-```
-
-#### `POST /api/v1/backup/restore/{filename}` — restore a backup
-
-The restore:
-
-1. Verifies the file (SQLite integrity check and required tables).
-2. Takes a `pre_restore` safety backup.
-3. Replaces the database, runs migrations and recompiles the configuration.
-4. If anything fails, restores the safety backup automatically.
-
-```bash
-curl -s -X POST $API/api/v1/backup/restore/opal_listener_20260930T093000123456_manual.db
+jq '.module = "opal-say"' snapshot.json   | curl -s -X POST $API/api/v1/config/validate -H 'Content-Type: application/json'     -d '{"snapshot": '"$(cat)"'}'
 ```
 ```json
-{"status": "restored", "filename": "opal_listener_20260930T093000123456_manual.db",
- "rollback_backup": "opal_listener_20260930T094500654321_pre_restore.db"}
-```
-
-#### `DELETE /api/v1/backup/{filename}` — delete a backup file
-
-```bash
-curl -s -X DELETE $API/api/v1/backup/opal_listener_20260929T181500000000_pre_import.db
-```
-
-Filenames must match `^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}\.db$`. Anything else gets `422`.
-
-#### `GET /api/v1/backup/export` — export the configuration as a JSON bundle
-
-The bundle contains wakewords, stt, intents, slots, profiles and settings. It does not contain logs,
-failures, regression tests or performance data.
-
-```bash
-curl -s $API/api/v1/backup/export > config-bundle.json
-jq 'keys' config-bundle.json
-```
-```json
-["intents", "profiles", "settings", "slots", "stt", "version", "wakewords"]
-```
-
-#### `POST /api/v1/backup/import` — replace the configuration
-
-- **With a JSON body:** imports that bundle.
-- **Without a body:** imports the server's YAML files from `OPAL_LISTENER_CONFIG_DIR`.
-
-The bundle is validated first. A `pre_import` backup is taken, and all configuration tables are replaced
-in one transaction. Logs, failures, regression tests and performance data are kept.
-
-```bash
-# import an edited bundle
-curl -s -X POST $API/api/v1/backup/import -H 'Content-Type: application/json' -d @config-bundle.json
-
-# re-import the server's YAML config dir
-curl -s -X POST $API/api/v1/backup/import
-```
-```json
-{"status": "imported", "backup_filename": "opal_listener_20260930T095000000000_pre_import.db",
- "counts": {"wakewords": 1, "intents": 6, "intent_phrases": 18, "slots": 3, "slot_values": 6, "profiles": 4, "settings": 18},
+{"valid": false,
+ "errors": [{"code": "wrong_module", "path": "module",
+             "message": "snapshot is for module 'opal-say', expected 'opal-listen'"}],
  "warnings": []}
-```
-
-An invalid bundle returns `422` with every error, and nothing is changed.
-
-#### `GET /api/v1/backup/validate` — validate the server config dir and the database
-
-```bash
-curl -s $API/api/v1/backup/validate
-```
-```json
-{"valid": true, "errors": [], "warnings": [], "sources": {"config_dir": true, "database": true}}
-```
-
-Error messages are prefixed with `config_dir:` or `database:`.
-
-#### `POST /api/v1/backup/validate` — validate a bundle without applying it
-
-```bash
-jq '.intents[0].phrases += ["turn on {nonexistent}"]' config-bundle.json \
-  | curl -s -X POST $API/api/v1/backup/validate -H 'Content-Type: application/json' -d @-
-```
-```json
-{"valid": false, "errors": ["intent 'light_turn_on' phrase 'turn on {nonexistent}': unknown slot 'nonexistent'"],
- "warnings": [], "sources": {"bundle": false}}
 ```
 
 ---
@@ -2249,8 +2196,8 @@ opal listen profile remove late_night
 ### 7.6 `persona`
 
 Personas are named speaker identities; an optional `--voice` binds an OPAL Say voice id so
-spoken feedback keeps a consistent voice. They live in `personas.yaml` and travel with
-`config export`/`config import`.
+spoken feedback keeps a consistent voice. They travel in `config save`/`config load` snapshots
+(`resources.personas`).
 
 | Command | Description |
 |---|---|
@@ -2425,31 +2372,22 @@ opal listen service perf history --limit 50
 
 | Command | Description |
 |---|---|
-| `validate [--from-dir DIR]` | Validate the server config dir and database, or local YAML files. Exit 1 if invalid. |
-| `backup` | Create a backup on the server |
-| `backups` | List backups |
-| `download FILE [-o PATH]` | Download a backup |
-| `restore FILE [-y]` | Restore (asks for confirmation) |
-| `delete-backup FILE [-y]` | Delete a backup (asks for confirmation) |
-| `export [--out-dir DIR]` | JSON to stdout, or the seven YAML files into `DIR` |
-| `import [--from-dir DIR] [-y]` | Replace configuration from local YAML (default: server `./config/`) |
+| `validate [--in FILE]` | Validate the live configuration, or a candidate snapshot file (JSON/YAML). Exit 1 if invalid. |
+| `save [--out FILE]` | Snapshot desired configuration: replace the server's managed snapshot, or `--out` writes the envelope to a local file |
+| `load [--in FILE] [-y]` | Atomically replace configuration from the managed snapshot or a local file (asks for confirmation) |
 
 ```bash
 opal listen config validate
-opal listen config backup
-opal listen config backups
-opal listen config download opal_listener_20260930T093000123456_manual.db -o ~/backups/
-opal listen config restore opal_listener_20260930T093000123456_manual.db --yes
-opal listen config delete-backup opal_listener_20260929T181500000000_pre_import.db -y
+opal listen config save                       # refresh the managed snapshot
+opal listen config save --out ./snapshot.json # portable file instead
 
-opal listen config export > bundle.json
-opal listen config export --out-dir ./my-config
-opal listen config validate --from-dir ./my-config
-opal listen config import --from-dir ./my-config --yes
+opal listen config validate --in ./snapshot.json
+opal listen config load --in ./snapshot.json --yes
+opal listen config load --yes                 # restore the managed snapshot
 ```
 
-> `--from-dir` reads files on the **client** machine and uploads them as a bundle. Without it, `import`
-> uses the YAML directory on the **server**.
+> `--in` reads the snapshot file on the **client** machine. Without it, `load` uses the
+> managed snapshot stored on the **server**.
 
 ### 7.15 `service`
 
@@ -2543,7 +2481,7 @@ no build step. Every action calls exactly one REST operation, which is shown on 
 | **Regression** | Run all tests (optionally including disabled ones), see PASS/FAIL per test, add tests with an expected intent dropdown (including `no_match`) and `expected_slots` JSON, edit or delete tests. |
 | **Logs** | Totals (total / matched / no_match), filter by intent and match status, page through results, click a row for full details. |
 | **Performance** | Last recognition, a summary over the last 100 (match rate, confidence, latency avg/p50/p95/max), and a history table with a latency bar chart (green = matched, amber = no_match). |
-| **Config & backups** | **Validate** the server config and database. **Export** or **Download JSON**, load a bundle file or paste JSON, then **Validate bundle** / **Import bundle** / **Import server ./config/ YAML**. Create, download, restore and delete backups. |
+| **Config** | **Validate** the live configuration or a candidate snapshot. **Save** to the managed snapshot or **Download JSON**, load a snapshot file or paste JSON, then **Validate** / **Load**. |
 | **API & parity** | Every operation in `/openapi.json` with its CLI command and GUI page, plus a **Request console** to send any method, path and JSON body and see the raw response. |
 
 ### 8.3 Result cards
@@ -2565,7 +2503,7 @@ Every test (text, audio or live) renders a result card:
 4. If a result says **NO MATCH**, click **Record as failed utterance**. Then go to **Failed utterances**,
    click **Promote**, pick the intended intent, and confirm.
 5. **Regression** → **Run regression tests** to make sure nothing else broke.
-6. **Config & backups** → **Create backup**.
+6. **Config** → **Save snapshot**.
 
 ---
 
@@ -2675,34 +2613,30 @@ opal listen test regression
 opal listen service perf summary
 ```
 
-### 9.5 Back up, move and version your configuration
+### 9.5 Save, move and version your configuration
 
 ```bash
 # keep configuration in git
-opal listen config export --out-dir ~/opal-config
+opal listen config save --out ~/opal-config/snapshot.json
 cd ~/opal-config && git init && git add . && git commit -m "baseline"
 
-# edit YAML, then validate locally before applying
-$EDITOR ~/opal-config/intents.yaml
-opal listen config validate --from-dir ~/opal-config
-opal listen config import --from-dir ~/opal-config --yes      # pre_import backup is automatic
+# edit the snapshot, then validate before applying
+$EDITOR ~/opal-config/snapshot.json
+opal listen config validate --in ~/opal-config/snapshot.json
+opal listen config load --in ~/opal-config/snapshot.json --yes
 
 # move to a new Pi
-opal listen --api-url http://old-pi:8000 config export --out-dir /tmp/cfg
-opal listen --api-url http://new-pi:8000 config import --from-dir /tmp/cfg --yes
-
-# full database copy (includes logs, failures, regression tests)
-opal listen config backup
-opal listen config download <filename> -o ./
-# copy the file into the new server's var/backups/, then:
-opal listen config restore <filename> --yes
+opal listen --api-url http://old-pi:8000 config save --out /tmp/cfg.json
+opal listen --api-url http://new-pi:8000 config load --in /tmp/cfg.json --yes
 ```
 
-Undo a bad import:
+Undo a bad load:
 
 ```bash
-opal listen config backups               # find the *_pre_import.db file
-opal listen config restore opal_listener_<stamp>_pre_import.db --yes
+# if you saved the managed snapshot first:
+opal listen config load --yes    # restores the managed snapshot
+# otherwise reload the file you saved before editing:
+opal listen config load --in ~/opal-config/snapshot.json --yes
 ```
 
 ### 9.6 Scope profiles to rooms or situations
@@ -2754,8 +2688,8 @@ Open mode is more flexible but less accurate than grammar mode on small models.
 #!/usr/bin/env bash
 set -euo pipefail
 export OPAL_LISTEN_API_URL=http://localhost:8000
-opal listen config validate --from-dir ./config
-opal listen config import --from-dir ./config --yes
+opal listen config validate --in ./config/snapshot.json
+opal listen config load --in ./config/snapshot.json --yes
 opal listen test text "computer turn on the kitchen light" --expect-intent light_turn_on --no-save
 opal listen test text "order a pizza" --expect-intent no_match --no-save
 opal listen test regression
@@ -2891,9 +2825,9 @@ python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixture
 | Negative phrases | `tests/negative/negative_phrases.yaml` | Must be `no_match` with a reason |
 | Audio fixtures | `tests/audio/manifest.yaml`, `fixtures/*.wav` | Full pipeline via REST, wakeword false positives and negatives |
 | Noise | `tests/noise/test_noise.py` (`slow`) | Golden WAVs with white/pink noise at 20/10 dB SNR |
-| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v1.7.1.yaml` |
+| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v2.0.0.yaml` |
 | CLI | `test_cli.py`, `test_e2e_server.py` | Every command, parity map, real server + SSE |
-| Config / backup | `test_config_schema.py`, `test_backup_and_config.py` | YAML schemas, validate-before-apply, rollback |
+| Config / snapshots | `test_config_schema.py`, `test_backup_and_config.py` | YAML schemas, snapshot roundtrip, validate-before-apply, rollback |
 | Migrations | `test_migrations.py` | Upgrade/downgrade, drift, foreign keys |
 | Runtime | `test_pipeline_runtime.py` | State machine, cooldown, dedup, watchdog restart |
 
@@ -2941,10 +2875,11 @@ atomically. The live pipeline switches when it is idle. Changes to environment v
 restart.
 
 **Where are my changes stored?** In SQLite (`$OPAL_LISTENER_DATA_DIR/opal_listener.db`). The YAML files
-are only used to seed an empty database and for import/export.
+are only used to seed an empty database.
 
-**How do I reset to the shipped defaults?** Back up first, then re-import the server's YAML:
-`opal listen config backup && opal listen config import --yes`.
+**How do I reset to the shipped defaults?** Save a snapshot first, then load the managed snapshot
+from a clean database or restore your saved envelope:
+`opal listen config save --out backup.json`, reset, then `opal listen config load --in backup.json --yes`.
 
 **How many phrases can I have?** Hundreds are fine in grammar mode on a Pi 5. With very large
 vocabularies, consider `stt_mode=open`.
@@ -2993,7 +2928,6 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | DELETE | `/api/v1/profile/{profile_id}` | `opal_profile_delete` | `profile remove` | Profiles |
 | POST | `/api/v1/profile/{profile_id}/activate` | `opal_profile_activate` | `profile activate` | Profiles |
 | GET | `/api/v1/setting/` | `opal_setting_list` | `config setting list` | Settings |
-| PATCH | `/api/v1/setting/` | `opal_setting_patch` | `config setting update` | Settings |
 | GET | `/api/v1/setting/{key}` | `opal_setting_get` | `config setting show` | Settings |
 | PUT | `/api/v1/setting/{key}` | `opal_setting_put` | `config setting set` | Settings |
 | DELETE | `/api/v1/setting/{key}` | `opal_setting_delete` | `config setting remove` | Settings |
@@ -3031,15 +2965,9 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | GET | `/api/v1/health/audio_devices` | `get_audio_devices` | `service devices` | System |
 | GET | `/api/v1/health/live` | `opal_health_live_get` | `service live` | System |
 | GET | `/api/v1/health/ready` | `opal_health_ready_get` | `service ready` | System |
-| GET | `/api/v1/backup/list` | `opal_backup_list` | `config backups` | Config & backups |
-| POST | `/api/v1/backup/create` | `opal_backup_create` | `config backup` | Config & backups |
-| GET | `/api/v1/backup/download/{filename}` | `opal_backup_download` | `config download` | Config & backups |
-| POST | `/api/v1/backup/restore/{filename}` | `opal_backup_restore` | `config restore` | Config & backups |
-| DELETE | `/api/v1/backup/{filename}` | `opal_backup_delete` | `config delete-backup` | Config & backups |
-| GET | `/api/v1/backup/export` | `opal_backup_export` | `config export` | Config & backups |
-| POST | `/api/v1/backup/import` | `opal_backup_import` | `config import` | Config & backups |
-| GET | `/api/v1/backup/validate` | `opal_backup_validate_stored` | `config validate` | Config & backups |
-| POST | `/api/v1/backup/validate` | `opal_backup_validate` | `config validate --from-dir` | Config & backups |
+| POST | `/api/v1/config/save` | `opal_config_save` | `config save` | Config |
+| POST | `/api/v1/config/load` | `opal_config_load` | `config load` | Config |
+| POST | `/api/v1/config/validate` | `opal_config_validate` | `config validate` | Config |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v1.7.1.yaml](../openapi/opal_listen_v1.7.1.yaml).
+REST contract [opal_listen_v2.0.0.yaml](../openapi/opal_listen_v2.0.0.yaml).

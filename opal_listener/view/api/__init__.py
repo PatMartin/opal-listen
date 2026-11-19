@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from opal_listener.view.api import (
-    backup,
+    config,
     failed_utterances,
     health,
     info,
@@ -27,12 +27,12 @@ ROUTERS: list[APIRouter] = [
     slots.router,
     profiles.router,
     settings.router,
+    config.router,
     recognition.router,
     failed_utterances.router,
     regression.router,
     performance.router,
     health.router,
-    backup.router,
     personas.router,
     service.router,
     info.router,

@@ -12,7 +12,7 @@ paste straight into your shell. Multi-step recipes paste as a single unit.
   override with `opal listen --api-url URL ...` or `OPAL_LISTEN_API_URL`).
 - Ports used in Part 2: listen `:8000`, talk `:8001`, look `:8002`
   (`OPAL_LOOK_PORT=8002`), event `:8080`, think `:8082` (`OPAL_THINK_PORT=8082`).
-- IDs shown (fu `7`, rule `say_result`, backup filenames) are examples — substitute
+- IDs shown (fu `7`, rule `say_result`, snapshot paths) are examples — substitute
   what your service prints.
 - Most mutations auto-fetch the resource ETag and send `If-Match` for you; if the
   server answers `412`, someone else changed it — rerun to re-fetch.
@@ -76,7 +76,7 @@ the hit). Then watch the no-match side of the log stream to confirm.
 
 ```bash
 opal listen wakeword update computer --threshold 0.9
-opal listen config setting set wakeword_distractors "commuter,compute,computing,commute"
+opal listen config setting set --name wakeword_distractors --value "commuter,compute,computing,commute"
 opal listen failed list
 ```
 
@@ -121,7 +121,7 @@ opal listen reaction add lights \
   --cond "intent_name eq light_turn_on" \
   --cond "intent_confidence gte 0.8" \
   --run "/opt/opal/lights.sh" --timeout 10
-opal listen config setting set reactions_enabled true   # master switch, off by default
+opal listen config setting set --name reactions_enabled --value true   # master switch, off by default
 opal listen test listen --count 1                 # say: "computer, turn on the kitchen light"
 opal listen reaction log --limit 5
 ```
@@ -155,42 +155,44 @@ opal listen service ping && opal listen service live && opal listen service read
 opal listen service doctor   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
 ```
 
-### 10. Atomically retune several settings
+### 10. Retune several settings
 
-`config setting update` applies key=value pairs in one validated, all-or-nothing
-collection PATCH — nothing half-applies if one value is wrong. Verify what a key
-actually controls with `config setting show` first.
+`config setting set` applies one key per call, validated server-side with an
+`If-Match` precondition — a rejected value leaves the stored setting untouched.
+Verify what a key actually controls with `config setting show` first.
 
 ```bash
-opal listen config setting show cooldown_ms
-opal listen config setting patch cooldown_ms=800 dedup_window_ms=4000 filler_words="uh,um,er,please"
+opal listen config setting show --name cooldown_ms
+opal listen config setting set --name cooldown_ms --value 800
+opal listen config setting set --name dedup_window_ms --value 4000
+opal listen config setting set --name filler_words --value "uh,um,er,please"
 opal listen config setting list
 ```
 
 ### 11. Snapshot the catalog before surgery — and roll back
 
-`config backup` writes a timestamped SQLite copy server-side. `restore` first
-takes its *own* safety backup, then swaps the database — so even a bad restore
-is undoable.
+`config save` writes a portable snapshot of the desired configuration — managed
+server-side, or to a local file with `--out`. `config load` validates first and
+applies atomically, so a bad load leaves the previous configuration untouched;
+re-loading your saved snapshot rolls everything back.
 
 ```bash
-opal listen config backup
-opal listen config backups
-latest=$(opal listen --json config backups | jq -r '.[0].filename')
-opal listen config restore "$latest" --yes
+opal listen config save --out ./before-surgery.json
+# ... make changes ...
+opal listen config load --in ./before-surgery.json --yes
 ```
 
 ### 12. Keep your whole voice model in git
 
-`config export --out-dir` writes the seven YAML files (wakewords, intents, slots,
-profiles, stt, settings) as reviewable source. Validate offline, then import —
-which auto-validates, takes a pre-import backup, and reports row counts.
+`config save --out` writes one JSON snapshot envelope (wakewords, intents, slots,
+profiles, personas, regression tests, settings) as reviewable source. Validate
+offline, then load — which validates again and applies atomically.
 
 ```bash
-opal listen config export --out-dir ./voice-config
+opal listen config save --out ./voice-config/snapshot.json
 git add voice-config && git commit -m "voice model snapshot"
-opal listen config validate --from-dir ./voice-config
-opal listen config import --from-dir ./voice-config --yes
+opal listen config validate --in ./voice-config/snapshot.json
+opal listen config load --in ./voice-config/snapshot.json --yes
 ```
 
 ### 13. One service, two acoustic environments
@@ -242,7 +244,7 @@ opal listen test regression
 ### 16. Mine the recognition history for what people really say
 
 Every recognition is stored (source, transcript, intent, slots, confidences, latency,
-no-match reason). v1.7.1 removed the `log` read API; `service perf` gives the
+no-match reason). v2.0.0 removed the `log` read API; `service perf` gives the
 per-recognition metrics and `failed` the captured no_match utterances — filter by
 intent or match status there to find where the model leaks.
 
@@ -279,7 +281,7 @@ opal listen reaction test --text "computer, what time is it"         # ✗ (inte
 opal listen reaction test --payload \
   '{"intent_name":"light_turn_on","slot_values":{"room_name":"office"},"intent_confidence":0.9}' --execute
 opal listen reaction disable lights                  # park it; keeps conditions and actions
-opal listen config setting set reactions_enabled false      # or stop all reactions at once
+opal listen config setting set --name reactions_enabled --value false      # or stop all reactions at once
 ```
 
 Conditions on a field that isn't in the payload never match. Include every field
@@ -293,25 +295,25 @@ open dictation, bolt on the faster-whisper refiner for a second pass, and roll i
 back with `unset` — all while the pipeline keeps running.
 
 ```bash
-opal listen config setting set stt_mode open
-opal listen config setting set stt_refiner faster_whisper
-opal listen config setting set whisper_model base.en
+opal listen config setting set --name stt_mode --value open
+opal listen config setting set --name stt_refiner --value faster_whisper
+opal listen config setting set --name whisper_model --value base.en
 opal listen test text "computer, what is the airspeed of an unladen swallow"
 # back out:
-opal listen config setting remove stt_refiner && opal listen config setting set stt_mode grammar
+opal listen config setting remove --name stt_refiner && opal listen config setting set --name stt_mode --value grammar
 ```
 
 ### 20. Harden a headless appliance
 
-Pick the right mic by name, let the watchdog recover dead captures, bound the
-log table, and prune old backups — all without editing a file or restarting.
+Pick the right mic by name, let the watchdog recover dead captures, and bound the
+log table — all without editing a file or restarting.
 
 ```bash
 opal listen service devices
-opal listen config setting patch audio_device="USB" audio_watchdog_timeout_ms=5000 \
-  max_recognition_logs=5000 auto_start_listener=true
-opal listen --json config backups | jq -r '.[3:][] | .filename' \
-  | xargs -r -I{} opal listen config delete-backup {} --yes
+opal listen config setting set --name audio_device --value "USB"
+opal listen config setting set --name audio_watchdog_timeout_ms --value 5000
+opal listen config setting set --name max_recognition_logs --value 5000
+opal listen config setting set --name auto_start_listener --value true
 ```
 
 ---
@@ -331,7 +333,7 @@ two share a condition grammar; listen's `intent_name` becomes `data.intent_name`
 in a bus event. Recipes below enable event publication with the legacy flag
 (`event_publication_enabled true`), which keeps working because the default
 `intent_dispatch=auto` resolves from the legacy flags. To be explicit, set the
-policy instead: `opal listen config setting set intent_dispatch event`
+policy instead: `opal listen config setting set --name intent_dispatch --value event`
 (or `both` for event bus + local reactions). Each result's `dispatched_to`
 field reports which path was selected.
 
@@ -342,7 +344,7 @@ publishes `opal.listen.intent.match` on every match; an opal-event rule hands
 the event to a shell action that turns it into words through opal-talk.
 
 ```bash
-opal listen config setting set event_publication_enabled true
+opal listen config setting set --name event_publication_enabled --value true
 cat > /opt/opal/speak_ack.sh <<'SH'
 #!/usr/bin/env bash
 event=$(cat)   # stdin carries the event JSON (stdin: "event_json")
@@ -389,7 +391,7 @@ query latency stays out of the audio path until asked.
 
 ```bash
 opal listen intent add describe_scene --phrase "what do you see" --phrase "describe the scene"
-opal listen config setting set event_publication_enabled true
+opal listen config setting set --name event_publication_enabled --value true
 cat > /opt/opal/describe.sh <<'SH'
 #!/usr/bin/env bash
 labels=$(opal-look-cli analyze run --body '{"source":{"source_id":"doorcam"},"task":"detection"}' \
@@ -413,7 +415,7 @@ register. Voice prompt goes in; the answer is spoken by opal-talk.
 opal listen slot add question --type text        # slot must exist before a phrase uses it
 opal listen intent add ask_brain --phrase "ask the brain {question}"
 opal listen test text "computer, ask the brain why is the sky blue"   # question = "why is the sky blue"
-opal listen config setting set event_publication_enabled true
+opal listen config setting set --name event_publication_enabled --value true
 cat > /opt/opal/ask_brain.sh <<'SH'
 #!/usr/bin/env bash
 q=$(jq -r '.data.slot_values.question // "status report"' </dev/stdin)
@@ -462,7 +464,7 @@ action list together.
 
 ```bash
 opal listen intent add good_night --phrase "good night" --phrase "bedtime"
-opal listen config setting set event_publication_enabled true
+opal listen config setting set --name event_publication_enabled --value true
 opal event actions create --json \
   '{"id":"night_tts","type":"http","method":"POST","url":"http://127.0.0.1:8001/api/v1/generate","body_mode":"template","body":{"text":"Good night. Locking up."},"timeout_seconds":10}'
 opal event actions create --json \
@@ -521,15 +523,15 @@ opal talk generate "Good morning. ${matched} of ${total} commands matched, p95 l
 
 ### 31. Fleet backup in one cron line per service
 
-Every OPAL service exposes the same export/validate/import backup contract —
+Every OPAL service exposes the same save/validate/load snapshot contract —
 back up the whole suite into one dated directory.
 
 ```bash
 day=$(date +%F); mkdir -p /backup/opal/$day
-opal listen config export --out-dir /backup/opal/$day/listen
+opal listen config save --out /backup/opal/$day/listen.json
 opal talk backup export --output /backup/opal/$day/talk.json
 opal event backup export --output /backup/opal/$day/event.json
-opal listen config validate --from-dir /backup/opal/$day/listen
+opal listen config validate --in /backup/opal/$day/listen.json
 tar -czf /backup/opal-$day.tgz -C /backup/opal $day
 ```
 
@@ -556,7 +558,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint openapi/opal_listen_v1.7.1.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
+spectral lint openapi/opal_listen_v2.0.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs
@@ -652,12 +654,12 @@ opal event rules create --json \
 feed `opal think` for summarization and the digest comes back through talk.
 
 ```bash
-opal listen config setting set stt_mode open
+opal listen config setting set --name stt_mode --value open
 opal listen --json test listen --duration 600 --verbose > meeting.ndjson
 jq -sr '[.[].transcript] | join("\n")' meeting.ndjson \
   | opal think ask "Summarize this meeting transcript in three sentences:" --no-stream \
   | opal talk generate - -o summary.wav && aplay summary.wav
-opal listen config setting set stt_mode grammar
+opal listen config setting set --name stt_mode --value grammar
 ```
 
 ### 40. Whole-suite incident bundle

@@ -92,6 +92,9 @@ class LivenessRead(BaseModel):
 
 
 # Reusable OpenAPI response overrides.
+OPAL_400_RESPONSE: dict[int | str, dict[str, Any]] = {
+    400: {"model": OpalError, "description": "OPAL standard error"},
+}
 OPAL_404_RESPONSE: dict[int | str, dict[str, Any]] = {
     404: {"model": OpalError, "description": "OPAL standard error"},
 }

@@ -8,7 +8,7 @@ from opal_listener.models.opal_standard import (
     OPAL_422_RESPONSE,
     OPAL_PRECONDITION_RESPONSES,
 )
-from opal_listener.models.schemas import WakewordCreate, WakewordRead, WakewordUpdate
+from opal_listener.models.schemas import IdPath, WakewordCreate, WakewordRead, WakewordUpdate
 from opal_listener.models.tables import Wakeword
 from opal_listener.service import catalog
 from opal_listener.service.concurrency import collection_etag, item_etag, require_matching_etag
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1/wakeword", tags=["wakewords"])
     "/",
     response_model=list[WakewordRead],
     responses=OPAL_422_RESPONSE,
-    operation_id="list_wakewords_api_v1_wakewords__get",
+    operation_id="list_wakewords",
 )
 def list_wakewords(response: Response, svc: ListenerService = Depends(get_service)) -> list[WakewordRead]:
     with svc.db.session() as session:
@@ -36,7 +36,7 @@ def list_wakewords(response: Response, svc: ListenerService = Depends(get_servic
     response_model=WakewordRead,
     status_code=201,
     responses={**OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="create_wakeword_api_v1_wakewords__post",
+    operation_id="create_wakeword",
 )
 def create_wakeword(
     data: WakewordCreate,
@@ -56,11 +56,11 @@ def create_wakeword(
     "/{wakeword_id}",
     response_model=WakewordRead,
     responses=OPAL_404_RESPONSE,
-    operation_id="get_wakeword_api_v1_wakewords__wakeword_id__get",
+    operation_id="show_wakeword",
 )
-def get_wakeword(wakeword_id: int, response: Response, svc: ListenerService = Depends(get_service)) -> WakewordRead:
+def show_wakeword(wakeword_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)) -> WakewordRead:
     with svc.db.session() as session:
-        item = WakewordRead.model_validate(catalog.get_or_404(session, Wakeword, wakeword_id, "wakeword"))
+        item = WakewordRead.model_validate(catalog.get_by_ref(session, Wakeword, wakeword_id, "wakeword"))
     response.headers["ETag"] = item_etag(item)
     return item
 
@@ -69,18 +69,18 @@ def get_wakeword(wakeword_id: int, response: Response, svc: ListenerService = De
     "/{wakeword_id}",
     response_model=WakewordRead,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="update_wakeword_api_v1_wakewords__wakeword_id__patch",
+    operation_id="update_wakeword",
 )
 def update_wakeword(
-    wakeword_id: int,
+    wakeword_id: IdPath,
     data: WakewordUpdate,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> WakewordRead:
     with svc.config_change() as session:
-        current = WakewordRead.model_validate(catalog.get_or_404(session, Wakeword, wakeword_id, "wakeword"))
+        current = WakewordRead.model_validate(catalog.get_by_ref(session, Wakeword, wakeword_id, "wakeword"))
         require_matching_etag(if_match, item_etag(current), "wakeword")
-        result = WakewordRead.model_validate(catalog.update_wakeword(session, wakeword_id, data))
+        result = WakewordRead.model_validate(catalog.update_wakeword(session, catalog.parse_id(wakeword_id, "wakeword"), data))
     return result
 
 
@@ -88,15 +88,15 @@ def update_wakeword(
     "/{wakeword_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="delete_wakeword_api_v1_wakewords__wakeword_id__delete",
+    operation_id="remove_wakeword",
 )
-def delete_wakeword(
-    wakeword_id: int,
+def remove_wakeword(
+    wakeword_id: IdPath,
     if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        current = WakewordRead.model_validate(catalog.get_or_404(session, Wakeword, wakeword_id, "wakeword"))
+        current = WakewordRead.model_validate(catalog.get_by_ref(session, Wakeword, wakeword_id, "wakeword"))
         require_matching_etag(if_match, item_etag(current), "wakeword")
-        catalog.delete_wakeword(session, wakeword_id)
+        catalog.delete_wakeword(session, catalog.parse_id(wakeword_id, "wakeword"))
     return Response(status_code=204)

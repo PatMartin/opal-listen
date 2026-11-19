@@ -1,18 +1,31 @@
-"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v1.7.1.yaml; extra models/fields are additive."""
+"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v2.0.0.yaml; extra models/fields are additive."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from fastapi import Path as ApiPath
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, RootModel, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 NO_MATCH = "no_match"
 
+# Opaque public identifier: stored as an integer PK, exposed as a string on the wire.
+PublicId = Annotated[str, BeforeValidator(str), Field(min_length=1)]
+# Nonempty public identifier for path parameters (contract *Id params are minLength: 1 strings).
+IdPath = Annotated[str, ApiPath(min_length=1)]
+
 
 class _Read(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+def _require_one_field(data: Any) -> Any:
+    """Reject an empty update object (contract minProperties: 1)."""
+    if isinstance(data, dict) and not data:
+        raise ValueError("at least one field must be provided")
+    return data
 
 
 # --- wakewords -------------------------------------------------------------------------------
@@ -29,15 +42,19 @@ class WakewordCreate(WakewordBase):
 
 
 class WakewordRead(WakewordBase, _Read):
-    id: int
+    id: PublicId
     created_at: datetime
     updated_at: datetime
 
 
 class WakewordUpdate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
+
     name: str | None = None
     enabled: bool | None = None
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    _at_least_one = model_validator(mode="before")(_require_one_field)
 
 
 # --- intents ---------------------------------------------------------------------------------
@@ -55,7 +72,7 @@ class IntentCreate(IntentBase):
 
 
 class IntentRead(IntentBase, _Read):
-    id: int
+    id: PublicId
     created_at: datetime
     updated_at: datetime
 
@@ -66,8 +83,8 @@ class IntentPhraseCreate(BaseModel):
 
 class IntentPhraseRead(_Read):
     phrase: str = Field(max_length=500)
-    id: int
-    intent_id: int
+    id: PublicId
+    intent_id: PublicId
     created_at: datetime
 
 
@@ -76,10 +93,14 @@ class IntentReadWithPhrases(IntentRead):
 
 
 class IntentUpdate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
+
     name: str | None = None
     description: str | None = None
     enabled: bool | None = None
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    _at_least_one = model_validator(mode="before")(_require_one_field)
 
 
 # --- slots -----------------------------------------------------------------------------------
@@ -99,7 +120,7 @@ class SlotCreate(SlotBase):
 
 
 class SlotRead(SlotBase, _Read):
-    id: int
+    id: PublicId
     created_at: datetime
     updated_at: datetime
 
@@ -110,8 +131,8 @@ class SlotAliasCreate(BaseModel):
 
 class SlotAliasRead(_Read):
     alias: str = Field(max_length=200)
-    id: int
-    slot_value_id: int
+    id: PublicId
+    slot_value_id: PublicId
     created_at: datetime
 
 
@@ -121,8 +142,8 @@ class SlotValueCreate(BaseModel):
 
 class SlotValueRead(_Read):
     value: str = Field(max_length=200)
-    id: int
-    slot_id: int
+    id: PublicId
+    slot_id: PublicId
     created_at: datetime
 
 
@@ -135,9 +156,13 @@ class SlotReadWithValues(SlotRead):
 
 
 class SlotUpdate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
+
     name: str | None = None
     slot_type: str | None = None
     description: str | None = None
+
+    _at_least_one = model_validator(mode="before")(_require_one_field)
 
 
 # --- profiles --------------------------------------------------------------------------------
@@ -158,7 +183,7 @@ class OpalProfileCreate(BaseModel):
 class OpalProfile(_Read):
     """Kernel OpalProfile; only id/is_active/name are normative — the rest are service fields."""
 
-    id: int
+    id: PublicId
     name: str
     is_active: bool
     description: str | None = None
@@ -173,6 +198,8 @@ class OpalProfile(_Read):
 
 
 class OpalProfilePatch(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
+
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     is_active: bool | None = None
@@ -183,18 +210,40 @@ class OpalProfilePatch(BaseModel):
     enabled_slots: list[str] | None = None
     model_paths: dict[str, str] | None = None
 
+    _at_least_one = model_validator(mode="before")(_require_one_field)
+
 
 # --- settings --------------------------------------------------------------------------------
 
 
+SettingSource = Literal["default", "persisted", "dotenv", "environment"]
+
+
+class OpalValidationIssue(BaseModel):
+    """Kernel OpalValidationIssue: one structured validation issue or warning."""
+
+    model_config = ConfigDict(extra="allow")
+
+    code: str
+    path: str
+    message: str
+
+
 class SettingRead(_Read):
-    id: int | None = None
+    """Kernel SettingRead: effective/configured/default values plus provenance metadata."""
+
+    id: SkipJsonSchema[int | None] = None
     key: str
     value: Any
+    configured_value: Any
     updated_at: SkipJsonSchema[datetime | None] = None
-    default: Any | None = None
-    is_default: bool | None = None
-    pending_restart: bool | None = None
+    default: Any
+    has_override: bool
+    is_default: bool
+    source: SettingSource
+    restart_required: bool
+    pending_restart: bool
+    warnings: list[OpalValidationIssue] | None = None
 
 
 class SettingUpdate(BaseModel):
@@ -244,13 +293,13 @@ class RecognitionResult(BaseModel):
     # dispatch targets actually invoked for this result (subset of {"local", "event"}); always
     # empty for diagnostics, deduplicated repeats, and superseded-generation results
     dispatched_to: list[str] = []
-    recognition_log_id: int | None = None
+    recognition_log_id: PublicId | None = None
     created_at: datetime
 
 
 class PipelineStatus(BaseModel):
     running: bool
-    state: str
+    state: Literal["stopped", "starting", "running", "stopping", "error"]
     provider: str
     profile_name: str | None
     audio_device: str | None
@@ -281,22 +330,37 @@ class FailedUtteranceBase(BaseModel):
 
 
 class FailedUtteranceCreate(FailedUtteranceBase):
-    recognition_log_id: int | None = None
+    recognition_log_id: PublicId | None = None
 
 
 class FailedUtteranceRead(FailedUtteranceBase, _Read):
-    id: int
-    recognition_log_id: int | None
+    id: PublicId
+    recognition_log_id: PublicId | None
     reviewed: bool
     promoted_to_phrase: bool
     created_at: datetime
 
 
 class FailedUtteranceUpdate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
+
     expected_intent: str | None = None
     notes: str | None = None
     reviewed: bool | None = None
     promoted_to_phrase: bool | None = None
+
+    _at_least_one = model_validator(mode="before")(_require_one_field)
+
+
+class FailedUtterancePromoteRequest(BaseModel):
+    """Contract FailedUtterancePromoteRequest: target intent id plus optional regression creation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    intent_id: str = Field(
+        min_length=1, description="Identifier of the intent this utterance becomes a training phrase for."
+    )
+    create_regression: bool = True
 
 
 class RegressionTestBase(BaseModel):
@@ -311,7 +375,7 @@ class RegressionTestCreate(RegressionTestBase):
 
 
 class RegressionTestRead(RegressionTestBase, _Read):
-    id: int
+    id: PublicId
     expected_slots: dict[str, Any]
     last_result: bool | None
     last_run_at: datetime | None
@@ -319,15 +383,19 @@ class RegressionTestRead(RegressionTestBase, _Read):
 
 
 class RegressionTestUpdate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
+
     name: str | None = None
     phrase: str | None = None
     expected_intent: str | None = None
     expected_slots: dict[str, Any] | None = None
     enabled: bool | None = None
 
+    _at_least_one = model_validator(mode="before")(_require_one_field)
+
 
 class RegressionCaseResult(BaseModel):
-    test_id: int
+    test_id: PublicId
     name: str
     phrase: str
     expected_intent: str
@@ -357,8 +425,8 @@ class PromoteResult(BaseModel):
 
 
 class PerformanceResultRead(_Read):
-    id: int
-    recognition_log_id: int | None
+    id: PublicId
+    recognition_log_id: PublicId | None
     wakeword_latency_ms: int | None
     stt_latency_ms: int | None
     intent_latency_ms: int | None
@@ -394,7 +462,85 @@ class PerformanceSummary(BaseModel):
     total_latency_ms: LatencyStats
 
 
-# --- health / backup / config ----------------------------------------------------------------
+# --- configuration snapshots (kernel OpalConfig*) -----------------------------------------------
+
+_SNAPSHOT_FORMAT_VERSION = "1.0.0"
+_SNAPSHOT_MODULE = "opal-listen"
+
+
+class OpalConfigSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    destination: Literal["managed", "response"] = "managed"
+
+
+class OpalConfigSnapshot(BaseModel):
+    """Kernel OpalConfigSnapshot: closed envelope — `settings` + `resources` are the only slots."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    format_version: str
+    module: str = Field(min_length=1)
+    created_at: datetime
+    settings: dict[str, Any]
+    resources: dict[str, Any]
+
+
+class OpalConfigSaveResult(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    snapshot: OpalConfigSnapshot
+    managed: bool
+    # service extras (contract is additionalProperties: true)
+    revision: str | None = None
+    destination: Literal["managed", "response"] | None = None
+    destination_ref: str | None = None
+
+
+def _reject_explicit_null(data: Any) -> Any:
+    if isinstance(data, dict) and "snapshot" in data and data["snapshot"] is None:
+        raise ValueError("explicit null snapshot is invalid; omit the field or send {}")
+    return data
+
+
+class OpalConfigLoadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot: OpalConfigSnapshot | None = None
+
+    _no_null_snapshot = model_validator(mode="before")(_reject_explicit_null)
+
+
+class OpalConfigLoadResult(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    applied: Literal[True]
+    pending_restart_fields: list[str] = []
+    warnings: list[OpalValidationIssue] | None = None
+    # service extras: resulting live-configuration revision + per-section item counts applied
+    revision: str | None = None
+    applied_counts: dict[str, int] | None = None
+
+
+class OpalConfigValidateRequest(BaseModel):
+    """Snapshot is typed loosely so malformed envelopes report structured issues, not 422."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot: dict[str, Any] | None = None
+
+    _no_null_snapshot = model_validator(mode="before")(_reject_explicit_null)
+
+
+class OpalConfigValidation(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    valid: bool
+    errors: list[OpalValidationIssue]
+    warnings: list[OpalValidationIssue]
+
+
+# --- health / config -------------------------------------------------------------------------
 
 CheckStatus = Literal["ok", "warning", "error"]
 
@@ -425,20 +571,6 @@ class AudioDevice(BaseModel):
     is_default: bool
 
 
-class OpalBackupInfo(BaseModel):
-    filename: str
-    size_bytes: int
-    created_at: datetime
-
-
-class OpalBackupCreateResponse(BaseModel):
-    """Kernel OpalBackupCreateResponse: filename is the only required member."""
-
-    filename: str
-    status: str = "created"
-    message: str = "backup created"
-
-
 class OpalValidationReport(BaseModel):
     """Kernel OpalValidationReport; valid is the only normative member."""
 
@@ -446,17 +578,6 @@ class OpalValidationReport(BaseModel):
     errors: list[str | dict[str, Any]] = []
     warnings: list[str | dict[str, Any]] = []
     sources: dict[str, bool] = {}
-
-
-class OpalImportResult(BaseModel):
-    """Kernel OpalImportResult; no members are normative — service fields layer on top."""
-
-    model_config = ConfigDict(extra="allow")
-
-    status: str | None = None
-    backup_filename: str | None = None
-    counts: dict[str, int] | None = None
-    warnings: list[str | dict[str, Any]] | None = None
 
 
 # --- service lifecycle -----------------------------------------------------------------------
