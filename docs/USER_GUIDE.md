@@ -3004,4 +3004,4 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/config/validate` | `opal_config_validate` | `config validate` | Config |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v2.0.0.yaml](../openapi/opal_listen_v2.0.0.yaml).
+REST contract [opal_listen_v0.1.0.yaml](../openapi/opal_listen_v0.1.0.yaml).

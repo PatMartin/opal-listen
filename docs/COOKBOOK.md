@@ -558,7 +558,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint openapi/opal_listen_v2.0.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
+spectral lint openapi/opal_listen_v0.1.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs
