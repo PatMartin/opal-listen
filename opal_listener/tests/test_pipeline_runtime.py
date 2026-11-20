@@ -1313,13 +1313,13 @@ def test_engines_for_split_roles(client: TestClient, fake_provider: type) -> Non
 
     service = client.app.state.listener  # type: ignore[attr-defined]
     snap = service.snapshot
-    old_factories = service._wakeword_engine_factory, service._transcription_engine_factory
-    service._wakeword_engine_factory = lambda name: {
+    old_factories = service._engines.wakeword_factory, service._engines.transcription_factory
+    service._engines.wakeword_factory = lambda name: {
         "fake": FakeListenerProvider,
         "fake_wake_alt": _AltWakeProvider,
         "wake_only": _WakeOnlyEngine,
     }[name]()
-    service._transcription_engine_factory = service._wakeword_engine_factory
+    service._engines.transcription_factory = service._engines.wakeword_factory
     try:
         snap_split = dataclasses.replace(snap, wakeword_engine_name="fake_wake_alt")
         wake, trans = service.engines_for(snap_split)
@@ -1337,7 +1337,7 @@ def test_engines_for_split_roles(client: TestClient, fake_provider: type) -> Non
         assert pipeline.wakeword_engine is wake and pipeline.transcription_engine is trans
         assert pipeline.provider is trans  # legacy attribute tracks the transcription engine
     finally:
-        service._wakeword_engine_factory, service._transcription_engine_factory = old_factories
+        service._engines.wakeword_factory, service._engines.transcription_factory = old_factories
 
 
 def test_split_engine_settings_validation(client: TestClient, fake_provider: type) -> None:

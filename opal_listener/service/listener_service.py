@@ -34,18 +34,13 @@ from opal_listener.service.pipeline import CommandOutcome, PipelineEvent, Recogn
 from opal_listener.service.providers.base import (
     Engine,
     ListenerProvider,
-    ProviderConfig,
     ProviderError,
     SttRefiner,
     Transcript,
     TranscriptionEngine,
     WakewordEngine,
 )
-from opal_listener.service.providers.registry import (
-    create_refiner,
-    create_transcription_engine,
-    create_wakeword_engine,
-)
+from opal_listener.service.providers.manager import ProviderManager
 from opal_listener.service.reactions import ReactionRunner
 from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
@@ -93,19 +88,6 @@ def dispatch_targets(settings: Mapping[str, Any]) -> frozenset[str]:
 
 def _capture_signature(settings: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(settings[k] for k in _CAPTURE_SETTING_KEYS)
-
-
-def _provider_fingerprint(config: ProviderConfig) -> tuple[Any, ...]:
-    """Hashable identity of a provider's model configuration.
-
-    Providers are cached per (name, fingerprint): an unchanged fingerprint reuses the live
-    instance (no reload), a changed one creates a fresh instance so in-flight sessions keep
-    running on the configuration they started with."""
-    return (
-        config.sample_rate,
-        tuple(sorted(config.model_paths.items())),
-        tuple(sorted((k, repr(v)) for k, v in config.options.items())),
-    )
 
 
 SourceFactory = Callable[[dict[str, Any]], AudioSource]
@@ -181,6 +163,31 @@ class _DispatchSequencer:
             fn_()
 
 
+class _DedupWindow:
+    """Thread-safe seen-key tracker for result deduplication.
+
+    `seen_recently` evicts expired entries on every call so a long-running listener cannot
+    grow the map without bound; `reset` clears state between run generations — dedup memory
+    belongs to the run that collected it. `_record` may call from the refinement worker
+    thread while `reset` runs on the lifecycle thread, hence the lock."""
+
+    def __init__(self) -> None:
+        self._seen: dict[tuple[object, ...], float] = {}
+        self._lock = threading.Lock()
+
+    def seen_recently(self, key: tuple[object, ...], window_s: float, now: float) -> bool:
+        with self._lock:
+            self._seen = {k: ts for k, ts in self._seen.items() if now - ts < window_s}
+            if key in self._seen:
+                return True
+            self._seen[key] = now
+            return False
+
+    def reset(self) -> None:
+        with self._lock:
+            self._seen.clear()
+
+
 @dataclass
 class _RuntimeStats:
     state: str = "stopped"
@@ -232,21 +239,15 @@ class ListenerService:
         self.app_settings = app_settings
         self.bus = EventBus()
         self.event_publisher: EventPublisher = event_publisher or default_event_publisher(app_settings)
-        # provider_factory is the legacy combined-provider hook: honoured for both roles when
-        # role-specific factories aren't given (combined providers serve either role).
-        self._wakeword_engine_factory = wakeword_engine_factory or provider_factory or create_wakeword_engine
-        self._transcription_engine_factory = (
-            transcription_engine_factory or provider_factory or create_transcription_engine
+        self._engines = ProviderManager(
+            provider_factory=provider_factory,
+            wakeword_factory=wakeword_engine_factory,
+            transcription_factory=transcription_engine_factory,
         )
         self._source_factory = source_factory
         self._config_lock = threading.RLock()
-        self._provider_lock = threading.Lock()
         self._snapshot: RuntimeSnapshot | None = None
         self._version = 0
-        # name -> (config fingerprint, instance); at most one loaded instance per name — a replaced
-        # entry is GC'd once the last in-flight pipeline drops its reference
-        self._providers: dict[str, tuple[tuple[Any, ...], ListenerProvider]] = {}
-        self._refiners: dict[str, tuple[tuple[Any, ...], SttRefiner]] = {}
         self._stats = _RuntimeStats()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -254,8 +255,7 @@ class ListenerService:
         self._shutdown = False
         # restart-only setting values as captured at startup (pending_restart provenance)
         self._startup_setting_values: dict[str, Any] = {}
-        self._dedup_seen: dict[tuple[object, ...], float] = {}
-        self._dedup_lock = threading.Lock()
+        self._dedup = _DedupWindow()
         # run identity: bumped on every start(); outcomes carry the generation that captured
         # them so a late finalization (e.g. deferred refinement) cannot dispatch into a new run
         self._generation = 0
@@ -387,9 +387,8 @@ class ListenerService:
             if name in checked:
                 continue
             checked.add(name)
-            factory = self._wakeword_engine_factory if role == "wakeword" else self._transcription_engine_factory
             try:
-                engine = factory(name)
+                engine = self._engines.transient(name, role=role)
             except ProviderError as exc:
                 raise InvalidRequestError(str(exc)) from exc
             failures = [c for c in engine.check(new.provider_config) if not c.ok and c.severity == "error"]
@@ -426,36 +425,15 @@ class ListenerService:
 
     # --- providers ----------------------------------------------------------------------------
 
-    def _engine_for(self, name: str, config: ProviderConfig, *, role: str) -> Engine:
-        """Returns the loaded engine for `name` under `config`.
-
-        An unchanged config fingerprint reuses the live instance without reloading. A changed one
-        creates and loads a fresh instance under the lock — the previous instance is dropped from
-        the cache (never mutated or unloaded while in-flight sessions still reference it).
-        The cache is keyed by engine name and shared across roles: selecting the same engine for
-        both roles loads it once, and the role check below rejects incompatible reuse."""
-        fingerprint = _provider_fingerprint(config)
-        with self._provider_lock:
-            cached = self._providers.get(name)
-            if cached is not None and cached[0] == fingerprint:
-                engine = cached[1]
-            else:
-                factory = self._wakeword_engine_factory if role == "wakeword" else self._transcription_engine_factory
-                engine = factory(name)
-                engine.load(config)
-                self._providers[name] = (fingerprint, engine)
-            expected = WakewordEngine if role == "wakeword" else TranscriptionEngine
-            if not isinstance(engine, expected):
-                raise ProviderError(f"engine '{name}' cannot serve the {role} role")
-            return engine
+    @property
+    def _providers(self) -> dict[str, tuple[tuple[Any, ...], Engine]]:
+        """Compat accessor for the manager's engine cache (name -> (fingerprint, instance))."""
+        return self._engines.engines
 
     def engines_for(self, snapshot: RuntimeSnapshot) -> tuple[WakewordEngine, TranscriptionEngine]:
-        """The loaded wakeword and transcription engines for a snapshot. When both resolve to the
-        same engine name the shared cached instance serves both roles (one model load)."""
-        config = snapshot.provider_config
-        wakeword = self._engine_for(snapshot.wakeword_engine_name, config, role="wakeword")
-        transcription = self._engine_for(snapshot.transcription_engine_name, config, role="transcription")
-        return wakeword, transcription
+        """The loaded wakeword and transcription engines for a snapshot (one shared instance
+        when both resolve to the same engine name)."""
+        return self._engines.engines_for(snapshot)
 
     def provider_for(self, snapshot: RuntimeSnapshot) -> Engine:
         """Legacy combined-provider accessor: the engine behind the snapshot's transcription
@@ -469,9 +447,9 @@ class ListenerService:
         if snap is None:
             return None, None
         try:
-            with self._provider_lock:
-                cached = self._providers.get(snap.transcription_engine_name)
-            engine = cached[1] if cached else self._transcription_engine_factory(snap.transcription_engine_name)
+            engine = self._engines.cached(snap.transcription_engine_name)
+            if engine is None:
+                engine = self._engines.transient(snap.transcription_engine_name, role="transcription")
             return engine, snap
         except ProviderError:
             return None, snap
@@ -482,33 +460,16 @@ class ListenerService:
         if snap is None:
             return [], None
         engines = []
-        for name, factory in (
-            (snap.wakeword_engine_name, self._wakeword_engine_factory),
-            (snap.transcription_engine_name, self._transcription_engine_factory),
+        for name, role in (
+            (snap.wakeword_engine_name, "wakeword"),
+            (snap.transcription_engine_name, "transcription"),
         ):
-            try:
-                with self._provider_lock:
-                    cached = self._providers.get(name)
-                engines.append(cached[1] if cached else factory(name))
-            except ProviderError:
-                pass
+            with contextlib.suppress(ProviderError):
+                engines.append(self._engines.cached(name) or self._engines.transient(name, role=role))
         return engines, snap
 
     def _refiner_for(self, snapshot: RuntimeSnapshot) -> SttRefiner | None:
-        name = snapshot.refiner_name
-        if name in ("", "none"):
-            return None
-        fingerprint = _provider_fingerprint(snapshot.provider_config)
-        with self._provider_lock:
-            cached = self._refiners.get(name)
-            if cached is not None and cached[0] == fingerprint:
-                return cached[1]
-            refiner = create_refiner(name)
-            if refiner is None:
-                return None
-            refiner.load(snapshot.provider_config)
-            self._refiners[name] = (fingerprint, refiner)
-            return refiner
+        return self._engines.refiner_for(snapshot)
 
     def _make_pipeline(
         self, snapshot: RuntimeSnapshot, debug: bool, cooldown: bool, *, live: bool = False
@@ -612,13 +573,8 @@ class ListenerService:
             )
             now = time.monotonic()
             window = int(snapshot.settings["dedup_window_ms"]) / 1000
-            with self._dedup_lock:  # _record may run on the refinement worker thread
-                # evict expired entries so a long-running listener cannot grow this map without bound
-                self._dedup_seen = {k: ts for k, ts in self._dedup_seen.items() if now - ts < window}
-                if key in self._dedup_seen:
-                    result.deduplicated = True
-                else:
-                    self._dedup_seen[key] = now
+            if self._dedup.seen_recently(key, window, now):
+                result.deduplicated = True
         if save_log:
             capture = bool(snapshot.settings["auto_capture_failures"]) and result.source != "text"
             with self.db.session() as session:
@@ -717,8 +673,7 @@ class ListenerService:
             self.snapshot  # noqa: B018 - raises if configuration is not loaded
             self._stop.clear()
             self._generation += 1
-            with self._dedup_lock:
-                self._dedup_seen.clear()  # dedup state belongs to the run that collected it
+            self._dedup.reset()  # dedup state belongs to the run that collected it
             self._sequencer.reset()  # stale-run dispatches can never gate a new generation
             self._stats = _RuntimeStats(state="starting", started_at=utc_now(), started_monotonic=time.monotonic())
             self._thread = threading.Thread(target=self._run, name="listener-runtime", daemon=True)
