@@ -241,7 +241,7 @@ Error: HTTP 409: wakeword 'computer' already exists
 Error: 'nabu' not found in /api/v1/wakeword/
 ```
 
-Per the OPAL v1.2 standard, mutating commands for wakewords, intents, phrases, slots, slot values,
+Per the OPAL v3.0.0 standard, mutating commands for wakewords, intents, phrases, slots, slot values,
 aliases, profiles and settings require a strong `If-Match`. The CLI fetches the resource's current
 `ETag` automatically before every `update`/`remove`/`set`, so this is normally invisible; if the
 resource changed concurrently you'll see `Error: HTTP 412: ...` (stale) and should retry the command
@@ -1518,7 +1518,7 @@ opal listen --json intent list \
 ## 22. Appendix: CLI ↔ REST mapping
 
 All paths are relative to the API base URL. Commands that take a name or id first resolve it with a
-`GET` on the collection. Per the OPAL v1.2 standard, every `PATCH`/`DELETE` below on wakewords, intents,
+`GET` on the collection. Per the OPAL v3.0.0 standard, every `PATCH`/`DELETE` below on wakewords, intents,
 phrases, slots, slot values, aliases, profiles, personas and settings requires a strong `If-Match`; the CLI fetches
 the current `ETag` automatically before sending the mutation (missing precondition → `428`, stale → `412`).
 

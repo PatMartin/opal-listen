@@ -31,10 +31,10 @@ info:
     \ history.\n\n\n    OPAL LISTEN (normative additions)\n\n    Versioning:\
     \ this document's info.version is the authoritative REST contract version, independent\
     \ of the\n    Python package version and of the event-envelope metadata schema_version\
-    \ (currently '2.0' \u2014 the\n    envelope emitted on opal.listen.intent.match). The OPAL suite standard follows the shared kernel version (currently v1.2).\n\
+    \ (currently '2.0' \u2014 the\n    envelope emitted on opal.listen.intent.match). The OPAL suite standard follows the shared kernel version (currently v3.0.0).\n\
     \n    Event publication: external intent-match events are published only when\
     \ setting\n    event_publication_enabled is true (default false, live-toggleable\
-    \ via PATCH /api/v1/settings/).\n    Recognition results from the diagnostic sources\
+    \ via PUT /api/v1/setting/event_publication_enabled).\n    Recognition results from the diagnostic sources\
     \ (\"text\" via POST /api/v1/recognition/test_text and\n    \"audio\" via POST\
     \ /api/v1/recognition/test_audio) are always evaluated, logged and streamed locally\n\
     \    but never published externally; only live microphone (\"mic\") matches are\

@@ -797,7 +797,7 @@ A malformed file logs a warning and yields an empty reaction set — it never st
 - **Content type:** JSON (`Content-Type: application/json`), except `test_audio` (multipart form).
 - **Timestamps:** ISO 8601, UTC, for example `2026-09-30T12:34:56.123456`.
 - **Authentication:** optional Bearer token (see [Authentication](#authentication)).
-- **Correlation headers (OPAL SUITE STANDARD v1.2):** every response carries `X-Opal-Transaction-Id` and
+- **Correlation headers (OPAL SUITE STANDARD v3.0.0):** every response carries `X-Opal-Transaction-Id` and
   `X-Opal-Request-Id` (assigned by the server if you don't supply them); `X-Opal-Session-Id` and
   `X-Opal-Causation-Id` are echoed back if you send them. All four are opaque 1–128 character printable
   ASCII tokens — an invalid supplied value is rejected with `422`. These are not authentication
@@ -1320,9 +1320,9 @@ persona does not exist.
 
 ### 5.9 Settings — `/api/v1/setting`
 
-See [4.2 Settings](#42-settings) for all keys. The collection (`GET`/`PATCH /api/v1/setting/`) carries a
-strong `ETag` covering the whole settings map — every settings mutation (collection `PATCH` and per-key
-`PUT`/`DELETE`) requires it as `If-Match`, and any successful change rotates it. Per-key routes
+See [4.2 Settings](#42-settings) for all keys. The collection (`GET /api/v1/setting/`) carries a
+strong `ETag` covering the whole settings map — every settings mutation (per-key `PUT`/`DELETE`)
+requires it as `If-Match`, and any successful change rotates it. Per-key routes
 `GET`/`PUT`/`DELETE /api/v1/setting/{key}` read, replace, or reset a single setting.
 
 #### `GET /api/v1/setting/` — all settings as a key → string map
@@ -1346,33 +1346,6 @@ Fetch it first, then send it back as `If-Match` on `PATCH`:
 ETAG=$(curl -si $API/api/v1/setting/ | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
 ```
 
-#### `PATCH /api/v1/setting/` — atomically set one or more settings
-
-The body is `{"<key>": <value>, ...}` with at least one entry (any JSON scalar — the value is parsed and
-validated server-side per key). All keys are applied in a single transaction: if any value is invalid,
-none of them are changed. `If-Match` is required: missing/empty → `428`, stale (someone else changed
-settings since you fetched the ETag) → `412`.
-
-```bash
-curl -s -X PATCH $API/api/v1/setting/ -H "If-Match: $ETAG" \
-  -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000, "stt_mode": "open"}'
-```
-
-Examples of rejected requests:
-
-```bash
-curl -s -X PATCH $API/api/v1/setting/ -H "If-Match: $ETAG" \
-  -H 'Content-Type: application/json' -d '{"stt_mode": "fast"}'
-# 422: {"detail": [{"loc": ["body"], "msg": "setting 'stt_mode' must be one of grammar, open", ...}]}
-
-curl -s -X PATCH $API/api/v1/setting/ -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
-# 428: {"error": {"code": "precondition_required", "message": "missing or empty If-Match header", ...}}
-
-curl -s -X PATCH $API/api/v1/setting/ -H 'If-Match: "stale"' \
-  -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
-# 412: {"error": {"code": "precondition_failed", "message": "settings has changed ... (stale If-Match)", ...}}
-```
-
 All 422 responses use the standard `OpalError` envelope — `{"error": {"code": "invalid_request",
 "message": "...", "details": "...", "request_id": ..., ...}}`.
 
@@ -1391,8 +1364,7 @@ registry; `pending_restart` is always `false` — every setting hot-applies. Unk
 #### `PUT /api/v1/setting/{key}` — replace one setting
 
 Body is a strict `{"value": <v>}` object (unknown fields → `422`). Requires the settings-map `If-Match`
-(fetch it with `GET /api/v1/setting/` — the per-key `GET` does not carry an item ETag). The same
-validation as `PATCH` applies; returns the `SettingRead` above.
+(fetch it with `GET /api/v1/setting/` — the per-key `GET` does not carry an item ETag). The same validation applies; returns the `SettingRead` above.
 
 ```bash
 curl -s -X PUT $API/api/v1/setting/cooldown_ms -H "If-Match: $ETAG" \
@@ -1747,10 +1719,13 @@ curl -s $API/api/v1/health/
 | `listener` | The pipeline is recovering or reports an error |
 | `disk` | Little free space in the data dir |
 
-#### `GET /api/v1/health/audio_devices` — input devices visible to the server
+#### Input devices — `details.audio_devices` in the health report
+
+The standalone `/api/v1/health/audio_devices` route is retired; the devices list rides inside
+`GET /api/v1/health/` under `details.audio_devices`:
 
 ```bash
-curl -s $API/api/v1/health/audio_devices
+curl -s $API/api/v1/health/ | jq '.details.audio_devices'
 ```
 ```json
 [
@@ -1761,7 +1736,7 @@ curl -s $API/api/v1/health/audio_devices
 
 Use `index` or a name substring as the `audio_device` setting.
 
-#### `GET /api/v1/health/live` / `GET /api/v1/health/ready` — OPAL v1.2 probes
+#### `GET /api/v1/health/live` / `GET /api/v1/health/ready` — OPAL standard probes
 
 Standard liveness/readiness probes (`OpalHealthProbe`: `status`, `ready`, optional `details`), suitable
 for container/orchestrator health checks. `live` is a cheap check (process + database reachability);
@@ -2296,8 +2271,8 @@ opal listen service log           # last 10 lines (--lines N for more)
 opal listen service stop
 
 opal listen service health           # GET /api/v1/health/ (exit 1 on errors)
-curl -s http://localhost:8000/api/v1/health/live   # OPAL v1.2 liveness probe (REST only)
-curl -si http://localhost:8000/api/v1/health/ready # OPAL v1.2 readiness probe (REST only)
+curl -s http://localhost:8000/api/v1/health/live   # OPAL standard liveness probe (REST only)
+curl -si http://localhost:8000/api/v1/health/ready # OPAL standard readiness probe (REST only)
 ```
 
 Example `doctor` output:
