@@ -72,9 +72,12 @@ class ZmqEventPublisher:
         self.delivered = 0
         self.delivery_failures = 0
         self.last_error: str | None = None
+        self._closed = False
 
     def connect(self) -> None:
         with self._lock:
+            if self._closed:
+                return
             self._ensure_socket()
 
     def _ensure_socket(self) -> Any:
@@ -94,6 +97,13 @@ class ZmqEventPublisher:
                 self._record_failure(f"dropping event '{topic}': exceeds {MAX_EVENT_BYTES} bytes")
                 return
             with self._lock:
+                if self._closed:
+                    # post-shutdown publish: count the drop, never recreate the socket
+                    # (inline accounting — _record_failure would re-take this non-reentrant lock)
+                    self.delivery_failures += 1
+                    self.last_error = f"publisher closed; dropped event '{topic}'"
+                    log.debug(self.last_error)
+                    return
                 socket = self._ensure_socket()
                 log.info("sending ZeroMQ event to topic '%s' via %s: %s", topic, self._xpub_url, envelope)
                 self.accepted += 1
@@ -119,6 +129,7 @@ class ZmqEventPublisher:
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             if self._socket is not None:
                 self._socket.close(linger=0)
                 self._socket = None

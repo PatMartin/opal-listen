@@ -1479,3 +1479,86 @@ def test_health_report_carries_recovery_diagnostics(
     report = client.get("/api/v1/health/").json()
     listener_check = next(c for c in report["details"]["checks"] if c["name"] == "listener")
     assert listener_check["status"] == "error"
+
+
+# --- shutdown/restart concurrency hardening --------------------------------------------------------
+
+
+def test_shutdown_during_recovery_backoff_returns_promptly(client: TestClient, fake_provider: type) -> None:
+    """shutdown() while the worker is sleeping out a recovery backoff must not wait it out."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+
+    def failing_factory(settings):
+        raise AudioCaptureError("no input device")
+
+    service._source_factory = failing_factory
+    assert service.start()["status"] == "started"
+    wait_for(lambda: service.status().state == "recovering", timeout=10)
+    started = time.monotonic()
+    service.shutdown()
+    assert time.monotonic() - started < 10  # the 1s+ backoff wait was interrupted
+    assert client.get("/api/v1/recognition/status").json()["state"] == "stopped"
+
+
+def test_repeated_start_stop_cycles_stay_bounded(client: TestClient, fake_provider: type) -> None:
+    """Six start/stop cycles: exactly one engine instance, clean stats each run, no thread leak."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([])
+    threads_before = threading.active_count()
+    for _ in range(6):
+        client.post("/api/v1/recognition/start")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
+        client.post("/api/v1/recognition/stop")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "stopped")
+    assert len(service._providers) <= 1  # type: ignore[attr-defined]
+    assert threading.active_count() <= threads_before + 1
+    # a fresh run starts with reset counters — no accumulation across generations
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["sessions"] == 0 and status["results"] == 0 and status["audio_restarts"] == 0
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_concurrent_recognition_config_and_event_publishing(client: TestClient, fake_provider: type) -> None:
+    """Recognition keeps working while config updates and event publishes race it."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    fake_provider.script.extend(["turn on the kitchen light"] * 2)
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    errors: list[Exception] = []
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
+
+        def writer() -> None:
+            try:
+                for _ in range(5):
+                    patch_settings(client, cooldown_ms="1500")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def publisher() -> None:
+            try:
+                for _ in range(10):
+                    service.event_publisher.publish("test.topic", {"i": 1})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer), threading.Thread(target=publisher)]
+        for t in threads:
+            t.start()
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["results"] >= 1, timeout=15)
+        for t in threads:
+            t.join(timeout=15)
+        assert not errors
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_reaction_dispatch_after_close_returns_zero(service) -> None:
+    """Post-shutdown local dispatch is a no-op: nothing is queued that a dead worker would never run."""
+    runner = service._reaction_runner  # type: ignore[attr-defined]
+    runner.close()
+    assert runner.dispatch({"intent_name": "x", "session_id": "s"}) == 0

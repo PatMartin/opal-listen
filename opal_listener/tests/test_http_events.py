@@ -261,23 +261,31 @@ def test_full_queue_drops_newest_and_records_failures() -> None:
         publisher.close()
 
 
-def test_publish_after_close_reconnects() -> None:
+def test_publish_after_close_is_dropped_not_delivered() -> None:
+    """Post-shutdown publish produces no actionable side effect: no worker resurrection,
+    no delivery — the drop is counted instead."""
     received: list[httpx.Request] = []
     publisher = _mock_publisher(_ok_handler(received))
     publisher.publish("t", {"i": 0})
     assert _wait_until(lambda: len(received) == 1)
     publisher.close()
     assert publisher._worker_thread is None
-    # inject a fresh mock client (the old one was closed by the retiring worker)
-    publisher._client = httpx.Client(
-        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(_ok_handler(received))
-    )
-    try:
-        publisher.publish("t", {"i": 1})
-        assert _wait_until(lambda: len(received) == 2)
-        assert publisher._worker_thread is not None and publisher._worker_thread.is_alive()
-    finally:
-        publisher.close()
+    publisher.publish("t", {"i": 1})
+    time.sleep(0.2)  # give a hypothetical resurrected worker time to deliver
+    assert len(received) == 1  # nothing delivered after close
+    assert publisher._worker_thread is None or not publisher._worker_thread.is_alive()
+    assert publisher.delivery_failures == 1
+    assert "publisher closed" in (publisher.last_error or "")
+
+
+def test_zmq_publish_after_close_is_dropped() -> None:
+    """Same post-shutdown guarantee for the ZMQ publisher: no socket recreation."""
+    publisher = ZmqEventPublisher("tcp://127.0.0.1:5999")
+    publisher._closed = True  # simulate post-close state without needing a context
+    publisher.publish("t", {"i": 0})
+    assert publisher._socket is None and publisher._context is None
+    assert publisher.delivery_failures == 1
+    assert "publisher closed" in (publisher.last_error or "")
 
 
 def test_default_event_publisher_selection() -> None:

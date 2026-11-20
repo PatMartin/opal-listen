@@ -92,6 +92,12 @@ class HttpEventPublisher:
         # either attaches to the live worker or starts a new one — never deadlocks or spawns a
         # second worker. put_nowait means audio/recognition never blocks on HTTP latency.
         with self._lock:
+            if self._stopped.is_set():
+                # post-shutdown publish: count the drop, never resurrect the worker
+                self.delivery_failures += 1
+                self.last_error = f"publisher closed; dropped event for '{topic}'"
+                log.debug(self.last_error)
+                return
             self._start_worker_locked()
             try:
                 self._queue.put_nowait((topic, payload))

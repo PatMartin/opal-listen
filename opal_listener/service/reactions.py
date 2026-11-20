@@ -190,6 +190,8 @@ class ReactionRunner:
         """Evaluate conditions and enqueue matching actions. Returns matches found.
 
         Runs on the recognition thread; must stay fast — condition eval only."""
+        if self._stop.is_set():
+            return 0  # post-shutdown dispatch: nothing is queued that would never execute
         matched: list[ReactionAction] = []
         names: list[str] = []
         for reaction in self._reactions():
