@@ -150,7 +150,15 @@ class _DispatchSequencer:
             self._pending.clear()
 
     def complete(self, seq: int, fn: Callable[[], None]) -> None:
-        """Release `fn` (dispatch) when every earlier seq has completed; drop stale tickets."""
+        """Release `fn` (dispatch) when every earlier seq has completed; drop stale tickets.
+
+        Callbacks execute inside the lock: collecting them under the lock but running them
+        after release only ordered the *release decision* — a concurrent thread could collect
+        a later seq's callback while this one still waited to run, dispatching out of order.
+        In-lock execution serializes the calls themselves, which requires callbacks to stay
+        non-blocking (queue enqueues only — publish() and reaction dispatch() are). A raising
+        callback is logged and skipped so one failed dispatch can neither stall every later
+        ticket nor drop a callback already collected in the same ready run."""
         with self._lock:
             if seq < self._expected:
                 return  # superseded generation or already released
@@ -159,8 +167,11 @@ class _DispatchSequencer:
             while self._expected in self._pending:
                 ready.append(self._pending.pop(self._expected))
                 self._expected += 1
-        for fn_ in ready:
-            fn_()
+            for fn_ in ready:
+                try:
+                    fn_()
+                except Exception:
+                    log.exception("dispatch for a recognition result failed; continuing in sequence order")
 
 
 class _DedupWindow:

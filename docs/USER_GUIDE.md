@@ -2582,6 +2582,7 @@ import httpx
 
 API = "http://localhost:8000"
 
+
 def handle(result: dict) -> None:
     if not result["matched"] or result["deduplicated"] or result["source"] != "mic":
         return
@@ -2590,6 +2591,7 @@ def handle(result: dict) -> None:
         print(f"-> turn ON lights in {slots['room_name']}")
     elif intent == "timer_set":
         print(f"-> timer for {slots['duration_minutes']} minutes")
+
 
 def main() -> None:
     with httpx.Client(base_url=API, timeout=None) as client:
@@ -2601,6 +2603,7 @@ def main() -> None:
                     event = line[6:].strip()
                 elif line.startswith("data:") and event == "result":
                     handle(json.loads(line[5:]))
+
 
 if __name__ == "__main__":
     main()

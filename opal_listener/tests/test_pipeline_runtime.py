@@ -1562,3 +1562,51 @@ def test_reaction_dispatch_after_close_returns_zero(service) -> None:
     runner = service._reaction_runner  # type: ignore[attr-defined]
     runner.close()
     assert runner.dispatch({"intent_name": "x", "session_id": "s"}) == 0
+
+
+# --- dispatch sequencer serialization -------------------------------------------------------------
+
+
+def test_sequencer_executes_callbacks_in_capture_order_under_concurrency() -> None:
+    """complete() calls from many threads in arbitrary order still execute callbacks in
+    capture-sequence order — collecting and executing are serialized under one lock."""
+    from opal_listener.service.listener_service import _DispatchSequencer
+
+    seq = _DispatchSequencer()
+    tickets = [seq.assign() for _ in range(24)]
+    executed: list[int] = []
+    errors: list[Exception] = []
+
+    def worker(ticket: int, delay_ms: int) -> None:
+        try:
+            time.sleep(delay_ms / 1000)
+            seq.complete(ticket, lambda t=ticket: executed.append(t))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    # later tickets complete *first* in wall-clock time — order must still hold
+    threads = [threading.Thread(target=worker, args=(ticket, (len(tickets) - ticket))) for ticket in tickets]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not errors
+    assert executed == sorted(executed) == tickets
+
+
+def test_sequencer_callback_exception_does_not_stall_later_dispatches() -> None:
+    """A raising dispatch callback is logged and skipped: the exception can neither stall the
+    gate nor silently drop later callbacks already collected."""
+    from opal_listener.service.listener_service import _DispatchSequencer
+
+    seq = _DispatchSequencer()
+    t1, t2, t3 = seq.assign(), seq.assign(), seq.assign()
+    executed: list[int] = []
+
+    def boom() -> None:
+        raise RuntimeError("publisher exploded")
+
+    seq.complete(t2, lambda: executed.append(2))  # parks behind t1
+    seq.complete(t1, boom)  # raises internally; must not propagate or drop t2
+    seq.complete(t3, lambda: executed.append(3))
+    assert executed == [2, 3]
