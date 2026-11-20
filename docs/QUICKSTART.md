@@ -395,7 +395,7 @@ to the system default and inspect the debug stream:
 
 ```bash
 opal listen config setting set --name audio_device --value ""
-opal listen test listen-debug --duration 15
+opal listen test listen --debug --duration 15
 ```
 
 Expect audio-level/status events and, when speech is recognized, partial/final
@@ -593,7 +593,7 @@ and a fresh Git clone were not rerun.
   [speech settings](../opal_listener/config/stt.yaml).
 - [Cookbook](COOKBOOK.md): more standalone and cross-module recipes.
 - [Architecture](USER_GUIDE.md#3-architecture) and
-  [OpenAPI contract](../openapi/opal_listen_v0.1.0.yaml), including the
+  [OpenAPI contract](../openapi/opal_listen_v0.2.0.yaml), including the
   [shared OPAL kernel](../openapi/shared/opal_kernel.yaml).
 - [Docker deployment notes](USER_GUIDE.md#29-docker),
   [Dockerfile](../Dockerfile) and

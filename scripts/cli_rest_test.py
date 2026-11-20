@@ -41,7 +41,7 @@ WHAT IS VERIFIED (per group)
     profiles    list, add (thresholds/VAD/filters), get, update, activate (recognition uses it),
                 re-activate the original profile, remove
     recognition test audio (WAV through wakeword + STT + intent; skipped without a Vosk model),
-                pipeline status/start/stop, SSE stream via `test listen` and `test listen-debug`
+                pipeline status/start/stop, SSE stream via `test listen` (and `--debug`)
     perf        service perf last/summary/history
     failures    add, list, get, update, promote (phrase is delexicalized and then matches), remove
     regression  add, list, get, update, run (only this run's tests are judged), remove
@@ -657,9 +657,9 @@ def _test_listen(t: CliRestTest) -> str:
     return "SSE stream opened and closed after the idle timeout"
 
 
-@step("test listen-debug", "stream_results")
+@step("test listen --debug", "stream_results")
 def _test_listen_debug(t: CliRestTest) -> str:
-    output = t.ok("test", "listen-debug", "--no-start", "--duration", "2", json_output=False, timeout=30)
+    output = t.ok("test", "listen", "--debug", "--no-start", "--duration", "2", json_output=False, timeout=30)
     expect("status:" in output, f"no status event received: {_tail(output)}")
     return "received the initial 'status' event"
 

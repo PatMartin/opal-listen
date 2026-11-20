@@ -38,7 +38,7 @@ REQUIRED_COMMANDS = {
     "slot list", "slot add", "slot add-value", "slot add-alias",
     "profile list", "profile add",
     "config setting list", "config setting show", "config setting set", "config setting remove",
-    "test text", "test audio", "test listen", "test listen-debug", "test regression",
+    "test text", "test audio", "test listen", "test regression",
     "recognition test",
     "failed list", "failed promote",
     "service perf last", "service perf summary",
@@ -183,7 +183,7 @@ def test_test_listen_commands(cli: CliHarness, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(service, "start", lambda: {"status": "already_running"})
     out = cli("test", "listen", "--count", "1")
     assert out.exit_code == 0 and "light_turn_on" in out.output and "get_time" not in out.output
-    debug = cli("test", "listen-debug", "--count", "2")
+    debug = cli("test", "listen", "--debug", "--count", "2")
     assert debug.exit_code == 0
     assert "dBFS" in debug.output and "turn on" in debug.output and "wakeword_candidate" in debug.output
     assert calls == ["/api/v1/recognition/stream?debug=False", "/api/v1/recognition/stream?debug=True"]

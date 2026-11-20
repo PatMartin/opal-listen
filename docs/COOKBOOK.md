@@ -95,12 +95,12 @@ opal listen test audio samples/negatives/smalltalk.wav --require-wakeword --verb
 
 ### 6. Open a live sound-engineer console
 
-`listen-debug` streams every SSE event: a real-time dBFS level meter, partial
+`test listen --debug` streams every SSE event: a real-time dBFS level meter, partial
 transcripts, VAD and wakeword events, then the final result. The fastest way to
 answer "did it even hear me?".
 
 ```bash
-opal listen test listen-debug --duration 60
+opal listen test listen --debug --duration 60
 ```
 
 ### 7. Run a local script when a phrase matches — no event bus
@@ -558,7 +558,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint openapi/opal_listen_v0.1.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
+spectral lint openapi/opal_listen_v0.2.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs

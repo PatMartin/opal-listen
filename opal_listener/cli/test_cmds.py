@@ -156,21 +156,13 @@ def test_listen(
     count: int = typer.Option(0, "--count", "-n", help="Stop after N results (0 = unlimited)"),
     duration: float = typer.Option(0, "--duration", help="Stop after N seconds (0 = unlimited)"),
     start: bool = typer.Option(True, "--start/--no-start", help="Start the pipeline if it is not running"),
+    debug: bool = typer.Option(
+        False, "--debug", help="Also show audio levels, partial transcripts, wakeword and VAD events"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full results"),
 ) -> None:
     """Listen on the microphone and print recognition results."""
-    _stream(ctx, debug=False, count=count, duration=duration, start=start, verbose=verbose)
-
-
-@test_app.command("listen-debug")
-def test_listen_debug(
-    ctx: typer.Context,
-    count: int = typer.Option(0, "--count", "-n", help="Stop after N results (0 = unlimited)"),
-    duration: float = typer.Option(0, "--duration", help="Stop after N seconds (0 = unlimited)"),
-    start: bool = typer.Option(True, "--start/--no-start", help="Start the pipeline if it is not running"),
-) -> None:
-    """Like 'listen' but also shows audio levels, partial transcripts, wakeword and VAD events."""
-    _stream(ctx, debug=True, count=count, duration=duration, start=start, verbose=True)
+    _stream(ctx, debug=debug, count=count, duration=duration, start=start, verbose=verbose or debug)
 
 
 @test_app.command("regression")

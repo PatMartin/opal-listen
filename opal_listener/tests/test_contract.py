@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from opal_listener.app_settings import PACKAGE_DIR, AppSettings
 from opal_listener.main import create_app
 
-CONTRACT_PATH = PACKAGE_DIR.parent / "openapi" / "opal_listen_v0.1.0.yaml"
+CONTRACT_PATH = PACKAGE_DIR.parent / "openapi" / "opal_listen_v0.2.0.yaml"
 METHODS = ("get", "post", "put", "patch", "delete")
 CONSTRAINTS = ("maxLength", "minLength", "maximum", "minimum", "default", "format", "contentMediaType")
 

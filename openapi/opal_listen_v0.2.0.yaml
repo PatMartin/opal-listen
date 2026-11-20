@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Voice Intent API
-  version: '0.1.0'
+  version: '0.2.0'
   description: "Wakeword, STT, intent recognition, and slot extraction engine\n\n\
     OPAL SUITE STANDARD v2.0.0 (normative; follows the shared kernel version)\nX-Opal-Session-Id is an optional logical\
     \ context identifier; it does not create a server-managed session or grant authorization.\

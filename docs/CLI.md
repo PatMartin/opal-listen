@@ -286,7 +286,7 @@ opal
     ├── profile     list | get | add | update | activate | remove
     ├── persona     list | get | add | update | remove | validate
     ├── setting     get | unset        (aliases for `config setting show` / `config setting remove`)
-    ├── test        text | audio | listen | listen-debug | regression
+    ├── test        text | audio | listen [--debug] | regression
     ├── pipeline    start | stop | status
     ├── failed      list | get | add | update | remove | promote
     ├── regression  list | get | add | update | remove
@@ -802,7 +802,7 @@ opal listen config setting set --name whisper_model --value tiny.en
 | `text TEXT` | Run text through normalization, intent matching and slot extraction |
 | `audio WAV` | Run a WAV file through the full wakeword → VAD → STT → intent pipeline |
 | `listen` | Stream live microphone results |
-| `listen-debug` | Like `listen`, plus audio levels, partial transcripts, and wakeword and VAD events |
+| `listen --debug` | Like `listen`, plus audio levels, partial transcripts, and wakeword and VAD events |
 | `regression` | Run the saved regression tests |
 
 ### `test text`
@@ -903,11 +903,10 @@ arecord -f S16_LE -r 16000 -c 1 -d 4 my_command.wav
 opal listen test audio my_command.wav -v
 ```
 
-### `test listen` and `test listen-debug`
+### `test listen`
 
 ```
-opal listen test listen       [-n COUNT] [--duration SECONDS] [--start/--no-start] [-v]
-opal listen test listen-debug [-n COUNT] [--duration SECONDS] [--start/--no-start]
+opal listen test listen [-n COUNT] [--duration SECONDS] [--start/--no-start] [--debug] [-v]
 ```
 
 | Option | Default | Meaning |
@@ -915,7 +914,8 @@ opal listen test listen-debug [-n COUNT] [--duration SECONDS] [--start/--no-star
 | `-n`, `--count N` | `0` (unlimited) | Stop after N results |
 | `--duration S` | `0` (unlimited) | Stop after S seconds |
 | `--start/--no-start` | `--start` | Start the pipeline if it isn't running |
-| `-v`, `--verbose` | off | Print full results (`listen` only. `listen-debug` always prints full results.) |
+| `--debug` | off | Also show audio levels, partial transcripts, wakeword and VAD events (implies full results) |
+| `-v`, `--verbose` | off | Print full results (`--debug` implies it) |
 
 If `test listen` started the pipeline, it stops it again on exit or Ctrl-C. A pipeline that was already
 running keeps running.
@@ -933,10 +933,10 @@ opal listen test listen --duration 30
 opal listen test listen --no-start
 
 # Debug view: 10 results or 10 seconds, whichever comes first
-opal listen test listen-debug --count 10 --duration 10 --start
+opal listen test listen --debug --count 10 --duration 10 --start
 ```
 
-Example `listen-debug` output:
+Example `test listen --debug` output:
 
 ```
 listening... say the wakeword (Ctrl-C to stop)
@@ -1488,7 +1488,7 @@ opal listen test regression
 # --- pipeline -----------------------------------------------------------------------------
 opal listen pipeline status
 opal listen pipeline start
-opal listen test listen-debug --count 10 --duration 10 --no-start
+opal listen test listen --debug --count 10 --duration 10 --no-start
 opal listen pipeline stop
 
 # --- clean up -----------------------------------------------------------------------------
@@ -1551,7 +1551,7 @@ opal listen service perf summary
 
 ```bash
 # 1. Watch the levels while the room is noisy (but nobody is speaking)
-opal listen test listen-debug --duration 20
+opal listen test listen --debug --duration 20
 
 # 2. Activate the noisy_room profile, or tune it
 opal listen profile update noisy_room \
@@ -1560,7 +1560,7 @@ opal listen profile update noisy_room \
 opal listen profile activate noisy_room
 
 # 3. Test again
-opal listen test listen-debug -n 5
+opal listen test listen --debug -n 5
 ```
 
 ### 18.5 Back up and move configuration to another machine
@@ -1663,7 +1663,7 @@ opal listen --json regression list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
+| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen --debug` to see levels. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1725,7 +1725,7 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config setting remove` (`setting unset`) | `DELETE /api/v1/setting/{key}` (If-Match) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
-| `test listen`, `test listen-debug` | `GET /api/v1/recognition/stream` (SSE) |
+| `test listen [--debug]` | `GET /api/v1/recognition/stream` (SSE) |
 | `test regression` | `POST /api/v1/regression/run` |
 | `pipeline start` | `POST /api/v1/recognition/start` |
 | `pipeline stop` | `POST /api/v1/recognition/stop` |

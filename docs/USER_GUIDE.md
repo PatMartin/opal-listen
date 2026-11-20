@@ -194,7 +194,7 @@ opal listen service live
 opal listen info health
 opal listen test text "computer, turn on the kitchen light"
 opal listen test audio opal_listener/tests/audio/fixtures/golden_kitchen_light_on.wav
-opal listen test listen-debug        # live microphone, Ctrl-C to stop
+opal listen test listen --debug      # live microphone, Ctrl-C to stop
 ```
 
 `info health` should show `✓` on every line. Microphone problems show as warnings, because text and
@@ -2275,8 +2275,7 @@ opal listen config setting set stt_refiner faster_whisper     # requires the [wh
 |---|---|
 | `text TEXT [--save/--no-save] [--expect-intent I] [-v]` | Recognize text |
 | `audio WAV [--save/--no-save] [--require-wakeword] [--expect-intent I] [-v]` | Recognize a WAV file |
-| `listen [-n COUNT] [--duration S] [--start/--no-start] [-v]` | Live microphone results |
-| `listen-debug [-n COUNT] [--duration S] [--start/--no-start]` | Also shows levels, partials, wakeword and VAD events |
+| `listen [-n COUNT] [--duration S] [--start/--no-start] [--debug] [-v]` | Live microphone results; `--debug` also shows levels, partials, wakeword and VAD events |
 | `regression [--all]` | Run regression tests (exit 1 on failure). `--all` includes disabled tests. |
 
 ```bash
@@ -2308,12 +2307,12 @@ opal listen test listen                   # starts the pipeline if needed and st
 opal listen test listen -n 3              # stop after 3 results
 opal listen test listen --duration 30     # stop after 30 s
 opal listen test listen --no-start        # only watch an already-running pipeline
-opal listen test listen-debug
+opal listen test listen --debug           # plus levels, partials, wakeword/VAD events
 opal listen test regression
 opal listen test regression --all
 ```
 
-Example `listen-debug` output:
+Example `test listen --debug` output:
 
 ```
 listening... say the wakeword (Ctrl-C to stop)
@@ -2601,7 +2600,7 @@ opal listen test text "set the office lights to 40 percent"
 ### 9.3 Tune for a noisy room
 
 ```bash
-opal listen test listen-debug --duration 20      # note the idle level (noise) and the speech level
+opal listen test listen --debug --duration 20    # note the idle level (noise) and the speech level
 opal listen profile activate noisy_room         # built-in: wakeword 0.9, intent 0.8, stricter VAD
 opal listen test listen -n 5
 
@@ -2622,7 +2621,7 @@ Rules of thumb:
 | Quiet speech is ignored | Lower `energy_threshold_dbfs` (e.g. -50), or move the mic closer |
 | The first word of the command is lost | Raise `pre_roll_ms` (up to 3000) |
 | False wakeword triggers | Raise the wakeword threshold or profile `wakeword` floor, and add sound-alikes to `wakeword_distractors` |
-| Wakeword missed | Lower the wakeword threshold. Check the level in `listen-debug`. Try `wakeword_trigger=partial`. |
+| Wakeword missed | Lower the wakeword threshold. Check the level with `test listen --debug`. Try `wakeword_trigger=partial`. |
 | Wrong intent chosen | Add more distinctive phrases, or raise that intent's threshold |
 
 ### 9.4 The review and tuning loop
@@ -2879,7 +2878,7 @@ Markers: `vosk` (needs the model on disk) and `slow` (noise tests).
 | `provider` or `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH`, the `vosk_model_path` setting or a profile's `model_paths.vosk_model` at a directory that contains `am/` and `conf/`. |
 | `503 listener provider unavailable` | Same as above. The model cannot be loaded. |
 | `microphone` warning | Install `libportaudio2`. Check `arecord -l`. Add the user to the `audio` group. In Docker, check `/dev/snd` and `AUDIO_GID`. |
-| Wakeword never triggers | Run `test listen-debug`. If levels stay near -90 dBFS, choose another device with `info health` and `setting set audio_device <index>`. Lower the wakeword threshold. |
+| Wakeword never triggers | Run `test listen --debug`. If levels stay near -90 dBFS, choose another device with `info health` and `setting set audio_device <index>`. Lower the wakeword threshold. |
 | Triggers on similar words | Add them to `wakeword_distractors`. Raise the wakeword threshold or the profile's `wakeword` floor. |
 | Command cut off, or ends too late | Tune the active profile's `vad_settings`, e.g. `profile update default --vad silence_end_ms=900`. |
 | `vocabulary` warning | A phrase or alias uses a word that the model does not know. Rephrase it, or use a larger model. |
@@ -2976,7 +2975,7 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/recognition/start` | `start_pipeline` | `pipeline start` | Pipeline |
 | POST | `/api/v1/recognition/stop` | `stop_pipeline` | `pipeline stop` | Pipeline |
 | GET | `/api/v1/recognition/status` | `get_status` | `pipeline status` | Pipeline |
-| GET | `/api/v1/recognition/stream` | `stream_results` | `test listen` / `listen-debug` | Test |
+| GET | `/api/v1/recognition/stream` | `stream_results` | `test listen [--debug]` | Test |
 | POST | `/api/v1/service/start` | `opal_service_start` | `service start` | Service |
 | POST | `/api/v1/service/stop` | `opal_service_stop` | `service stop` | Service |
 | GET | `/api/v1/service/log` | `opal_service_log` | `service log` | Service |
@@ -3004,4 +3003,4 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/config/validate` | `opal_config_validate` | `config validate` | Config |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v0.1.0.yaml](../openapi/opal_listen_v0.1.0.yaml).
+REST contract [opal_listen_v0.2.0.yaml](../openapi/opal_listen_v0.2.0.yaml).

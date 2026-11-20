@@ -2,4 +2,37 @@
 # Reactions fire only on live-mic matches while `reactions_enabled` is true:
 #   opal listen setting set reactions_enabled true
 # Schema: docs/USER_GUIDE.md section 4.5 (intent reactions).
-reactions: []
+reactions:
+- name: bashtop_start
+  enabled: true
+  conditions:
+  - path: intent_name
+    operator: eq
+    value: bashtop_start
+  actions:
+  - type: command
+    argv:
+    - systemd-run
+    - --user
+    - --collect
+    - --unit=opal-bashtop
+    - --setenv=DISPLAY
+    - --setenv=XAUTHORITY
+    - xterm
+    - -e
+    - bashtop
+    timeout_s: 15.0
+- name: bashtop_stop
+  enabled: true
+  conditions:
+  - path: intent_name
+    operator: eq
+    value: bashtop_stop
+  actions:
+  - type: command
+    argv:
+    - systemctl
+    - --user
+    - stop
+    - opal-bashtop
+    timeout_s: 15.0
