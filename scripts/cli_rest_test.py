@@ -28,7 +28,7 @@ COVERAGE
     step FAIL the coverage check; operations whose steps were all skipped are reported as skipped.
 
 WHAT IS VERIFIED (per group)
-    health      info health (/api/v1/health/), live/ready probes via direct REST (no CLI commands)
+    health      service health (/api/v1/health/), live/ready probes via direct REST (no CLI commands)
     settings    list, set, show, remove (valid value, rejected invalid value and unknown key, restored)
     wakewords   add, list, show, update (threshold/disabled)
     slots       add with value, add-value with alias, add-alias, list, set, values, aliases, update
@@ -292,9 +292,9 @@ def expect(condition: bool, message: str) -> None:
 # Steps run top to bottom. Each returns a short description of what it verified.
 
 
-@step("info health", "opal_health_get")
+@step("service health", "opal_health_get")
 def _doctor(t: CliRestTest) -> str:
-    call = t.run("info", "health")
+    call = t.run("service", "health")
     report = parse_json(call)
     expect(isinstance(report, dict) and report.get("checks"), "health report has no checks")
     expect(call.exit_code == (1 if report["status"] == "error" else 0), "exit code does not match status")
@@ -611,7 +611,7 @@ def _test_audio(t: CliRestTest) -> str:
     if not t.wav.exists():
         raise Skip(f"WAV fixture not found: {t.wav}")
     if not t.state.get("model_ok"):
-        raise Skip("server reports no usable Vosk model (see 'info health')")
+        raise Skip("server reports no usable Vosk model (see 'service health')")
     result = t.ok("test", "audio", str(t.wav), "--require-wakeword", timeout=180)
     expect({"wakeword", "transcript", "intent_name", "total_latency_ms"} <= set(result), f"incomplete {result}")
     if t.isolated and t.wav == DEFAULT_WAV:

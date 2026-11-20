@@ -151,12 +151,12 @@ EOF
 
 Four probe shapes for four depths of "is it healthy": `ping` (TCP/HTTP up),
 `live` (process + DB) and `ready` (config compiles, provider loads) probes are
-REST-only (no CLI commands); `info health` is the aggregate report. `info health`
+REST-only (no CLI commands); `service health` is the aggregate report. `service health`
 exits non-zero on failure.
 
 ```bash
 curl -sf http://localhost:8000/api/v1/health/live && curl -sf http://localhost:8000/api/v1/health/ready
-opal listen info health   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
+opal listen service health   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
 ```
 
 ### 10. Retune several settings
@@ -310,7 +310,7 @@ Pick the right mic by name, let the watchdog recover dead captures, and bound th
 log table — all without editing a file or restarting.
 
 ```bash
-opal listen info health
+opal listen service health
 opal listen config setting set --name audio_device --value "USB"
 opal listen config setting set --name audio_watchdog_timeout_ms --value 5000
 opal listen config setting set --name max_recognition_logs --value 5000
@@ -547,7 +547,7 @@ map live, so discovery never goes stale.
 opal listen tree
 opal talk tree
 opal think tree
-opal listen --json system info
+opal listen --json service health
 ```
 
 ### 33. Contract-of-record auditing
@@ -573,7 +573,7 @@ illness.
 cat > /opt/opal/health_sweep.sh <<'SH'
 #!/usr/bin/env bash
 fail=""
-opal listen info health   >/dev/null 2>&1 || fail="$fail listen"
+opal listen service health   >/dev/null 2>&1 || fail="$fail listen"
 opal talk health          >/dev/null 2>&1 || fail="$fail talk"
 opal event health         >/dev/null 2>&1 || fail="$fail event"
 opal think health         >/dev/null 2>&1 || fail="$fail think"
@@ -672,8 +672,8 @@ to a bug report.
 
 ```bash
 day=$(date +%s); mkdir -p incident-$day
-opal listen --json system info           > incident-$day/listen-info.json
-opal listen --json system doctor         > incident-$day/listen-doctor.json
+opal listen --json service health           > incident-$day/listen-info.json
+opal listen --json service health        > incident-$day/listen-health.json
 opal listen --json pipeline status       > incident-$day/pipeline.json
 opal listen --json perf summary          > incident-$day/perf.json
 opal event stats                         > incident-$day/event-stats.txt

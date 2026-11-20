@@ -141,12 +141,12 @@ Start a managed background server:
 
 ```bash
 opal listen service start
-opal listen info health
+opal listen service health
 opal listen pipeline status
 ```
 
 The start result reports a PID and log location. If the service is still
-initializing, repeat `info health` after a few seconds. The health report should be
+initializing, repeat `service health` after a few seconds. The health report should be
 `ok` (or `degraded`). The pipeline should show `running: false`: starting the service
 does **not** start the microphone by default.
 
@@ -329,7 +329,7 @@ opal listen config setting set --name vosk_model_path \
   --value "$HOME/models/vosk-model-small-en-us-0.15"
 opal listen config setting set --name listener_provider --value vosk
 opal listen config setting show --name listener_provider
-opal listen info health
+opal listen service health
 opal listen test audio \
   opal_listener/tests/audio/fixtures/golden_kitchen_light_on.wav \
   --require-wakeword --expect-intent light_turn_on
@@ -365,7 +365,7 @@ to the **service machine**. The CLI streams that machine's microphone results;
 it does not capture your client's microphone remotely.
 
 ```bash
-opal listen info health
+opal listen service health
 opal listen config setting show --name audio_device
 opal listen test listen --count 1 --duration 30 --verbose
 opal listen pipeline status
@@ -434,7 +434,7 @@ Third-party listener providers register the Python entry-point group
 `opal_listener.providers`; package installation is outside the module CLI.
 After installing a compatible provider into the service environment, restart the
 service, set `listener_provider` to its registered name with `config setting set`,
-and verify it with `info health` and a real audio test. Do not assume a generic
+and verify it with `service health` and a real audio test. Do not assume a generic
 shared-contract engine command exists here. See the
 [provider architecture](USER_GUIDE.md#32-components) and
 [registry implementation](../opal_listener/service/providers/registry.py).
@@ -449,7 +449,7 @@ and restart the managed service before selecting it:
 ```bash
 python -m pip install -e ".[whisper]"
 opal listen service start --append
-opal listen info health
+opal listen service health
 opal listen config setting set --name whisper_model --value tiny.en
 opal listen config setting set --name whisper_compute_type --value int8
 opal listen config setting set --name stt_refiner --value faster_whisper
@@ -524,7 +524,7 @@ To start it again:
 
 ```bash
 opal listen service start --append
-opal listen info health
+opal listen service health
 ```
 
 `service start` also **restarts an already managed server**; there is no separate
@@ -556,7 +556,7 @@ assume managed stop controls an untracked foreground server.
 | `not a Vosk model` / missing `am/` or `conf/` | Path points at a ZIP or its parent directory | Select the extracted model directory itself, readable by the service user. |
 | `NO MATCH` yet exit status is 0 | A recognition miss is a valid diagnostic result | Use `--expect-intent` to enforce the expected result; inspect verbose output, enabled intents/slots and active profile. |
 | HTTP 413 / invalid WAV | Upload too large or unsupported encoding | Use 16-bit PCM WAV under the default 10 MiB cap; MP3 and float WAV are not supported. |
-| No microphone / PortAudio error | No input, missing runtime, permissions, or wrong device | Install `libportaudio2`, check host input permissions/settings, inspect devices with `info health`, and select an actual `audio_device`. WAV/text remain usable without hardware. |
+| No microphone / PortAudio error | No input, missing runtime, permissions, or wrong device | Install `libportaudio2`, check host input permissions/settings, inspect devices with `service health`, and select an actual `audio_device`. WAV/text remain usable without hardware. |
 | Unknown option or command from older docs | CLI renamed or global option misplaced | Use `config setting set --name ... --value ...`; place `--json`/`--api-url` after `listen`, before the group. Consult `tree --ascii` and per-command help. |
 | Edit YAML but service stays unchanged | YAML only seeds an empty database | Use catalog/configuration CLI commands; restarting does not overwrite existing catalogs from YAML. |
 | HTTP 401 on normal commands | Server token and CLI environment differ | Supply the same `OPAL_LISTENER_API_TOKEN` to both. Never put credentials in snapshots or committed examples. |
@@ -592,7 +592,7 @@ and a fresh Git clone were not rerun.
   deployment, model mounts and Linux `/dev/snd` access.
 
 **Known reference drift:** older documentation/scripts still contain removed
-commands such as `setting set`, `service ping` and `service doctor`, and some
+commands, and some
 pages say authentication does not exist. The implementation has optional bearer
 authentication. Contract prose also mixes suite-version labels and retains a
 retired settings-update description. The shared kernel defines engine-family

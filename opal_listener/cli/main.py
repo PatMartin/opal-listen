@@ -23,7 +23,7 @@ from opal_listener.cli.client import ApiClient, api_url_from_env
 from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, perf_app
-from opal_listener.cli.service_cmds import config_app, info_app, service_app
+from opal_listener.cli.service_cmds import config_app, service_app
 from opal_listener.cli.test_cmds import pipeline_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
 
@@ -86,7 +86,7 @@ OPERATION_COMMANDS: dict[str, str] = {
     "get_performance_last": "service perf last",
     "get_performance_summary": "service perf summary",
     "get_performance_history": "service perf history",
-    "opal_health_get": "info health",
+    "opal_health_get": "service health",
     "opal_service_start": "service start",
     "opal_service_stop": "service stop",
     "opal_service_log": "service log",
@@ -113,7 +113,6 @@ for sub_app, name in (
     (reactions_app, "reaction"),
     (config_app, "config"),
     (service_app, "service"),
-    (info_app, "info"),
 ):
     listen_app.add_typer(sub_app, name=name)
 

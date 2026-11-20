@@ -292,7 +292,7 @@ def test_every_operation_has_a_cli_command() -> None:
 
     docs = {"openapi", "swagger_ui_html", "swagger_ui_redirect", "redoc_html"}
     # Infrastructure probes for external monitors (k8s liveness/readiness); intentionally
-    # have no CLI command — `info health` is the human-facing health check.
+    # have no CLI command — `service health` is the human-facing health check.
     probe_ops = {"opal_health_live_get", "opal_health_ready_get"}
     operations = {r.name for r in _iter_routes(create_app(AppSettings()).routes) if hasattr(r, "methods")} - docs
     missing = sorted(operations - set(OPERATION_COMMANDS) - probe_ops)

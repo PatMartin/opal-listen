@@ -42,7 +42,7 @@ REQUIRED_COMMANDS = {
     "failed list", "test reaction",
     "service perf last", "service perf summary",
     "config validate", "config save", "config load",
-    "info health", "service start", "service stop", "service log", "gui",
+    "service health", "service start", "service stop", "service log", "gui",
     "reaction list", "reaction show", "reaction add", "reaction update", "reaction remove",
     "reaction enable", "reaction disable", "reaction log", "test reaction", "reaction path",
 }  # fmt: skip
@@ -232,10 +232,10 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
 
 
 def test_service_commands(cli: CliHarness) -> None:
-    health = cli("info", "health")
-    # info health exits non-zero when any check errors (e.g. missing vosk model)
+    health = cli("service", "health")
+    # service health exits non-zero when any check errors (e.g. missing vosk model)
     assert "sqlite" in health.output and "overall" in health.output
-    result = cli("--json", "info", "health")
+    result = cli("--json", "service", "health")
     report = json.JSONDecoder().raw_decode(result.output)[0]
     assert report["name"] == "opal-listen-svc"
     assert isinstance(report["details"]["audio_devices"], list)
@@ -257,7 +257,7 @@ def test_service_stop_and_log_without_server(cli: CliHarness, tmp_path: Path, mo
 def test_unreachable_api_gives_friendly_error(monkeypatch: pytest.MonkeyPatch) -> None:
     from typer.testing import CliRunner
 
-    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "info", "health"])
+    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "service", "health"])
     assert result.exit_code == 1
     assert "cannot reach the opal listener API" in result.output
 

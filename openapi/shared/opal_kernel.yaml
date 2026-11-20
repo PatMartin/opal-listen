@@ -62,7 +62,7 @@ x-opal-cli-format:
     command `opal <service> [parent] [group] <command>`; `aliases` names alternate complete spellings that dispatch
     to the same operation (e.g. Think's `ask`/`chat`/`create` invoke `task add`). Kernel Path Items carry
     per-operation descriptors directly and are the single source of truth for shared-operation bindings,
-    including all `config`/`config setting`, `info`, `service`, `profile`, and `persona` commands.
+    including all `config`/`config setting`, `service`, `profile`, and `persona` commands.
     Readers hoist
     a path-level
     per-method map onto each
@@ -70,7 +70,7 @@ x-opal-cli-format:
   descriptor:
     command: required - canonical verb, kebab-case (`list`, `add`, `show`, `update`, `remove`, `save`,
       `load`, `validate`, ...)
-    group: optional - command group (`task`, `persona`, `setting`, `info`, ...)
+    group: optional - command group (`task`, `persona`, `setting`, `service`, ...)
     parent: optional - super-group above `group` (`config`, `data`)
     aliases: optional - array of alternate complete command spellings for this operation
     options: optional - array of named-option descriptors; each carries `flag` (long option spelling),
@@ -1782,7 +1782,7 @@ components:
           '503':
             $ref: '#/components/responses/ServiceUnavailable'
         x-opal-cli:
-          group: info
+          group: service
           command: health
     health_live:
       parameters:
@@ -1797,7 +1797,7 @@ components:
         operationId: opal_health_live_get
         description: 'Cheap liveness check for machine callers: the process is up and its minimal runtime
           is reachable. This is the supported machine probe - it replaces the retired `GET /api/v1/info/ping`
-          for supervisors and load balancers. No CLI binding; use `info health` for the human-readable report.'
+          for supervisors and load balancers. No CLI binding; use `service health` for the human-readable report.'
         responses:
           '200':
             description: Health probe.
@@ -1847,7 +1847,7 @@ components:
         summary: Readiness probe
         operationId: opal_health_ready_get
         description: 'Readiness check for machine callers: the service can accept traffic because every
-          required dependency is initialized and reachable. No CLI binding; use `info health` for the
+          required dependency is initialized and reachable. No CLI binding; use `service health` for the
           human-readable report.'
         responses:
           '200':

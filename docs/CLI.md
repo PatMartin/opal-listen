@@ -109,7 +109,7 @@ opal listen [--api-url URL] [--json] [--timeout SECONDS] <group> <command> [ARGS
 ```bash
 # Correct: global options come right after 'listen'
 opal listen --json intent list
-opal listen --api-url http://pi5.local:8000 --timeout 10 system doctor
+opal listen --api-url http://pi5.local:8000 --timeout 10 service health
 
 # Wrong: --json after the group is rejected as an unknown option (exit code 2)
 opal listen intent list --json
@@ -122,20 +122,20 @@ variable has no `ER` in it, unlike the server's `OPAL_LISTENER_*` variables.
 
 ```bash
 export OPAL_LISTEN_API_URL=http://192.168.1.50:8000
-opal listen info health              # talks to 192.168.1.50
+opal listen service health              # talks to 192.168.1.50
 
 # One-off override for a single command
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
 
 # --api-url takes precedence over the environment variable
-opal listen --api-url http://localhost:8000 system info
+opal listen --api-url http://localhost:8000 service health
 ```
 
 ### Checking the connection
 
 ```bash
-opal listen info health              # ✓ http://localhost:8000 is up
-opal listen info health            # service name and version
+opal listen service health              # ✓ http://localhost:8000 is up
+opal listen service health            # service name and version
 ```
 
 If the server cannot be reached, the CLI prints a hint and exits with code `1`:
@@ -253,7 +253,7 @@ server logs.
 | Exit code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | API error (4xx/5xx), server unreachable, resource not found, invalid configuration, `info health` errors, `--expect-intent` mismatch, or declined confirmation |
+| `1` | API error (4xx/5xx), server unreachable, resource not found, invalid configuration, `service health` errors, `--expect-intent` mismatch, or declined confirmation |
 | `2` | Invalid CLI usage: unknown option, missing argument, or an out-of-range value such as `--threshold 1.5` |
 
 ---
@@ -283,11 +283,10 @@ opal
     ├── test        text | audio | listen | reaction
     ├── pipeline    start | stop | status
     ├── failed      list | show | add | update | remove
-    ├── service     start | stop | log | perf
+    ├── service     health | start | stop | log | perf
     │               └── perf  last | summary | history
     ├── config      save | load | validate
     │               └── setting   list | show | set | remove
-    ├── event       publish
     └── reaction    list | show | add | update | remove | enable | disable | log | path
 ```
 
@@ -539,7 +538,7 @@ opal listen slot add-alias room_name living_room martin_hall
 opal listen slot remove-alias room_name living_room martin_hall
 ```
 
-> After you add a value or alias, run `opal listen info health`. The `vocabulary` check warns if a
+> After you add a value or alias, run `opal listen service health`. The `vocabulary` check warns if a
 > word is unknown to the speech model and therefore can't be recognized from audio.
 
 ---
@@ -1166,14 +1165,14 @@ opal listen service log
 opal listen service stop
 
 # Aggregate health report: identity, status, checks and audio devices
-opal listen info health
+opal listen service health
 
 # Standard OPAL liveness/readiness probes are REST-only (no CLI commands):
 curl -s http://localhost:8000/api/v1/health/live
 curl -si http://localhost:8000/api/v1/health/ready
 
 # Audio input devices are listed in the health report's details
-opal listen --json info health | jq '.details.audio_devices'
+opal listen --json service health | jq '.details.audio_devices'
 opal listen config setting set --name audio_device --value 2
 ```
 
@@ -1280,8 +1279,8 @@ This tour exercises every catalog group and cleans up after itself. You can run 
 
 ```bash
 # --- sanity -------------------------------------------------------------------------------
-opal listen info health
-opal listen info health
+opal listen service health
+opal listen service health
 
 # --- wakewords ----------------------------------------------------------------------------
 opal listen wakeword list
@@ -1363,7 +1362,7 @@ opal listen test text "computer, set the kitchen lights to cozy"
 # -> light_color, {"room_name": "kitchen", "color": "warm_white"}
 
 # 4. Check that the speech model knows the new words
-opal listen info health
+opal listen service health
 ```
 
 ### 20.3 The review and tuning loop
@@ -1448,7 +1447,7 @@ opal listen --json test listen | jq -c '{intent_name, slot_values}'
 #!/usr/bin/env bash
 set -euo pipefail
 
-opal listen info health
+opal listen service health
 opal listen test text "computer, turn on the kitchen light" --no-save --expect-intent light_turn_on
 opal listen test text "order a pizza"                       --no-save --expect-intent no_match
 opal listen test audio resources/cmds/cmd-cancel.wav        --no-save --expect-intent cancel
@@ -1500,7 +1499,7 @@ opal listen --json intent list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Debug-level stream events (audio levels, partials) are available via `GET /api/v1/recognition/stream?debug=true`. |
+| `test listen` shows nothing | Check `service health`, `config setting list` (look at `audio_device`) and `pipeline status`. Debug-level stream events (audio levels, partials) are available via `GET /api/v1/recognition/stream?debug=true`. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1577,8 +1576,6 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config validate` | `POST /api/v1/config/validate` (live, or `{snapshot}` with `--in`) |
 | `config save` | `POST /api/v1/config/save` (`managed`, or `response` with `--out`) |
 | `config load` | `POST /api/v1/config/load` (If-Match; managed, or `{snapshot}` with `--in`) |
-| `info health` | `GET /api/v1/health/` |
-| `info health` | `GET /api/v1/health/audio_devices` |
-| `info health` | `GET /api/v1/health/` |
+| `service health` | `GET /api/v1/health/` |
 
 See the [User Guide](USER_GUIDE.md) for the REST API, configuration files and architecture.

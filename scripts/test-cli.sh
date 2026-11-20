@@ -9,7 +9,7 @@
 #   - `reaction` commands edit <config_dir>/reactions.yaml directly (that is how arming
 #     works); the test reaction is removed at the end.
 #   - `test audio` needs a Vosk model on the server; `pipeline start` needs a microphone.
-#   - `info health` exits 1 while any check reports an error - the script keeps going.
+#   - `service health` exits 1 while any check reports an error - the script keeps going.
 
 clear
 opal listen service stop
@@ -230,7 +230,7 @@ opal listen config load --yes
 
 echo "Testing SYSTEM..."
 #opal listen info --help
-opal listen info health
+opal listen service health
 #opal listen service --help
 #opal listen service log --help
 opal listen service log --lines 10
