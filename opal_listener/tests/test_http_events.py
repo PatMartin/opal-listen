@@ -294,3 +294,86 @@ def test_default_event_publisher_selection() -> None:
     settings_both = AppSettings(event_transport="both")
     with pytest.raises(ValueError, match="does not deduplicate"):
         default_event_publisher(settings_both)
+
+
+def test_delivery_accounting_counters() -> None:
+    """accepted/delivered/failures are tracked separately: a selected dispatch is observable
+    as queue-accepted vs transport-confirmed."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(202, json={"status": "accepted"})
+
+    publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080")
+    publisher._client = httpx.Client(
+        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
+    )
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
+        assert _wait_until(lambda: publisher.delivered == 1)
+        assert publisher.accepted == 1 and publisher.delivery_failures == 0
+        stats = publisher.stats()
+        assert stats == {
+            "event_queue_depth": 0.0,
+            "events_accepted": 1.0,
+            "events_delivered": 1.0,
+            "event_delivery_failures": 0.0,
+        }
+    finally:
+        publisher.close()
+
+
+def test_delivery_accounting_on_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "boom"})
+
+    publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080")
+    publisher._client = httpx.Client(
+        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
+    )
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
+        assert _wait_until(lambda: publisher.delivery_failures == 1)
+        assert publisher.accepted == 1 and publisher.delivered == 0
+        assert "500" in (publisher.last_error or "")
+        assert publisher.stats()["event_delivery_failures"] == 1.0
+    finally:
+        publisher.close()
+
+
+def test_zmq_publisher_delivery_accounting() -> None:
+    """ZMQ is fire-and-forget: 'delivered' counts frames handed to the socket; failures
+    (oversize, socket errors) are counted with a last_error diagnostic."""
+    publisher = ZmqEventPublisher("tcp://127.0.0.1:5599")
+
+    class FakeSocket:
+        def __init__(self) -> None:
+            self.sent: list[list[bytes]] = []
+            self.fail = False
+
+        def send_multipart(self, frames: list[bytes]) -> None:
+            if self.fail:
+                raise RuntimeError("socket gone")
+            self.sent.append(frames)
+
+        def close(self, linger: int = 0) -> None:
+            pass
+
+    socket = FakeSocket()
+    publisher._socket = socket
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
+        assert socket.sent and publisher.delivered == 1 and publisher.delivery_failures == 0
+
+        socket.fail = True
+        publisher.publish("opal.listen.intent.match", {"intent_name": "y"})
+        assert publisher.delivery_failures == 1 and "socket gone" in (publisher.last_error or "")
+
+        publisher.publish("opal.listen.intent.match", {"intent_name": "z" * 2_000_000})
+        assert publisher.delivery_failures == 2 and "exceeds" in (publisher.last_error or "")
+
+        stats = publisher.stats()
+        assert stats["events_accepted"] == 2.0  # the oversized event was rejected before send
+        assert stats["events_delivered"] == 1.0
+        assert stats["event_delivery_failures"] == 2.0
+    finally:
+        publisher.close()

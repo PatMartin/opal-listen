@@ -57,7 +57,10 @@ class HttpEventPublisher:
         self._client: httpx.Client | None = None
         self._lock = threading.Lock()
         self._stopped = threading.Event()
-        # Observable delivery accounting: failures are counted and the last one kept for inspection.
+        # Observable delivery accounting: accepted (queued), delivered (2xx confirmed) and
+        # failures are counted separately — a result's dispatch selection never implies delivery.
+        self.accepted = 0
+        self.delivered = 0
         self.delivery_failures = 0
         self.last_error: str | None = None
 
@@ -92,6 +95,7 @@ class HttpEventPublisher:
             self._start_worker_locked()
             try:
                 self._queue.put_nowait((topic, payload))
+                self.accepted += 1
             except queue.Full:
                 # drop_newest policy: count, warn and drop to never block audio/recognition
                 self.delivery_failures += 1
@@ -156,10 +160,22 @@ class HttpEventPublisher:
 
         log.info("sending HTTP event to topic '%s' at %s/api/v1/event/: %s", topic, self._base_url, event_input)
         response = client.post("/api/v1/event/", json=event_input, headers=headers)
+        if response.status_code < 400:
+            with self._lock:
+                self.delivered += 1  # opal-event confirmed receipt (the only delivery guarantee HTTP gives)
         if response.status_code >= 400:
             self._record_failure(
                 f"opal-event POST /api/v1/event/ returned status {response.status_code}: {response.text[:200]}"
             )
+
+    def stats(self) -> dict[str, float]:
+        """Delivery accounting surfaced in PipelineStatus.metrics."""
+        return {
+            "event_queue_depth": float(self._queue.qsize()),
+            "events_accepted": float(self.accepted),
+            "events_delivered": float(self.delivered),
+            "event_delivery_failures": float(self.delivery_failures),
+        }
 
     def close(self) -> None:
         """Signal the worker to drain and stop, then wait briefly. If it is still running (e.g.
@@ -191,6 +207,13 @@ class CompositeEventPublisher:
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         for pub in self._publishers:
             pub.publish(topic, payload)
+
+    def stats(self) -> dict[str, float]:
+        merged: dict[str, float] = {}
+        for pub in self._publishers:
+            for key, value in getattr(pub, "stats", dict)().items():
+                merged[key] = merged.get(key, 0.0) + value
+        return merged
 
     def close(self) -> None:
         for pub in self._publishers:

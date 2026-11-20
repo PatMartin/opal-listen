@@ -31,6 +31,21 @@ class EventPublisher(Protocol):
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None: ...
 
+    def _record_failure(self, message: str) -> None:
+        with self._lock:
+            self.delivery_failures += 1
+            self.last_error = message
+        log.warning(message)
+
+    def stats(self) -> dict[str, float]:
+        """Delivery accounting surfaced in PipelineStatus.metrics (PUB is fire-and-forget;
+        `events_delivered` counts frames accepted by the socket, not confirmed receipts)."""
+        return {
+            "events_accepted": float(self.accepted),
+            "events_delivered": float(self.delivered),
+            "event_delivery_failures": float(self.delivery_failures),
+        }
+
     def close(self) -> None: ...
 
 
@@ -51,6 +66,12 @@ class ZmqEventPublisher:
         self._lock = threading.Lock()
         self._context: Any = None
         self._socket: Any = None
+        # Observable delivery accounting. ZMQ PUB is fire-and-forget: 'delivered' means the
+        # frames were handed to the socket, not that a subscriber received them.
+        self.accepted = 0
+        self.delivered = 0
+        self.delivery_failures = 0
+        self.last_error: str | None = None
 
     def connect(self) -> None:
         with self._lock:
@@ -70,14 +91,31 @@ class ZmqEventPublisher:
             envelope = build_event_envelope(topic, payload)
             frames = [topic.encode("utf-8"), json.dumps(envelope, default=str).encode("utf-8")]
             if sum(len(frame) for frame in frames) > MAX_EVENT_BYTES:
-                log.warning("dropping event '%s': exceeds %d bytes", topic, MAX_EVENT_BYTES)
+                self._record_failure(f"dropping event '{topic}': exceeds {MAX_EVENT_BYTES} bytes")
                 return
             with self._lock:
                 socket = self._ensure_socket()
                 log.info("sending ZeroMQ event to topic '%s' via %s: %s", topic, self._xpub_url, envelope)
+                self.accepted += 1
                 socket.send_multipart(frames)
-        except Exception:  # noqa: BLE001 - event delivery must never break recognition
-            log.warning("failed to publish event '%s' to %s", topic, self._xpub_url, exc_info=True)
+                self.delivered += 1  # handed to the socket; subscriber receipt is unverifiable
+        except Exception as exc:  # noqa: BLE001 - event delivery must never break recognition
+            self._record_failure(f"failed to publish event '{topic}' to {self._xpub_url}: {exc!r}")
+
+    def _record_failure(self, message: str) -> None:
+        with self._lock:
+            self.delivery_failures += 1
+            self.last_error = message
+        log.warning(message)
+
+    def stats(self) -> dict[str, float]:
+        """Delivery accounting surfaced in PipelineStatus.metrics (PUB is fire-and-forget;
+        `events_delivered` counts frames accepted by the socket, not confirmed receipts)."""
+        return {
+            "events_accepted": float(self.accepted),
+            "events_delivered": float(self.delivered),
+            "event_delivery_failures": float(self.delivery_failures),
+        }
 
     def close(self) -> None:
         with self._lock:

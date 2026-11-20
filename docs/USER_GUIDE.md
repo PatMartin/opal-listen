@@ -667,7 +667,7 @@ Invalid values are rejected with `422`.
 | `cooldown_ms` | int | `1500` | 0–60000 | Ignore wakewords for this long after a session |
 | `dedup_window_ms` | int | `2000` | 0–60000 | Flag identical results within this window |
 | `auto_capture_failures` | bool | `true` | | Store `no_match` utterances (mic/audio) as failed utterances |
-| `intent_dispatch` | str | `auto` | `auto`, `off`, `local`, `event`, `both` | Where a matched intent goes: `local` = reactions.yaml only, `event` = external event bus only, `both`, or `off`. `auto` resolves from the legacy flags below; each result's `dispatched_to` shows the resolved path |
+| `intent_dispatch` | str | `auto` | `auto`, `off`, `local`, `event`, `both` | Where a matched intent goes: `local` = reactions.yaml only, `event` = external event bus only, `both`, or `off`. `auto` resolves from the legacy flags below; each result's `dispatched_to` shows the selected targets — selection is best-effort, confirmed delivery is reported via the `events_delivered`/`event_delivery_failures` metrics |
 | `event_publication_enabled` | bool | `false` | | Legacy flag → `event` target while `intent_dispatch=auto` |
 | `reactions_enabled` | bool | `false` | | Legacy flag → `local` target while `intent_dispatch=auto` |
 | `transcript_retention_days` | int | `0` | 0–36500 | Days to keep transcript text on recognition logs; 0 = forever. Rows and performance aggregates are always kept |

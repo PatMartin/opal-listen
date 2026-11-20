@@ -739,6 +739,10 @@ class ListenerService:
             "dispatched_local": float(st.dispatched_local),
             "dispatched_event": float(st.dispatched_event),
             "dispatch_suppressed": float(st.dispatch_suppressed),
+            # delivery accounting from the configured publisher: events_accepted (queue/send
+            # accepted), events_delivered (HTTP = 2xx confirmed; ZMQ = socket handed the
+            # frames, subscriber receipt unverifiable), event_delivery_failures
+            **getattr(self.event_publisher, "stats", dict)(),
             "recoveries": float(st.audio_restarts),
             "stt_latency_ms": st.stt_latency_ms or 0.0,
             "refine_latency_ms": st.refine_latency_ms or 0.0,

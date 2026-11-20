@@ -463,8 +463,9 @@ class RecognitionResult(BaseModel):
     audio_level: float | None = None
     deduplicated: bool = False
     refinement_error: str | None = None  # set when refinement failed/timed out and the draft was used
-    # dispatch targets actually invoked for this result (subset of {"local", "event"}); always
-    # empty for diagnostics, deduplicated repeats, and superseded-generation results
+    # dispatch targets selected for this result (subset of {"local", "event"}); always empty
+    # for diagnostics, deduplicated repeats, and superseded-generation results. Selection is
+    # best-effort, not delivery: confirmed delivery is reported via the event_* metrics.
     dispatched_to: list[str] = []
     recognition_log_id: PublicId | None = None
     created_at: datetime
