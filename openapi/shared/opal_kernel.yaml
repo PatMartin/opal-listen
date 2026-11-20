@@ -3084,6 +3084,8 @@ components:
             $ref: '#/components/responses/Forbidden'
           '404':
             $ref: '#/components/responses/NotFound'
+          '409':
+            $ref: '#/components/responses/Conflict'
           '412':
             $ref: '#/components/responses/PreconditionFailed'
           '422':
