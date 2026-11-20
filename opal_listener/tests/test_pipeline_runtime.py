@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from opal_listener.service.audio.capture import AudioCaptureError, AudioFrame, AudioSource
 from opal_listener.service.audio.vad import VadSettings
 from opal_listener.service.pipeline import RecognitionPipeline
-from opal_listener.service.providers.base import Transcript, WakewordEvent, WakewordEventKind
+from opal_listener.service.providers.base import Transcript, WakewordEngine, WakewordEvent, WakewordEventKind
 from opal_listener.service.providers.fake_provider import FakeListenerProvider, FakeWakewordDetector
 from opal_listener.tests.conftest import etag_of, list_logs, log_counts, patch_settings, silence_frame, tone_frame
 
@@ -1206,9 +1206,7 @@ def test_error_state_only_when_worker_dies_unrequested(service) -> None:
     assert service.status().state == "stopped"
 
 
-def test_dispatch_order_preserved_when_queue_full_bypasses(
-    client: TestClient, fake_provider: type
-) -> None:
+def test_dispatch_order_preserved_when_queue_full_bypasses(client: TestClient, fake_provider: type) -> None:
     """A command taking the queue-full bypass finalizes immediately on the capture thread,
     but its external dispatch still waits for every earlier-captured command."""
     import queue as queue_mod
@@ -1275,3 +1273,99 @@ def test_stale_generation_seq_can_never_gate_new_run(client: TestClient, fake_pr
     finally:
         refiner.gate.set()
         client.post("/api/v1/recognition/stop")
+
+
+# --- independent wakeword / transcription engine selection ----------------------------------------
+
+
+class _AltWakeProvider(FakeListenerProvider):
+    name = "fake_wake_alt"
+
+
+class _WakeOnlyEngine(WakewordEngine):
+    name = "wake_only"
+
+    def load(self, config) -> None:
+        pass
+
+    def is_loaded(self) -> bool:
+        return True
+
+    def check(self, config) -> list:
+        return []
+
+    def create_wakeword_detector(self, wakewords):
+        return FakeWakewordDetector(list(wakewords), 0.9)
+
+
+def test_engines_for_shares_instance_when_names_match(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    snap = service.snapshot
+    wake, trans = service.engines_for(snap)
+    assert wake is trans  # one engine name: a single loaded instance serves both roles
+    assert len(service._providers) == 1  # type: ignore[attr-defined]
+
+
+def test_engines_for_split_roles(client: TestClient, fake_provider: type) -> None:
+    import dataclasses
+
+    from opal_listener.service.providers.base import ProviderError
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    snap = service.snapshot
+    old_factories = service._wakeword_engine_factory, service._transcription_engine_factory
+    service._wakeword_engine_factory = lambda name: {
+        "fake": FakeListenerProvider,
+        "fake_wake_alt": _AltWakeProvider,
+        "wake_only": _WakeOnlyEngine,
+    }[name]()
+    service._transcription_engine_factory = service._wakeword_engine_factory
+    try:
+        snap_split = dataclasses.replace(snap, wakeword_engine_name="fake_wake_alt")
+        wake, trans = service.engines_for(snap_split)
+        assert isinstance(wake, _AltWakeProvider) and type(trans) is FakeListenerProvider
+        assert wake is not trans
+        assert set(service._providers) == {"fake", "fake_wake_alt"}  # type: ignore[attr-defined]
+
+        # a wakeword-only engine cannot serve the transcription role, cached or not
+        snap_bad = dataclasses.replace(snap, wakeword_engine_name="wake_only", transcription_engine_name="wake_only")
+        with pytest.raises(ProviderError, match="cannot serve the transcription role"):
+            service.engines_for(snap_bad)
+
+        # pipeline routes each role to its own engine
+        pipeline = service._make_pipeline(snap_split, debug=False, cooldown=False)
+        assert pipeline.wakeword_engine is wake and pipeline.transcription_engine is trans
+        assert pipeline.provider is trans  # legacy attribute tracks the transcription engine
+    finally:
+        service._wakeword_engine_factory, service._transcription_engine_factory = old_factories
+
+
+def test_split_engine_settings_validation(client: TestClient, fake_provider: type) -> None:
+    # unknown engine names are rejected by setting validation (dynamic registry choices)
+    for key in ("wakeword_engine", "transcription_engine"):
+        etag = client.get("/api/v1/setting/").headers["etag"]
+        response = client.put(f"/api/v1/setting/{key}", json={"value": "bogus"}, headers={"If-Match": etag})
+        assert response.status_code == 422, response.text
+        assert "must be one of" in response.json()["error"]["message"]
+    # a valid explicit selection compiles and resolves in the snapshot
+    assert patch_settings(client, wakeword_engine="fake").status_code == 200
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert service.snapshot.wakeword_engine_name == "fake"
+    assert service.snapshot.transcription_engine_name == "fake"
+    # '' inherits listener_provider
+    assert patch_settings(client, wakeword_engine="").status_code == 200
+    assert service.snapshot.wakeword_engine_name == service.snapshot.provider_name
+
+
+def test_provider_kwarg_remains_combined_shorthand(fake_provider: type) -> None:
+    provider = fake_provider()
+    pipeline = RecognitionPipeline(
+        provider=provider,
+        wakewords=["computer"],
+        wakeword_thresholds={},
+        grammar=None,
+        vad_settings=VadSettings(),
+        frame_ms=30,
+        cooldown_ms=0,
+    )
+    assert pipeline.wakeword_engine is provider and pipeline.transcription_engine is provider

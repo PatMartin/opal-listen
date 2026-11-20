@@ -34,10 +34,33 @@ def _provider_choices() -> tuple[str, ...]:
     return tuple(sorted(available_providers()))
 
 
+def _wakeword_engine_choices() -> tuple[str, ...]:
+    from opal_listener.service.providers.registry import available_wakeword_engines
+
+    return ("", *sorted(available_wakeword_engines()))
+
+
+def _transcription_engine_choices() -> tuple[str, ...]:
+    from opal_listener.service.providers.registry import available_transcription_engines
+
+    return ("", *sorted(available_transcription_engines()))
+
+
+_DYNAMIC_CHOICES = {
+    "listener_provider": _provider_choices,
+    "wakeword_engine": _wakeword_engine_choices,
+    "transcription_engine": _transcription_engine_choices,
+}
+
+
 SETTINGS: dict[str, SettingDef] = {
     d.key: d
     for d in [
         SettingDef("listener_provider", str, "vosk", "stt", "ListenerProvider implementation"),
+        SettingDef("wakeword_engine", str, "", "stt",
+                   "Wakeword-detection engine ('' = use listener_provider)"),
+        SettingDef("transcription_engine", str, "", "stt",
+                   "Speech-to-text engine ('' = use listener_provider)"),
         SettingDef("vosk_model_path", str, lambda: get_app_settings().vosk_model_path, "stt",
                    "Default Vosk model directory (profiles may override via model_paths.vosk_model)"),
         SettingDef("stt_mode", str, "grammar", "stt", "grammar: constrain STT to intent vocabulary; open: dictation",
@@ -122,7 +145,8 @@ def parse_setting(key: str, raw: Any) -> Scalar:
             value = str(raw)
     except (TypeError, ValueError) as exc:
         raise SettingValueError(f"setting '{key}': {exc}") from exc
-    choices = definition.choices or (_provider_choices() if key == "listener_provider" else None)
+    dynamic = _DYNAMIC_CHOICES.get(key)
+    choices = definition.choices or (dynamic() if dynamic else None)
     if choices and value not in choices:
         raise SettingValueError(f"setting '{key}' must be one of {', '.join(choices)}")
     if isinstance(value, int | float) and not isinstance(value, bool):

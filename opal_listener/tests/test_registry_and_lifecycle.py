@@ -123,3 +123,65 @@ def test_pid_file_and_tracked_pid(tmp_path: Path, app_settings):
     assert mgr.tracked_pid() is None and not mgr.pid_file.exists()  # stale -> cleared
     mgr.pid_file.write_text(f"{os.getpid()}\n")
     assert mgr.tracked_pid() == os.getpid()
+
+
+# --- engine-role registries ---------------------------------------------------------------------
+
+
+def test_role_registries_include_combined_providers():
+    from opal_listener.service.providers.base import TranscriptionEngine, WakewordEngine
+
+    wake = registry.create_wakeword_engine("fake")
+    assert isinstance(wake, WakewordEngine)
+    trans = registry.create_transcription_engine("fake")
+    assert isinstance(trans, TranscriptionEngine)
+    assert "vosk" in registry.available_wakeword_engines()
+    assert "vosk" in registry.available_transcription_engines()
+    with pytest.raises(ProviderError, match="unknown wakeword engine 'bogus'"):
+        registry.create_wakeword_engine("bogus")
+    with pytest.raises(ProviderError, match="unknown transcription engine 'bogus'"):
+        registry.create_transcription_engine("bogus")
+
+
+def test_role_specific_entry_points(monkeypatch):
+    from opal_listener.service.providers.base import WakewordEngine
+
+    class WakeOnly(WakewordEngine):
+        name = "wake_only"
+
+        def load(self, config):
+            pass
+
+        def is_loaded(self):
+            return True
+
+        def check(self, config):
+            return []
+
+        def create_wakeword_detector(self, wakewords):
+            raise NotImplementedError
+
+    class Ep:
+        name = "wake_only"
+
+        def load(self):
+            return WakeOnly
+
+    monkeypatch.setattr(
+        registry, "entry_points", lambda group: [Ep()] if group == "opal_listener.wakeword_engines" else []
+    )
+    assert "wake_only" in registry.available_wakeword_engines()
+    assert "wake_only" not in registry.available_transcription_engines()
+    # and the legacy group registers combined providers in both role registries
+
+    class CombinedEp:
+        name = "combo"
+
+        def load(self):
+            return FakeListenerProvider
+
+    monkeypatch.setattr(
+        registry, "entry_points", lambda group: [CombinedEp()] if group == "opal_listener.providers" else []
+    )
+    assert "combo" in registry.available_wakeword_engines()
+    assert "combo" in registry.available_transcription_engines()

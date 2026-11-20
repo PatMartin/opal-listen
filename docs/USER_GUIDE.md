@@ -353,7 +353,7 @@ The CLI (`opal_listener/cli/*`) is a pure HTTP client.
 | Component | What it does |
 |---|---|
 | `ListenerService` | Owns the runtime snapshot, provider instances, the live runtime thread, watchdog/recovery, cooldown/dedup, logging, performance tracking, validated config changes, snapshot save/load and event publishing. |
-| `ListenerProvider` (`providers/base.py`) | Pluggable speech engine. It creates wakeword detectors and grammar-constrained transcribers. `vosk` is built in. Third-party providers register through the `opal_listener.providers` entry point. |
+| `ListenerProvider` (`providers/base.py`) | Pluggable speech engine: a combined `WakewordEngine` + `TranscriptionEngine`. It creates wakeword detectors and grammar-constrained transcribers. `vosk` is built in. Third-party providers register through the `opal_listener.providers` entry point; single-role engines register through `opal_listener.wakeword_engines` / `opal_listener.transcription_engines`. |
 | `VoskListenerProvider` | Model cache, two-stage wakeword detector, grammar transcriber and out-of-vocabulary filtering. |
 | `SttRefiner` (`whisper_refiner.py`) | Optional second-pass STT with faster-whisper. |
 | `RecognitionPipeline` | Frame-driven state machine: idle (wakeword + pre-roll ring buffer) → capturing (transcriber + VAD + wake confirmation) → outcome. Live audio and uploaded WAVs use the same pipeline. |
@@ -646,7 +646,9 @@ Invalid values are rejected with `422`.
 
 | Key | Type | Default | Allowed | Description |
 |---|---|---|---|---|
-| `listener_provider` | str | `vosk` | installed providers | Speech engine implementation |
+| `listener_provider` | str | `vosk` | installed providers | Speech engine implementation (used for both engine roles unless overridden) |
+| `wakeword_engine` | str | `""` | installed wakeword engines | Wakeword-detection engine (`""` = use `listener_provider`) |
+| `transcription_engine` | str | `""` | installed transcription engines | Speech-to-text engine (`""` = use `listener_provider`) |
 | `vosk_model_path` | str | `$OPAL_LISTENER_VOSK_MODEL_PATH` | path | Default Vosk model directory. A profile's `model_paths.vosk_model` overrides it. |
 | `stt_mode` | str | `grammar` | `grammar`, `open` | `grammar` limits STT to your phrase vocabulary. `open` is full dictation. |
 | `stt_refiner` | str | `none` | `none`, `faster_whisper` | Optional second-pass STT |
@@ -2663,6 +2665,28 @@ myengine = "my_package.provider:MyListenerProvider"
 ```bash
 opal listen config setting set --name listener_provider --value myengine
 ```
+
+Engines can also be selected **per role**. `wakeword_engine` picks the wakeword detector and
+`transcription_engine` picks the speech-to-text engine; either left empty falls back to
+`listener_provider`, so a combined provider (like Vosk) can serve one role alongside a
+specialist engine for the other — for example openWakeWord for wakeword detection with
+faster-whisper for transcription:
+
+```toml
+[project.entry-points."opal_listener.wakeword_engines"]
+openwakeword = "my_package.wake:OpenWakeWordEngine"
+
+[project.entry-points."opal_listener.transcription_engines"]
+fwhisper = "my_package.stt:FasterWhisperEngine"
+```
+
+```bash
+opal listen config setting set --name wakeword_engine --value openwakeword
+opal listen config setting set --name transcription_engine --value fwhisper
+```
+
+When both roles resolve to the same engine name, one shared instance is loaded once; selecting
+an engine that can't serve the requested role is rejected at configuration time.
 
 ---
 

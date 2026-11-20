@@ -721,6 +721,8 @@ The commands live under `config setting`.
 | Key | Type | Default | Allowed / range |
 |---|---|---|---|
 | `listener_provider` | str | `vosk` | installed providers |
+| `wakeword_engine` | str | `""` | installed wakeword engines |
+| `transcription_engine` | str | `""` | installed transcription engines |
 | `vosk_model_path` | str | `$OPAL_LISTENER_VOSK_MODEL_PATH` | directory |
 | `stt_mode` | str | `grammar` | `grammar`, `open` |
 | `stt_refiner` | str | `none` | `none`, `faster_whisper` |

@@ -104,17 +104,19 @@ def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
     if report.warnings:
         checks.append(_check("config_warnings", "warning", "; ".join(report.warnings)))
 
-    provider, snap = service.provider_status()
+    engines, snap = service.engine_status()
+    provider = engines[0] if engines else None
     if provider is None or snap is None:
         checks.append(_check("provider", "error", "listener provider unavailable"))
     else:
-        provider_checks = provider.check(snap.provider_config)
-        for c in provider_checks:
+        multi = len({e.name for e in engines}) > 1
+        provider_checks = [(e, c) for e in engines for c in e.check(snap.provider_config)]
+        for engine, c in provider_checks:
             status: s.CheckStatus = "ok" if c.ok else ("error" if c.severity == "error" else "warning")
-            checks.append(_check(c.name, status, c.detail))
-        if all(c.ok for c in provider_checks):
+            checks.append(_check(f"{engine.name}.{c.name}" if multi else c.name, status, c.detail))
+        if all(c.ok for _e, c in provider_checks):
             try:
-                service.provider_for(snap)
+                service.engines_for(snap)
                 checks.append(_check("provider", "ok", f"{snap.provider_name} loaded"))
             except ProviderError as exc:
                 checks.append(_check("provider", "error", str(exc)))

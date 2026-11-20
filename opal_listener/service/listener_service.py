@@ -32,13 +32,20 @@ from opal_listener.service.http_events import HttpEventPublisher
 from opal_listener.service.nlu.normalizer import normalize_text, split_wakeword
 from opal_listener.service.pipeline import CommandOutcome, PipelineEvent, RecognitionPipeline
 from opal_listener.service.providers.base import (
+    Engine,
     ListenerProvider,
     ProviderConfig,
     ProviderError,
     SttRefiner,
     Transcript,
+    TranscriptionEngine,
+    WakewordEngine,
 )
-from opal_listener.service.providers.registry import create_provider, create_refiner
+from opal_listener.service.providers.registry import (
+    create_refiner,
+    create_transcription_engine,
+    create_wakeword_engine,
+)
 from opal_listener.service.reactions import ReactionRunner
 from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
@@ -210,7 +217,9 @@ class ListenerService:
         self,
         db: Database,
         app_settings: AppSettings,
-        provider_factory: Callable[[str], ListenerProvider] = create_provider,
+        provider_factory: Callable[[str], ListenerProvider] | None = None,
+        wakeword_engine_factory: Callable[[str], WakewordEngine] | None = None,
+        transcription_engine_factory: Callable[[str], TranscriptionEngine] | None = None,
         source_factory: SourceFactory = default_source_factory,
         event_publisher: EventPublisher | None = None,
     ) -> None:
@@ -218,7 +227,12 @@ class ListenerService:
         self.app_settings = app_settings
         self.bus = EventBus()
         self.event_publisher: EventPublisher = event_publisher or default_event_publisher(app_settings)
-        self._provider_factory = provider_factory
+        # provider_factory is the legacy combined-provider hook: honoured for both roles when
+        # role-specific factories aren't given (combined providers serve either role).
+        self._wakeword_engine_factory = wakeword_engine_factory or provider_factory or create_wakeword_engine
+        self._transcription_engine_factory = (
+            transcription_engine_factory or provider_factory or create_transcription_engine
+        )
         self._source_factory = source_factory
         self._config_lock = threading.RLock()
         self._provider_lock = threading.Lock()
@@ -349,20 +363,33 @@ class ListenerService:
             self.event_publisher.connect()
 
     def _check_provider_change(self, new: RuntimeSnapshot) -> None:
-        """Validate provider/model changes before committing (cheap checks, no model load)."""
+        """Validate engine/model changes before committing (cheap checks, no model load)."""
         old = self._snapshot
-        if old and (old.provider_name, old.provider_config.model_paths) == (
+        if old and (
+            old.provider_name,
+            old.wakeword_engine_name,
+            old.transcription_engine_name,
+            old.provider_config.model_paths,
+        ) == (
             new.provider_name,
+            new.wakeword_engine_name,
+            new.transcription_engine_name,
             new.provider_config.model_paths,
         ):
             return
-        try:
-            provider = self._provider_factory(new.provider_name)
-        except ProviderError as exc:
-            raise InvalidRequestError(str(exc)) from exc
-        failures = [c for c in provider.check(new.provider_config) if not c.ok and c.severity == "error"]
-        if failures:
-            raise InvalidRequestError(f"provider check failed: {failures[0].detail}")
+        checked: set[str] = set()
+        for role, name in (("wakeword", new.wakeword_engine_name), ("transcription", new.transcription_engine_name)):
+            if name in checked:
+                continue
+            checked.add(name)
+            factory = self._wakeword_engine_factory if role == "wakeword" else self._transcription_engine_factory
+            try:
+                engine = factory(name)
+            except ProviderError as exc:
+                raise InvalidRequestError(str(exc)) from exc
+            failures = [c for c in engine.check(new.provider_config) if not c.ok and c.severity == "error"]
+            if failures:
+                raise InvalidRequestError(f"{role} engine check failed: {failures[0].detail}")
 
     @contextlib.contextmanager
     def config_change(self) -> Iterator[Session]:
@@ -394,35 +421,73 @@ class ListenerService:
 
     # --- providers ----------------------------------------------------------------------------
 
-    def provider_for(self, snapshot: RuntimeSnapshot) -> ListenerProvider:
-        """Returns the loaded provider for snapshot's configuration.
+    def _engine_for(self, name: str, config: ProviderConfig, *, role: str) -> Engine:
+        """Returns the loaded engine for `name` under `config`.
 
         An unchanged config fingerprint reuses the live instance without reloading. A changed one
         creates and loads a fresh instance under the lock — the previous instance is dropped from
-        the cache (never mutated or unloaded while in-flight sessions still reference it)."""
-        fingerprint = _provider_fingerprint(snapshot.provider_config)
+        the cache (never mutated or unloaded while in-flight sessions still reference it).
+        The cache is keyed by engine name and shared across roles: selecting the same engine for
+        both roles loads it once, and the role check below rejects incompatible reuse."""
+        fingerprint = _provider_fingerprint(config)
         with self._provider_lock:
-            cached = self._providers.get(snapshot.provider_name)
+            cached = self._providers.get(name)
             if cached is not None and cached[0] == fingerprint:
-                return cached[1]
-            provider = self._provider_factory(snapshot.provider_name)
-            provider.load(snapshot.provider_config)
-            self._providers[snapshot.provider_name] = (fingerprint, provider)
-            return provider
+                engine = cached[1]
+            else:
+                factory = self._wakeword_engine_factory if role == "wakeword" else self._transcription_engine_factory
+                engine = factory(name)
+                engine.load(config)
+                self._providers[name] = (fingerprint, engine)
+            expected = WakewordEngine if role == "wakeword" else TranscriptionEngine
+            if not isinstance(engine, expected):
+                raise ProviderError(f"engine '{name}' cannot serve the {role} role")
+            return engine
 
-    def provider_status(self) -> tuple[ListenerProvider | None, RuntimeSnapshot | None]:
-        """Inspection-only: returns the active provider (or a transient instance for check())
-        without loading models or mutating recognition state."""
+    def engines_for(self, snapshot: RuntimeSnapshot) -> tuple[WakewordEngine, TranscriptionEngine]:
+        """The loaded wakeword and transcription engines for a snapshot. When both resolve to the
+        same engine name the shared cached instance serves both roles (one model load)."""
+        config = snapshot.provider_config
+        wakeword = self._engine_for(snapshot.wakeword_engine_name, config, role="wakeword")
+        transcription = self._engine_for(snapshot.transcription_engine_name, config, role="transcription")
+        return wakeword, transcription
+
+    def provider_for(self, snapshot: RuntimeSnapshot) -> Engine:
+        """Legacy combined-provider accessor: the engine behind the snapshot's transcription
+        role (which is the single shared instance whenever the two roles select the same engine)."""
+        return self.engines_for(snapshot)[1]
+
+    def provider_status(self) -> tuple[Engine | None, RuntimeSnapshot | None]:
+        """Inspection-only: returns the active transcription engine (or a transient instance for
+        check()) without loading models or mutating recognition state."""
         snap = self._snapshot
         if snap is None:
             return None, None
         try:
             with self._provider_lock:
-                cached = self._providers.get(snap.provider_name)
-            provider = cached[1] if cached else self._provider_factory(snap.provider_name)
-            return provider, snap
+                cached = self._providers.get(snap.transcription_engine_name)
+            engine = cached[1] if cached else self._transcription_engine_factory(snap.transcription_engine_name)
+            return engine, snap
         except ProviderError:
             return None, snap
+
+    def engine_status(self) -> tuple[list[Engine], RuntimeSnapshot | None]:
+        """All engines selected by the active snapshot, for health checks (cached or transient)."""
+        snap = self._snapshot
+        if snap is None:
+            return [], None
+        engines = []
+        for name, factory in (
+            (snap.wakeword_engine_name, self._wakeword_engine_factory),
+            (snap.transcription_engine_name, self._transcription_engine_factory),
+        ):
+            try:
+                with self._provider_lock:
+                    cached = self._providers.get(name)
+                engines.append(cached[1] if cached else factory(name))
+            except ProviderError:
+                pass
+        return engines, snap
 
     def _refiner_for(self, snapshot: RuntimeSnapshot) -> SttRefiner | None:
         name = snapshot.refiner_name
@@ -443,8 +508,10 @@ class ListenerService:
     def _make_pipeline(
         self, snapshot: RuntimeSnapshot, debug: bool, cooldown: bool, *, live: bool = False
     ) -> RecognitionPipeline:
+        wakeword_engine, transcription_engine = self.engines_for(snapshot)
         return RecognitionPipeline(
-            provider=self.provider_for(snapshot),
+            wakeword_engine=wakeword_engine,
+            transcription_engine=transcription_engine,
             wakewords=snapshot.wakewords,
             wakeword_thresholds=snapshot.wakeword_thresholds,
             grammar=snapshot.grammar,
@@ -687,7 +754,13 @@ class ListenerService:
         return s.PipelineStatus(
             running=self.running,
             state=state,
-            provider=snap.provider_name if snap else "unknown",
+            provider=(
+                "unknown"
+                if not snap
+                else snap.provider_name
+                if snap.wakeword_engine_name == snap.transcription_engine_name
+                else f"{snap.wakeword_engine_name}+{snap.transcription_engine_name}"
+            ),
             profile_name=snap.profile_name if snap else None,
             audio_device=st.audio_device,
             capture_sample_rate=st.capture_sample_rate,

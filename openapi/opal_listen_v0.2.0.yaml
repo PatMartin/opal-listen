@@ -2247,6 +2247,10 @@ components:
         provider:
           type: string
           title: Provider
+          description: >-
+            Active speech engine name. When wakeword_engine and transcription_engine
+            select different engines the value is "wakeword+transcription"
+            (e.g. "openwakeword+faster_whisper").
         profile_name:
           anyOf:
           - type: string
