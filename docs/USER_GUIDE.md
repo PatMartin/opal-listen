@@ -147,8 +147,7 @@ prefix is `OPAL_LISTENER_`.
 | `OPAL_EVENT_API_URL` | `http://127.0.0.1:8080` | opal-event REST API URL for publishing matched intent events |
 | `OPAL_EVENT_API_TOKEN` | _None_ | Optional Bearer token for authenticating to opal-event REST API |
 | `OPAL_EVENT_TRANSPORT` | `http` | Event transport: `http` (default for opal-event REST at `POST /api/v1/event/`) or `zmq`. `both` is rejected at startup — the same event would be delivered twice |
-| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5555` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq`), and `opal listen event publish` connects to (no `OPAL_LISTENER_` prefix, shared with the CLI) |
-| `OPAL_EVENT_XSUB_URL` | `tcp://127.0.0.1:5556` | ZeroMQ broker's other endpoint (CLI-only today, reserved for future use) |
+| `OPAL_EVENT_XPUB_URL` | `tcp://127.0.0.1:5555` | ZeroMQ broker endpoint the server publishes `opal.listen.intent.match` to (when transport is `zmq`; no `OPAL_LISTENER_` prefix) |
 
 Example `.env` file:
 
@@ -1903,7 +1902,7 @@ also published there, independently of SSE:
 - **Topic:** `opal.listen.intent.match`
 - **Message:** the full `RecognitionResult` as JSON (same shape as the SSE `result` event / `test_text`
   response), published only when `matched` is `true` (no event for `no_match`)
-- **Endpoint:** `--xpub`/`OPAL_EVENT_XPUB_URL` (default `tcp://127.0.0.1:5555`); the server connects a
+- **Endpoint:** `OPAL_EVENT_XPUB_URL` (default `tcp://127.0.0.1:5555`); the server connects a
   ZeroMQ `PUB` socket there at startup and your subscriber should connect a `SUB` to the same external
   XPUB/XSUB broker's XPUB side
 
@@ -2121,7 +2120,6 @@ opal listen persona validate amy
 | `show --name KEY` | One setting's value, default and `pending_restart` |
 | `set --name KEY --value VALUE` | Atomically set one setting (fetches the ETag and sends `If-Match` automatically) |
 | `remove --name KEY` | Revert a key to its default |
-
 
 ```bash
 opal listen config setting list
@@ -2547,7 +2545,6 @@ import httpx
 
 API = "http://localhost:8000"
 
-
 def handle(result: dict) -> None:
     if not result["matched"] or result["deduplicated"] or result["source"] != "mic":
         return
@@ -2556,7 +2553,6 @@ def handle(result: dict) -> None:
         print(f"-> turn ON lights in {slots['room_name']}")
     elif intent == "timer_set":
         print(f"-> timer for {slots['duration_minutes']} minutes")
-
 
 def main() -> None:
     with httpx.Client(base_url=API, timeout=None) as client:
@@ -2568,7 +2564,6 @@ def main() -> None:
                     event = line[6:].strip()
                 elif line.startswith("data:") and event == "result":
                     handle(json.loads(line[5:]))
-
 
 if __name__ == "__main__":
     main()

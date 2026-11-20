@@ -1,7 +1,7 @@
 """ZeroMQ event-bus publisher used by the server to announce recognition events (e.g. intent matches).
 
 This is independent of the SSE `EventBus` in events.py: it publishes onto an external ZeroMQ PUB/SUB
-(or XPUB/XSUB broker) endpoint, the same bus `opal listen event publish` writes to from the CLI.
+(or XPUB/XSUB broker) endpoint shared with other OPAL suite services.
 
 Wire protocol (opal-event `zeromq_protocol.md`): every message is exactly two frames — the UTF-8
 topic (matching `TOPIC_PATTERN`) and a UTF-8 JSON event envelope whose `topic` equals frame 1 and

@@ -1,5 +1,4 @@
-"""HTTP client used by REST-backed CLI commands (the CLI always goes through the REST API for those;
-`event publish` is the one command that bypasses this entirely and talks to ZeroMQ instead)."""
+"""HTTP client used by all CLI commands — every command goes through the REST API."""
 
 from __future__ import annotations
 

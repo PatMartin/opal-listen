@@ -42,7 +42,7 @@ reactions_app = typer.Typer(
 _FILE_HEADER = """\
 # Managed by `opal listen reaction` — edits are safe but comments are not preserved.
 # Reactions fire only on live-mic matches while `reactions_enabled` is true:
-#   opal listen setting set reactions_enabled true
+#   opal listen config setting set --name reactions_enabled --value true
 # Schema: docs/USER_GUIDE.md section 4.5 (intent reactions).
 """
 

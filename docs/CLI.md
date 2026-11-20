@@ -761,7 +761,7 @@ opal listen config setting set --name whisper_model --value tiny.en
 # Enable the optional second-pass refiner (requires the [whisper] extra)
 opal listen config setting set --name stt_refiner --value faster_whisper
 
-# Choose the microphone by index or by name substring (see 'system devices')
+# Choose the microphone by index or by name substring (see `service health` details.audio_devices)
 opal listen config setting set --name audio_device --value 2
 opal listen config setting set --name audio_device --value "USB"
 

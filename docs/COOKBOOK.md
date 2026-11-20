@@ -687,5 +687,5 @@ tar -czf incident-$day.tgz incident-$day
 ---
 
 *These recipes assume defaults unless noted. Every service documents its own
-surface: `opal listen docs/CLI.md`, each sibling's `docs/`, and the contracts in
+surface: `opal-listen/docs/CLI.md`, each sibling's `docs/`, and the contracts in
 `opal-api/openapi/`.*

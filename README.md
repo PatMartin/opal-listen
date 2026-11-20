@@ -827,7 +827,7 @@ The browser console at `/ui/opal-listen.html` is bundled with the service, not a
 
 ### Environment and settings
 
-Process-level settings come from environment variables or a local `.env` file. Mutable recognition settings live in SQLite and can be changed with `opal listen setting set`. Exportable YAML catalogs seed the database on a fresh install and can be imported later.
+Process-level settings come from environment variables or a local `.env` file. Mutable recognition settings live in SQLite and can be changed with `opal listen config setting set`. Exportable YAML catalogs seed the database on a fresh install and can be imported later.
 
 | Setting | Default / notes |
 | --- | --- |
