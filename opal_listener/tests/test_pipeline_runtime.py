@@ -1200,3 +1200,74 @@ def test_error_state_only_when_worker_dies_unrequested(service) -> None:
 
     service._stop.set()  # type: ignore[attr-defined]
     assert service.status().state == "stopped"
+
+
+def test_dispatch_order_preserved_when_queue_full_bypasses(
+    client: TestClient, fake_provider: type
+) -> None:
+    """A command taking the queue-full bypass finalizes immediately on the capture thread,
+    but its external dispatch still waits for every earlier-captured command."""
+    import queue as queue_mod
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    service._refine_worker._queue = queue_mod.Queue(maxsize=1)  # force a queue-full bypass
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
+    fake_provider.script.extend(
+        ["turn on the kitchen light", "turn on the bedroom light", "turn on the bathroom light"]
+    )
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        feed.extend(COMMAND * 3)
+        wait_for(lambda: refiner.entered >= 1, timeout=15)  # seq 1 is stuck in refine
+        wait_for(lambda: log_counts(client)["total"] >= 1, timeout=15)  # a bypass already recorded
+        assert publisher.events == []  # dispatch gated behind the earlier capture
+        refiner.gate.set()
+        wait_for(lambda: len(publisher.events) == 3, timeout=15)
+        rooms = [e[1]["slot_values"]["room_name"] for e in publisher.events]
+        assert rooms == ["kitchen", "bedroom", "bathroom"]  # capture order, not finalize order
+    finally:
+        refiner.gate.set()
+        client.post("/api/v1/recognition/stop")
+
+
+def test_stale_generation_seq_can_never_gate_new_run(client: TestClient, fake_provider: type) -> None:
+    """After stop/start the sequencer re-bases: a late finalization from the old generation
+    neither dispatches nor blocks the new run's commands."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        fake_provider.script.append("turn on the kitchen light")
+        feed.extend(COMMAND)
+        wait_for(lambda: refiner.entered >= 1)
+        assert client.post("/api/v1/recognition/stop").json()["status"] == "stopped"
+        assert client.post("/api/v1/recognition/start").json()["status"] == "started"
+        fake_provider.script.append("turn on the bedroom light")
+        feed.extend(COMMAND)
+        refiner.gate.set()  # the stale seq completes; the new-run command queues behind it
+        wait_for(lambda: len(publisher.events) == 1, timeout=15)
+        # only the new generation dispatches, and it is not held by the stale ticket
+        assert publisher.events[0][1]["slot_values"]["room_name"] == "bedroom"
+    finally:
+        refiner.gate.set()
+        client.post("/api/v1/recognition/stop")

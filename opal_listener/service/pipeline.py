@@ -49,6 +49,9 @@ class CommandOutcome:
     # listener run generation that captured this command; a result finalizing under a newer
     # generation (stop/start boundary) is recorded but never dispatched
     generation: int = 0
+    # capture-order dispatch ticket assigned by ListenerService at session_end; external
+    # side effects (event publish, reactions) are released strictly in seq order
+    seq: int = 0
 
 
 @dataclass

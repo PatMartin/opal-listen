@@ -130,6 +130,50 @@ def default_event_publisher(settings: AppSettings) -> EventPublisher:
     return HttpEventPublisher(base_url=settings.opal_event_url, token=settings.opal_event_token)
 
 
+class _DispatchSequencer:
+    """Orders external dispatch (event publish, reactions) by capture sequence.
+
+    Mic results finalize on two different threads — the capture thread (no refiner, or a
+    full refine queue) and the refinement worker — so a later command can finalize first.
+    External side effects are therefore gated through capture-order tickets: a result's
+    dispatch runs only after every earlier-captured command has finalized. Recording,
+    streaming and dedup marking stay immediate; only dispatch waits its turn.
+
+    Tickets are monotonic per service. `reset()` on pipeline start re-bases the gate so a
+    late finalization from a previous run (already dispatch-blocked by its generation
+    stamp) can never gate or fire behind a newer run's commands.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next = 0
+        self._expected = 1
+        self._pending: dict[int, Callable[[], None]] = {}
+
+    def assign(self) -> int:
+        with self._lock:
+            self._next += 1
+            return self._next
+
+    def reset(self) -> None:
+        with self._lock:
+            self._expected = self._next + 1
+            self._pending.clear()
+
+    def complete(self, seq: int, fn: Callable[[], None]) -> None:
+        """Release `fn` (dispatch) when every earlier seq has completed; drop stale tickets."""
+        with self._lock:
+            if seq < self._expected:
+                return  # superseded generation or already released
+            self._pending[seq] = fn
+            ready = []
+            while self._expected in self._pending:
+                ready.append(self._pending.pop(self._expected))
+                self._expected += 1
+        for fn_ in ready:
+            fn_()
+
+
 @dataclass
 class _RuntimeStats:
     state: str = "stopped"
@@ -197,6 +241,7 @@ class ListenerService:
         # them so a late finalization (e.g. deferred refinement) cannot dispatch into a new run
         self._generation = 0
         self._active_source: AudioSource | None = None
+        self._sequencer = _DispatchSequencer()
         self._refine_worker = RefinementWorker(
             capacity=DEFAULT_QUEUE_CAPACITY, refiner_for=self._refiner_for, finalize=self._finalize_result
         )
@@ -470,13 +515,20 @@ class ListenerService:
         )
 
     def _record(
-        self, result: s.RecognitionResult, save_log: bool, *, allow_dispatch: bool = True
+        self,
+        result: s.RecognitionResult,
+        save_log: bool,
+        *,
+        allow_dispatch: bool = True,
+        gate: Callable[[Callable[[], None]], None] | None = None,
     ) -> s.RecognitionResult:
         """Log, stream, and (when allowed) dispatch a recognition result.
 
         ``allow_dispatch`` is False for results captured under an older run generation: they
         are still logged and streamed locally but can never publish events or fire reactions.
-        Dispatch enablement itself is read from the *current* snapshot — the final authority
+        ``gate`` defers the external side effects (event publish, reactions) until every
+        earlier-captured command has finalized — see _DispatchSequencer; logging, dedup
+        marking and the local result stream are not gated.
         for side effects regardless of which config version captured the utterance."""
         snapshot = self.snapshot
         if result.source == "mic" and result.matched and allow_dispatch:
@@ -512,16 +564,23 @@ class ListenerService:
         # the resolved path is recorded on the result before dispatch so the local stream,
         # the event payload and the reaction payload all carry the same selection
         result.dispatched_to = sorted(targets)
-        if "event" in targets:
-            publish_start = time.monotonic()
-            self.event_publisher.publish(INTENT_MATCH_TOPIC, result.model_dump(mode="json"))
-            self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
-            self._stats.dispatched_event += 1
-        if "local" in targets:
-            self._reaction_runner.dispatch(result.model_dump(mode="json"))
-            self._stats.dispatched_local += 1
-        if actionable and not targets:
-            self._stats.dispatch_suppressed += 1
+
+        def _dispatch() -> None:
+            if "event" in targets:
+                publish_start = time.monotonic()
+                self.event_publisher.publish(INTENT_MATCH_TOPIC, result.model_dump(mode="json"))
+                self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
+                self._stats.dispatched_event += 1
+            if "local" in targets:
+                self._reaction_runner.dispatch(result.model_dump(mode="json"))
+                self._stats.dispatched_local += 1
+            if actionable and not targets:
+                self._stats.dispatch_suppressed += 1
+
+        if gate is not None:
+            gate(_dispatch)  # released in capture order via _DispatchSequencer
+        else:
+            _dispatch()
         self.bus.publish("result", result.model_dump(mode="json"))
         return result
 
@@ -588,6 +647,7 @@ class ListenerService:
             self._generation += 1
             with self._dedup_lock:
                 self._dedup_seen.clear()  # dedup state belongs to the run that collected it
+            self._sequencer.reset()  # stale-run dispatches can never gate a new generation
             self._stats = _RuntimeStats(state="starting", started_at=utc_now(), started_monotonic=time.monotonic())
             self._thread = threading.Thread(target=self._run, name="listener-runtime", daemon=True)
             self._thread.start()
@@ -820,6 +880,7 @@ class ListenerService:
         if event.kind == "session_end" and event.outcome is not None:
             outcome = event.outcome
             outcome.generation = self._generation  # stamp the run that captured the command
+            outcome.seq = self._sequencer.assign()  # dispatch ticket (capture order)
             self._set_state("listening")  # capture resumes immediately; finalization may be deferred
             if snapshot.refiner_name not in ("", "none") and outcome.transcript.text:
                 if self._refine_worker.submit(RefineTask(outcome=outcome, snapshot=snapshot)):
@@ -848,7 +909,9 @@ class ListenerService:
         result = self.interpret(outcome.transcript.text, snapshot, source="mic", outcome=outcome)
         if refinement_error:
             result.refinement_error = refinement_error
-        self._record(result, save_log=True, allow_dispatch=outcome.generation == self._generation)
+        seq = outcome.seq if outcome.generation == self._generation else 0
+        gate = (lambda fn: self._sequencer.complete(seq, fn)) if seq else None
+        self._record(result, save_log=True, allow_dispatch=bool(seq), gate=gate)
         self._stats.results += 1
         self._stats.last_result_at = result.created_at
         self._stats.stt_latency_ms = result.stt_latency_ms

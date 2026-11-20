@@ -4,7 +4,10 @@ real-time audio capture loop.
 Policy
 - FIFO single worker: results finalize in capture order on the worker thread.
 - Queue full: the command finalizes immediately on its draft transcript (degradation
-  recorded as ``queue_full``).
+  recorded as ``queue_full``). Recording and streaming happen right away, but its
+  external dispatch still releases in capture order — see ``_DispatchSequencer`` in
+  listener_service.py; the bypass never lets a later command's dispatch pass an
+  earlier one's.
 - Timeout: a refine call exceeding the task snapshot's ``refiner_timeout_ms`` is abandoned;
   the stuck call is discarded by replacing the executor so later tasks are unaffected.
 - Bounded inference: threads cannot be cancelled in Python, so abandoned calls keep running.
