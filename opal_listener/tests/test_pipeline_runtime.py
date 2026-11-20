@@ -419,7 +419,7 @@ def test_event_bus_fan_out_is_thread_safe() -> None:
 
     from opal_listener.service.events import EventBus
 
-    async def main() -> list[dict[str, Any]]:
+    async def main() -> tuple[list[dict[str, Any]], EventBus]:
         bus = EventBus(max_queue=5)
         normal = bus.subscribe()
         debug = bus.subscribe(debug=True)
@@ -435,10 +435,14 @@ def test_event_bus_fan_out_is_thread_safe() -> None:
         bus.unsubscribe(normal)
         bus.unsubscribe(debug)
         assert bus.subscriber_count == 0
-        return items
+        return items, bus
 
-    items = asyncio.run(main())
-    assert items[-1]["event"] == "audio_level"
+    items, bus = asyncio.run(main())
+    # a disposable diagnostic must never evict important results: the audio_level is
+    # dropped (and counted) rather than displacing a queued result
+    assert len(items) == 5
+    assert all(item["event"] == "result" for item in items)
+    assert bus.dropped_total == 11  # 5 results evicted per queue + 1 dropped level
 
 
 class _BlockingSource(AudioSource):

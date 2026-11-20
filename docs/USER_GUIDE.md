@@ -361,7 +361,7 @@ The CLI (`opal_listener/cli/*`) is a pure HTTP client.
 | `EnergyVad` | Energy-based voice activity detection with an adaptive noise floor. |
 | NLU (`service/nlu/*`) | Normalization, filler removal, wakeword stripping, template expansion, number parsing, intent matching, slot extraction and grammar generation. |
 | `runtime_config` | Validates a whole configuration bundle and compiles the immutable `RuntimeSnapshot` for the active profile. |
-| `EventBus` | Fan-out of pipeline events to SSE subscribers. Queues are bounded and drop the oldest events. |
+| `EventBus` | Fan-out of pipeline events to SSE subscribers. Per-subscriber queues are bounded; on overflow the oldest disposable event is evicted first, drops are counted, and a synthetic `dropped` event reports the loss. |
 | `ZmqEventPublisher` (`service/zmq_events.py`) | Publishes matched recognitions to an external ZeroMQ broker (topic `opal.listen.intent.match`, `--xpub`/`OPAL_EVENT_XPUB_URL`). Connected eagerly at startup; best-effort, never raises. |
 
 ### 3.3 Live recognition flow
@@ -1850,6 +1850,26 @@ The first event is always `status`. A keep-alive ping is sent every 15 s.
 | `result` | `RecognitionResult` | Final recognition (also emitted for text/audio tests) |
 | `audio_level` *(debug)* | `{dbfs, state}` | Every audio frame |
 | `partial` *(debug)* | `{session_id, text}` | Partial transcript during capture |
+| `dropped` | `{dropped}` | Synthetic notice: cumulative count of messages evicted from your queue since connect |
+
+### Backpressure and event loss
+
+Each SSE connection gets its own **bounded queue** (200 events) so a slow or stalled client can
+never consume unbounded memory or block microphone capture — publishing is fire-and-forget on
+the service side. When your queue is full, the oldest event is evicted to make room for the new
+one, with one distinction:
+
+- **Disposable events** — `audio_level`, `partial`, `dropped` — are evicted first, and a
+  disposable event is never allowed to evict an important one (on a queue full of results the
+  incoming diagnostic is dropped instead).
+- **Important events** — `result`, `status`, wakeword and speech events — are only lost to a
+  genuinely stalled consumer, and the oldest entry goes first.
+
+Every eviction is counted. A synthetic `dropped` event (`{"dropped": <cumulative>}`) is
+injected into your stream at the next opportunity so you can observe your own loss, and the
+service-wide total is exposed as `metrics.sse_dropped_events` in `PipelineStatus`. Seeing
+`dropped` events means the client isn't reading fast enough — consider reconnecting without
+`debug=true`.
 
 ### curl
 

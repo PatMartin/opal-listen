@@ -739,6 +739,9 @@ class ListenerService:
             "dispatched_local": float(st.dispatched_local),
             "dispatched_event": float(st.dispatched_event),
             "dispatch_suppressed": float(st.dispatch_suppressed),
+            # SSE stream loss: messages evicted from bounded subscriber queues (see
+            # service/events.py for the disposable-vs-important drop policy)
+            "sse_dropped_events": float(self.bus.dropped_total),
             # delivery accounting from the configured publisher: events_accepted (queue/send
             # accepted), events_delivered (HTTP = 2xx confirmed; ZMQ = socket handed the
             # frames, subscriber receipt unverifiable), event_delivery_failures

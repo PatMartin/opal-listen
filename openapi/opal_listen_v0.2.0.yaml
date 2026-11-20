@@ -2316,6 +2316,8 @@ components:
             events_delivered counts confirmed delivery (HTTP 2xx; ZMQ is fire-and-forget
             so this only means frames handed to the socket); event_delivery_failures
             counts queue-full drops and transport errors. Selection never implies delivery.
+            sse_dropped_events counts SSE messages evicted from bounded per-subscriber
+            queues (see /api/v1/recognition/stream).
           default: {}
       type: object
       required:
