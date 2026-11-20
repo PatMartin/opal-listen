@@ -106,6 +106,45 @@ def test_wakeword_crud(client: TestClient) -> None:
     assert result["wakeword"] is None
 
 
+def test_persona_crud(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/persona/",
+        headers={"If-Match": _etag(client, "/api/v1/persona/")},
+        json={"persona_id": "alice", "name": "Alice", "voice_id": "opal-female-1", "description": "primary"},
+    )
+    assert created.status_code == 201
+    assert created.headers["location"] == "/api/v1/persona/alice"
+    persona = created.json()
+    assert persona["persona_id"] == "alice" and persona["enabled"] is True
+
+    assert client.post(
+        "/api/v1/persona/",
+        headers={"If-Match": _etag(client, "/api/v1/persona/")},
+        json={"persona_id": "alice", "name": "Alice again"},
+    ).status_code == 409
+
+    path = "/api/v1/persona/alice"
+    assert client.get(path).json()["voice_id"] == "opal-female-1"
+    assert any(p["persona_id"] == "alice" for p in client.get("/api/v1/persona/").json())
+    assert client.get("/api/v1/persona/?enabled=false").json() == []
+
+    report = client.post(f"{path}/validate").json()
+    assert report["valid"] is True and report["errors"] == []
+
+    assert client.patch(path, json={"enabled": False}).status_code == 428  # missing If-Match
+    assert client.patch(path, json={"enabled": False}, headers={"If-Match": '"stale"'}).status_code == 412
+    etag = _etag(client, path)
+    assert client.patch(path, json={"enabled": False}, headers={"If-Match": etag}).json()["enabled"] is False
+    assert client.get("/api/v1/persona/?enabled=false").json()[0]["persona_id"] == "alice"
+
+    disabled = client.post(f"{path}/validate").json()
+    assert disabled["valid"] is False and "disabled" in disabled["errors"][0]
+
+    assert client.delete(path, headers={"If-Match": _etag(client, path)}).status_code == 204
+    assert client.get(path).status_code == 404
+    assert client.post("/api/v1/persona/ghost/validate").status_code == 404
+
+
 def test_intent_and_phrase_crud(client: TestClient) -> None:
     created = client.post(
         "/api/v1/intent/",

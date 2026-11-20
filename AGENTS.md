@@ -18,6 +18,12 @@ OPAL_NO_DOTENV=1 python -m pytest opal_listener/tests -q
 model lives at `resources/vosk/models/vosk-model-small-en-us-0.15`; point the suite at it with
 `OPAL_LISTENER_VOSK_MODEL_PATH=<abs path>` (the default in `app_settings.py` is a Linux path).
 
+Coverage (`pytest-cov` is a dev extra; `pyproject.toml` sets `source`/`omit`/`skip_covered`):
+
+```bash
+OPAL_NO_DOTENV=1 python -m pytest opal_listener/tests -q --cov=opal_listener --cov-report=term-missing
+```
+
 ## Dependency state
 
 - Microphone: `sounddevice`/PortAudio usable where devices exist; tests instead inject

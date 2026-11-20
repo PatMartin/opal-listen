@@ -63,6 +63,14 @@ markers = [
 ]
 addopts = "-ra"
 
+[tool.coverage.run]
+source = ["opal_listener"]
+omit = ["opal_listener/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
