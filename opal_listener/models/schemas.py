@@ -472,7 +472,7 @@ class RecognitionResult(BaseModel):
 
 class PipelineStatus(BaseModel):
     running: bool
-    state: Literal["stopped", "starting", "running", "stopping", "error"]
+    state: Literal["stopped", "starting", "running", "stopping", "recovering", "error"]
     provider: str
     profile_name: str | None
     audio_device: str | None

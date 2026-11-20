@@ -1166,3 +1166,37 @@ def test_failed_capture_restart_keeps_frames_flowing(client: TestClient, fake_pr
     finally:
         client.post("/api/v1/recognition/stop")
     assert not any(s.started for s in sources)  # stop still releases the device
+
+
+def test_recovering_is_a_distinct_public_state(client: TestClient, fake_provider: type) -> None:
+    """A worker retrying after a transient capture failure reports `recovering`, not `error`."""
+    from opal_listener.service.audio.capture import AudioCaptureError
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+
+    def failing_factory(settings):
+        raise AudioCaptureError("no input device")
+
+    service._source_factory = failing_factory
+    try:
+        assert service.start()["status"] == "started"
+        wait_for(lambda: service.status().state == "recovering", timeout=10)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["state"] == "recovering"
+        assert status["running"] is True  # worker alive, backing off
+        assert "no input device" in status["last_error"]
+    finally:
+        service.stop()
+    assert client.get("/api/v1/recognition/status").json()["state"] == "stopped"
+
+
+def test_error_state_only_when_worker_dies_unrequested(service) -> None:
+    """`error` is reserved for a worker that terminated mid-recovery without a stop request;
+    an intentional stop during recovery reports `stopped`."""
+    service._stats.state = "recovering"  # type: ignore[attr-defined]
+    service._stats.last_error = "device vanished"  # type: ignore[attr-defined]
+    # no thread, _stop not requested -> abnormal termination
+    assert service.status().state == "error"
+
+    service._stop.set()  # type: ignore[attr-defined]
+    assert service.status().state == "stopped"

@@ -417,15 +417,23 @@ Key design decisions:
 ```mermaid
 stateDiagram-v2
     [*] --> stopped
-    stopped --> starting: POST /start
-    starting --> listening: audio stream open
-    listening --> capturing: wakeword candidate
-    capturing --> listening: result / wakeword rejected
-    listening --> recovering: device error / watchdog
-    capturing --> recovering: device error
-    recovering --> listening: restart OK (backoff 1→30 s)
-    listening --> stopped: POST /stop
+    stopped --> starting: POST /start accepted
+    starting --> running: audio stream open
+    running --> recovering: device error / watchdog
+    recovering --> running: retry OK (backoff 1→30 s)
+    recovering --> error: worker dies unrequested
+    running --> stopping: POST /stop accepted
+    stopping --> stopped: worker exited
+    starting --> stopping: POST /stop accepted
+    stopped --> stopped: POST /stop (not_running)
+    running --> running: POST /start (already_running)
 ```
+
+`start` returns `started` (request accepted — readiness arrives when `state` reaches
+`running`), `already_running` (idempotent), or `stopping` (previous worker still
+unwinding; retry shortly). `stop` returns `stopped`, `stopping` (still unwinding —
+poll `status`), or `not_running` (idempotent). `recovering` is transient and
+self-heals; `error` means the worker terminated mid-recovery — check `last_error`.
 
 A capture session ends for one of these reasons (the `speech_end` event includes the reason):
 
@@ -1522,7 +1530,7 @@ curl -s $API/api/v1/recognition/status
 
 | Field | Meaning |
 |---|---|
-| `state` | `stopped`, `starting`, `listening`, `capturing` or `recovering` |
+| `state` | `stopped`, `starting`, `running`, `stopping`, `recovering` or `error` |
 | `capture_sample_rate` | Device rate before resampling to 16 kHz |
 | `sessions` vs `wakeword_detections` | Candidates opened vs confirmed wakewords. A large gap means many rejected false triggers. |
 | `audio_restarts`, `last_error` | Watchdog/recovery activity |

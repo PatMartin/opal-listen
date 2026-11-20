@@ -975,7 +975,7 @@ Important `status` fields:
 
 | Field | Meaning |
 |---|---|
-| `state` | `stopped`, `starting`, `listening`, `capturing` or `recovering` |
+| `state` | `stopped`, `starting`, `running`, `stopping`, `recovering` or `error` |
 | `audio_device`, `capture_sample_rate` | The device in use and its native rate (audio is resampled to 16 kHz) |
 | `sessions` vs `wakeword_detections` | Candidates opened vs wakewords confirmed. A large gap means many rejected false triggers. |
 | `results` | Recognition results produced |

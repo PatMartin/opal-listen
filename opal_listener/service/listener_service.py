@@ -610,16 +610,23 @@ class ListenerService:
             self._publish_status()
             return {"status": "stopped"}
 
-    # internal run-state vocabulary -> contract PipelineStatus.state enum
-    _STATUS_STATES = {"listening": "running", "capturing": "running", "recovering": "error"}
+    # internal run-state vocabulary -> contract PipelineStatus.state enum; "recovering"
+    # surfaces as itself (transient, self-healing) rather than collapsing into "error",
+    # which is reserved for a worker that terminated without a stop request.
+    _STATUS_STATES = {"listening": "running", "capturing": "running"}
 
     def status(self) -> s.PipelineStatus:
         st = self._stats
         snap = self._snapshot
-        state = self._STATUS_STATES.get(st.state, st.state)
+        if self.running:
+            state = self._STATUS_STATES.get(st.state, st.state)
+        elif st.state == "recovering" and not self._stop.is_set():
+            state = "error"  # worker died mid-recovery without a stop request
+        else:
+            state = "stopped"
         return s.PipelineStatus(
             running=self.running,
-            state=state if self.running or state == "error" else "stopped",
+            state=state,
             provider=snap.provider_name if snap else "unknown",
             profile_name=snap.profile_name if snap else None,
             audio_device=st.audio_device,

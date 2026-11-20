@@ -1196,6 +1196,13 @@ paths:
       - recognition
       summary: Start Pipeline
       operationId: start_recognition
+      description: >-
+        Request recognition start. `{"status": "started"}` means the request was
+        *accepted* — a worker was spawned in `starting`; actual capture/engine readiness
+        is reported by GET /api/v1/recognition/status when `state` reaches `running`
+        (or `recovering`/`error` if startup fails). `{"status": "already_running"}` is
+        an idempotent no-op; `{"status": "stopping"}` means a previous worker is still
+        unwinding and the caller should retry shortly. At most one worker is ever alive.
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1232,6 +1239,12 @@ paths:
       - recognition
       summary: Stop Pipeline
       operationId: stop_recognition
+      description: >-
+        Request recognition stop. `{"status": "stopped"}` means the worker fully
+        terminated; `{"status": "stopping"}` means stop was accepted but the worker is
+        still unwinding (bounded ~5 s join; poll status until `stopped`);
+        `{"status": "not_running"}` is an idempotent no-op. Concurrent stops are safe:
+        callers may observe any of the three results.
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -2221,8 +2234,16 @@ components:
           - starting
           - running
           - stopping
+          - recovering
           - error
           title: State
+          description: >-
+            Public lifecycle state. `stopped`: no worker. `starting`: start accepted,
+            capture/engine not yet ready. `running`: capturing and recognizing.
+            `stopping`: stop accepted, worker still unwinding. `recovering`: transient
+            failure, worker alive and retrying with backoff — self-heals without
+            client action. `error`: worker terminated mid-recovery without a stop
+            request; inspect `last_error`.
         provider:
           type: string
           title: Provider
