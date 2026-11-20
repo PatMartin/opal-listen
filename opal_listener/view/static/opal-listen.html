@@ -161,12 +161,6 @@ const ROUTES = [
   ["update_failed_utterance", "PATCH", "/api/v1/failed_utterance/{failed_utterance_id}", "failed update", "failed"],
   ["remove_failed_utterance", "DELETE", "/api/v1/failed_utterance/{failed_utterance_id}", "failed remove", "failed"],
   ["promote_failed_utterance", "POST", "/api/v1/failed_utterance/{failed_utterance_id}/promote", "failed promote", "failed"],
-  ["list_regression_tests", "GET", "/api/v1/regression/", "regression list", "regression"],
-  ["create_regression_test", "POST", "/api/v1/regression/", "regression add", "regression"],
-  ["show_regression_test", "GET", "/api/v1/regression/{test_id}", "regression get", "regression"],
-  ["update_regression_test", "PATCH", "/api/v1/regression/{test_id}", "regression update", "regression"],
-  ["remove_regression_test", "DELETE", "/api/v1/regression/{test_id}", "regression remove", "regression"],
-  ["run_regression_tests", "POST", "/api/v1/regression/run", "test regression", "regression"],
   ["get_performance_last", "GET", "/api/v1/performance/last", "service perf last", "perf"],
   ["get_performance_summary", "GET", "/api/v1/performance/summary", "service perf summary", "perf"],
   ["get_performance_history", "GET", "/api/v1/performance/history", "service perf history", "perf"],
@@ -192,7 +186,7 @@ const ROUTE = Object.fromEntries(ROUTES.map(r => [r[0], { name: r[0], method: r[
 const NAV = [
   ["Overview", [["system", "System"], ["pipeline", "Pipeline"]]],
   ["Configure", [["wakewords", "Wakewords"], ["intents", "Intents"], ["slots", "Slots"], ["profiles", "Profiles"], ["personas", "Personas"], ["settings", "Settings"]]],
-  ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["regression", "Regression"], ["perf", "Performance"]]],
+  ["Test & tune", [["test", "Test"], ["failed", "Failed utterances"], ["perf", "Performance"]]],
   ["Admin", [["config", "Config snapshots"], ["api", "API & parity"]]],
 ];
 const VAD_KEYS = { energy_threshold_dbfs: -45, noise_margin_db: 10, speech_start_ms: 150, silence_end_ms: 700,
@@ -372,14 +366,6 @@ function resultCard(r) {
     <div class="cols"><div>${kv(summary)}</div>
     <div><h3>Alternatives</h3>${table(r.alternatives, [["intent_name", "intent"], ["confidence", "confidence"], ["phrase", "phrase"]], { empty: "No candidates." })}</div></div>
   </div>`;
-}
-
-function regressionRunTable(run) {
-  return `<p><span class="badge ${run.failed ? "err" : "ok"}">${run.passed}/${run.total} passed</span> pass rate ${cell(run.pass_rate)}</p>` +
-    table(run.results, [["test_id", "id"], ["name", "name"], ["phrase", "phrase"], ["expected_intent", "expected"],
-      ["actual_intent", "actual"], ["expected_slots", "expected slots"], ["actual_slots", "actual slots"],
-      ["passed", "passed", r => r.passed ? '<span class="ok">PASS</span>' : '<span class="err">FAIL</span>'],
-      ["failure_reason", "reason"]]);
 }
 
 function statusBadge(s) {
@@ -598,9 +584,7 @@ VIEWS.test = async () => {
       <label><input type="checkbox" id="autoStart" checked> start the pipeline if it is not running (and stop it afterwards)</label></div>
       <div class="row" style="margin-top:10px"><span id="liveState" class="badge">idle</span><div class="meter"><div id="meterBar"></div></div><span id="meterText" class="op">– dBFS</span></div>
       <p id="partial" class="muted"></p><div id="liveResults"></div>
-      <details><summary class="muted">event log</summary><pre id="events"></pre></details>`)}
-    ${card("Regression run", ["run_regression_tests"], `<div class="row">${btn("Run regression tests", "regressionRun", { target: "testRegression" })}
-      <label><input type="checkbox" id="regAll"> include disabled</label></div><div id="testRegression"></div>`)}`;
+      <details><summary class="muted">event log</summary><pre id="events"></pre></details>`)}`;
 };
 
 VIEWS.failed = async () => {
@@ -608,7 +592,7 @@ VIEWS.failed = async () => {
   const items = await api("GET", "/api/v1/failed_utterance/", { query: { limit: f.limit, reviewed: f.reviewed, promoted: f.promoted } });
   const sel = (name, value) => `<select data-filter="failed.${name}"><option value="" ${value === "" ? "selected" : ""}>any</option>
     <option value="true" ${value === "true" ? "selected" : ""}>yes</option><option value="false" ${value === "false" ? "selected" : ""}>no</option></select>`;
-  return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here. Promote them to training phrases (slot values become placeholders) and a regression test.</div>
+  return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here. Promote them to training phrases (slot values become placeholders).</div>
     ${opsLine(["list_failed_utterances", "create_failed_utterance", "get_failed_utterance", "update_failed_utterance", "delete_failed_utterance", "promote_to_phrase"])}
     ${card("Failed utterances", ["list_failed_utterances"], `<div class="row">reviewed ${sel("reviewed", f.reviewed)} promoted ${sel("promoted", f.promoted)}</div>` +
       table(items, [["id", "id"], ["transcript", "transcript"], ["expected_intent", "expected"], ["reviewed", "reviewed"], ["promoted_to_phrase", "promoted"],
@@ -626,23 +610,6 @@ function pager(key, count) {
     <label class="muted">per page <select data-filter="${key}.limit">${[10, 25, 50, 100, 500]
       .map(n => `<option ${n === p.limit ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>`;
 }
-
-VIEWS.regression = async () => {
-  const [tests, intents] = await Promise.all([api("GET", "/api/v1/regression/"), api("GET", "/api/v1/intent/")]);
-  const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option>${esc(n)}</option>`).join("");
-  return `<h2>Regression</h2><div class="sub">Phrases that must keep resolving to the expected intent and slots (use <code>no_match</code> for negative tests).</div>
-    ${opsLine(["list_regression_tests", "create_regression_test", "get_regression_test", "update_regression_test", "delete_regression_test", "run_regression_tests"])}
-    ${card("Run", ["run_regression_tests"], `<div class="row">${btn("Run regression tests", "regressionRun", { target: "regResult" })}
-      <label><input type="checkbox" id="regAll"> include disabled</label></div><div id="regResult"></div>`)}
-    ${card("Tests", ["list_regression_tests"], table(tests, [["id", "id"], ["name", "name"], ["phrase", "phrase"], ["expected_intent", "expected"],
-      ["expected_slots", "expected slots"], ["enabled", "enabled"], ["last_result", "last", r => r.last_result === null ? cell(null) : r.last_result ? '<span class="ok">PASS</span>' : '<span class="err">FAIL</span>'],
-      ["last_run_at", "last run"]], { actions: r => btn("Edit", "regressionEdit", { id: r.id }, "ghost small") + btn("Delete", "regressionDelete", { id: r.id }, "danger small") }))}
-    ${card("Add test", ["create_regression_test"], `<form data-form="regressionAdd">
-      <div class="row"><input name="name" placeholder="name" required><input name="phrase" placeholder="phrase" style="flex:1" required>
-        <select name="expected_intent">${options}</select><label><input type="checkbox" name="enabled" checked> enabled</label></div>
-      <label class="block"><span>expected_slots (JSON)</span><textarea class="mono" name="expected_slots" style="min-height:50px" placeholder='{"room_name": "kitchen"}'></textarea></label>
-      <button type="submit">Add test</button></form>`)}`;
-};
 
 VIEWS.perf = async () => {
   const h = S.history;
@@ -678,7 +645,7 @@ function chart(rows) {
 }
 
 VIEWS.config = async () => {
-  return `<h2>Config snapshots</h2><div class="sub">Snapshots capture persistent desired configuration only (settings + profiles, personas, wakewords, intents, slots, regression tests); loads are atomic and If-Match protected.</div>
+  return `<h2>Config snapshots</h2><div class="sub">Snapshots capture persistent desired configuration only (settings + profiles, personas, wakewords, intents, slots); loads are atomic and If-Match protected.</div>
     ${opsLine(["opal_config_validate", "opal_config_save", "opal_config_load"])}
     ${card("Managed snapshot", ["opal_config_save", "opal_config_load"],
       `${btn("Save managed snapshot", "configSaveManaged")} ${btn("Load managed snapshot", "configLoadManaged", {}, "danger")}
@@ -808,26 +775,6 @@ const ACT = {
   listenStart: async d => listenStart(d.debug === "1"),
   listenStop: async () => listenStop(),
 
-  regressionRun: async d => {
-    const run = await api("POST", "/api/v1/regression/run", { query: { enabled_only: !($("#regAll")?.checked) } });
-    if (d.target === "regResult") await render();  // refresh last_result column
-    const el = $(`#${d.target}`);
-    if (el) el.innerHTML = regressionRunTable(run);
-  },
-  regressionEdit: async d => {
-    const [t, intents] = await Promise.all([api("GET", `/api/v1/regression/${d.id}`), api("GET", "/api/v1/intent/")]);
-    const options = ["no_match", ...intents.map(i => i.name)].map(n => `<option ${n === t.expected_intent ? "selected" : ""}>${esc(n)}</option>`).join("");
-    modal(`<h3>Regression test ${t.id}</h3><div class="ops">${op("show_regression_test")} ${op("update_regression_test")}</div>
-      <form data-form="regressionUpdate" data-id="${t.id}">
-      <label class="block"><span>name</span><input name="name" value="${esc(t.name)}"></label>
-      <label class="block"><span>phrase</span><input name="phrase" value="${esc(t.phrase)}"></label>
-      <label class="block"><span>expected intent</span><select name="expected_intent">${options}</select></label>
-      <label class="block"><span>expected_slots (JSON)</span><textarea class="mono" name="expected_slots">${esc(JSON.stringify(t.expected_slots, null, 2))}</textarea></label>
-      <label><input type="checkbox" name="enabled" ${t.enabled ? "checked" : ""}> enabled</label>
-      <p class="row"><button type="submit">Save</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
-  },
-  regressionDelete: async d => { confirmOr(`Delete regression test ${d.id}?`); await apiWithEtag("DELETE", `/api/v1/regression/${d.id}`); toast("test deleted"); render(); },
-
   failedEdit: async d => {
     const f = await api("GET", `/api/v1/failed_utterance/${d.id}`);
     modal(`<h3>Failed utterance ${f.id}</h3><div class="ops">${op("show_failed_utterance")} ${op("update_failed_utterance")}</div>
@@ -844,7 +791,6 @@ const ACT = {
     modal(`<h3>Promote to training phrase</h3>${op("promote_failed_utterance")}<p><code>${esc(f.transcript)}</code></p>
       <form data-form="failedPromote" data-id="${f.id}">
       <label class="block"><span>intent</span><select name="intent_name">${intents.map(i => `<option ${i.name === f.expected_intent ? "selected" : ""}>${esc(i.name)}</option>`).join("")}</select></label>
-      <label><input type="checkbox" name="create_regression" checked> also create a regression test</label>
       <p class="hint">Known slot values in the utterance are replaced by <code>{slot}</code> placeholders.</p>
       <p class="row"><button type="submit">Promote</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
   },
@@ -1006,17 +952,8 @@ const FORM = {
     const intents = await api("GET", "/api/v1/intent/");
     const target = intents.find(i => i.name === v.intent_name);
     if (!target) throw new Error(`intent '${v.intent_name}' not found`);
-    const r = await apiWithEtag("POST", `/api/v1/failed_utterance/${f.dataset.id}/promote`, { etagPath: `/api/v1/intent/${target.id}/phrase`, body: { intent_id: target.id, create_regression: v.create_regression } });
-    closeModal(); toast(`added phrase '${r.phrase.phrase}'` + (r.regression_test ? ` and regression test ${r.regression_test.id}` : "")); render();
-  },
-
-  regressionAdd: async v => {
-    await apiWithEtag("POST", "/api/v1/regression/", { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
-    toast("regression test added"); render();
-  },
-  regressionUpdate: async (v, f) => {
-    await apiWithEtag("PATCH", `/api/v1/regression/${f.dataset.id}`, { body: { name: v.name, phrase: v.phrase, expected_intent: v.expected_intent, enabled: v.enabled, expected_slots: parseJson(v.expected_slots, "expected_slots") } });
-    closeModal(); toast("regression test saved"); render();
+    const r = await apiWithEtag("POST", `/api/v1/failed_utterance/${f.dataset.id}/promote`, { etagPath: `/api/v1/intent/${target.id}/phrase`, body: { intent_id: target.id } });
+    closeModal(); toast(`added phrase '${r.phrase.phrase}'`); render();
   },
 
   rawRequest: async v => {

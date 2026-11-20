@@ -60,7 +60,6 @@ There are three ways to use it, and all three can do the same things:
 | **Setting** | A typed global key/value, for example `cooldown_ms` or `stt_mode`. | `cooldown_ms = 1500` |
 | **Recognition log** | Every recognition result (mic, audio file or text), stored in SQLite. | |
 | **Failed utterance** | A `no_match` result saved for review. It can be *promoted* to a training phrase. | |
-| **Regression test** | A phrase that must keep resolving to an expected intent and slots. | |
 | **Pipeline** | The live microphone loop: wakeword → VAD → STT → intent. | |
 
 ### Phrase syntax
@@ -507,7 +506,6 @@ SQLite database (default `var/opal_listener.db`), managed by Alembic, with forei
 | `setting` | typed key/value settings (stored as strings) |
 | `recognition_logs` | every recognition result; pruned to `max_recognition_logs` every 100 results. When `transcript_retention_days > 0`, transcript text on older rows is scrubbed while the row and its performance aggregates are kept |
 | `failed_utterances` | `no_match` results for review; unreviewed rows older than `unreviewed_failure_ttl_days` are deleted (0 = keep forever) |
-| `regression_tests` | expected intent/slots per phrase |
 | `performance_results` | latency and confidence per recognition |
 
 The managed configuration snapshot is a single JSON envelope in the data dir, replaced atomically by `POST /api/v1/config/save`.
@@ -1672,14 +1670,12 @@ This is the core of the tuning loop. It:
 2. Replaces known slot values and aliases with `{slot}` placeholders ("kitchen" → `{room_name}`).
 3. Adds the result as a phrase of the intent, unless an identical phrase already exists.
 4. Marks the failure as `reviewed` and `promoted_to_phrase`, and sets `expected_intent`.
-5. Optionally creates a regression test named `promoted_failure_<id>` with the extracted slots.
 
 The change is validated like any other configuration change.
 
 | Query | Required | Meaning |
 |---|---|---|
 | `intent_name` | yes | Intent that should have matched |
-| `create_regression` | no (default `true`) | Also create a regression test |
 
 ```bash
 curl -s -X POST "$API/api/v1/failed_utterance/3/promote?intent_name=light_turn_on"
@@ -1688,90 +1684,13 @@ curl -s -X POST "$API/api/v1/failed_utterance/3/promote?intent_name=light_turn_o
 {
   "failed_utterance": {"id": 3, "transcript": "computer lights up in the kitchen", "expected_intent": "light_turn_on",
                        "reviewed": true, "promoted_to_phrase": true, "...": "..."},
-  "phrase": {"id": 40, "intent_id": 1, "phrase": "lights up in the {room_name}", "created_at": "..."},
-  "regression_test": {"id": 12, "name": "promoted_failure_3", "phrase": "lights up in the kitchen",
-                      "expected_intent": "light_turn_on", "expected_slots": {"room_name": "kitchen"},
-                      "enabled": true, "last_result": null, "last_run_at": null, "created_at": "..."}
+  "phrase": {"id": 40, "intent_id": 1, "phrase": "lights up in the {room_name}", "created_at": "..."}
 }
 ```
 
 ---
 
-### 5.13 Regression tests — `/api/v1/regression`
-
-Regression test object: `{id, name, phrase, expected_intent, expected_slots, enabled, last_result,
-last_run_at, created_at}`. Use `expected_intent: "no_match"` for negative tests.
-
-#### `GET /api/v1/regression/` — list
-
-```bash
-curl -s $API/api/v1/regression/ | jq '.[] | {id, name, expected_intent, last_result}'
-```
-
-#### `POST /api/v1/regression/` — create
-
-```bash
-curl -s -X POST $API/api/v1/regression/ -H 'Content-Type: application/json' -d '{
-  "name": "lounge_on",
-  "phrase": "switch on the lounge lights",
-  "expected_intent": "light_turn_on",
-  "expected_slots": {"room_name": "living_room"}
-}'
-
-# negative test
-curl -s -X POST $API/api/v1/regression/ -H 'Content-Type: application/json' \
-  -d '{"name": "pizza_is_not_a_command", "phrase": "order a pizza", "expected_intent": "no_match"}'
-```
-
-#### `POST /api/v1/regression/run` — run tests against the current configuration
-
-| Query | Default | Meaning |
-|---|---|---|
-| `enabled_only` | `true` | Skip disabled tests |
-
-Each test updates `last_result` and `last_run_at`. Slot comparison is by string value, and only the
-expected keys are checked.
-
-```bash
-curl -s -X POST $API/api/v1/regression/run | jq '{total, passed, failed, pass_rate}'
-```
-```json
-{"total": 24, "passed": 23, "failed": 1, "pass_rate": 0.9583}
-```
-```bash
-curl -s -X POST $API/api/v1/regression/run | jq '.results[] | select(.passed | not)'
-```
-```json
-{"test_id": 7, "name": "lounge_on", "phrase": "switch on the lounge lights",
- "expected_intent": "light_turn_on", "actual_intent": "no_match",
- "expected_slots": {"room_name": "living_room"}, "actual_slots": {},
- "intent_confidence": 0.41, "passed": false,
- "failure_reason": "expected intent 'light_turn_on', got 'no_match'"}
-```
-
-#### `GET /api/v1/regression/{test_id}` — get one
-
-```bash
-curl -s $API/api/v1/regression/7
-```
-
-#### `PATCH /api/v1/regression/{test_id}` — update
-
-Fields: `name`, `phrase`, `expected_intent`, `expected_slots`, `enabled`.
-
-```bash
-curl -s -X PATCH $API/api/v1/regression/7 -H 'Content-Type: application/json' -d '{"enabled": false}'
-```
-
-#### `DELETE /api/v1/regression/{test_id}` — delete
-
-```bash
-curl -s -X DELETE $API/api/v1/regression/7
-```
-
----
-
-### 5.14 Performance — `/api/v1/performance`
+### 5.13 Performance — `/api/v1/performance`
 
 #### `GET /api/v1/performance/last` — the most recent recognition
 
@@ -1821,7 +1740,7 @@ curl -s "$API/api/v1/performance/history?limit=10" | jq -r '.[] | "\(.id)\t\(.to
 
 ---
 
-### 5.15 Health — `/api/v1/health`
+### 5.14 Health — `/api/v1/health`
 
 #### `GET /api/v1/health/` — run all health checks
 
@@ -1891,7 +1810,7 @@ curl -si $API/api/v1/health/ready   # -i to see the 503 on failure
 
 ---
 
-### 5.16 Configuration snapshots — `/api/v1/config`
+### 5.15 Configuration snapshots — `/api/v1/config`
 
 The v2 contract replaces the old `/api/v1/backup/*` routes with OPAL configuration
 snapshots. A snapshot is one portable envelope:
@@ -1900,7 +1819,7 @@ snapshots. A snapshot is one portable envelope:
 {"format_version": "1.0.0", "module": "opal-listen", "created_at": "2026-09-30T09:30:00Z",
  "settings": {"cooldown_ms": 1500, "...": "..."},
  "resources": {"wakewords": [], "intents": [], "slots": [], "profiles": [],
-               "personas": [], "regression_tests": []}}
+               "personas": []}}
 ```
 
 It covers **persistent desired configuration only** — no logs, failed utterances,
@@ -2095,7 +2014,7 @@ Exit codes:
 | Code | When |
 |---|---|
 | `0` | Success |
-| `1` | API error (4xx/5xx), server unreachable, failed regression run, invalid config, doctor errors, `--expect-intent` mismatch, declined confirmation |
+| `1` | API error (4xx/5xx), server unreachable, invalid config, doctor errors, `--expect-intent` mismatch, declined confirmation |
 | `2` | Invalid CLI usage (bad option or missing argument) |
 
 ```bash
@@ -2104,7 +2023,7 @@ opal listen --api-url http://pi5.local:8000 system doctor
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
 ```
 
-### 7.2 `wakeword`
+### 7.2 ``wakeword`
 
 | Command | REST | Description |
 |---|---|---|
@@ -2122,7 +2041,7 @@ opal listen wakeword update computer --threshold 0.9
 opal listen wakeword remove "hey opal"
 ```
 
-### 7.3 `intent`
+### 7.3 ``intent`
 
 | Command | Description |
 |---|---|
@@ -2155,7 +2074,7 @@ opal listen intent remove play_music
 
 > Quote phrases in the shell, because `[`, `(`, `|` and `{` are special characters.
 
-### 7.4 `slot`
+### 7.4 ``slot`
 
 | Command | Description |
 |---|---|
@@ -2184,7 +2103,7 @@ opal listen slot add brightness --type number --description "Percent"
 opal listen slot update brightness --description "Brightness 0-100"
 ```
 
-### 7.5 `profile`
+### 7.5 ``profile`
 
 | Command | Description |
 |---|---|
@@ -2227,7 +2146,7 @@ opal listen profile activate default
 opal listen profile remove late_night
 ```
 
-### 7.6 `persona`
+### 7.6 ``persona`
 
 Personas are named speaker identities; an optional `--voice` binds an OPAL Say voice id so
 spoken feedback keeps a consistent voice. They travel in `config save`/`config load` snapshots
@@ -2247,7 +2166,7 @@ opal listen persona add amy --name "Amy" --voice en-gb-alan-low
 opal listen persona validate amy
 ```
 
-### 7.7 `config setting`
+### 7.7 ``config setting`
 
 | Command | Description |
 |---|---|
@@ -2269,14 +2188,13 @@ opal listen config setting set auto_start_listener true
 opal listen config setting set stt_refiner faster_whisper     # requires the [whisper] extra
 ```
 
-### 7.8 `test`
+### 7.8 ``test`
 
 | Command | Description |
 |---|---|
 | `text TEXT [--save/--no-save] [--expect-intent I] [-v]` | Recognize text |
 | `audio WAV [--save/--no-save] [--require-wakeword] [--expect-intent I] [-v]` | Recognize a WAV file |
 | `listen [-n COUNT] [--duration S] [--start/--no-start] [--debug] [-v]` | Live microphone results; `--debug` also shows levels, partials, wakeword and VAD events |
-| `regression [--all]` | Run regression tests (exit 1 on failure). `--all` includes disabled tests. |
 
 ```bash
 opal listen test text "computer, turn on the kitchen light"
@@ -2308,8 +2226,6 @@ opal listen test listen -n 3              # stop after 3 results
 opal listen test listen --duration 30     # stop after 30 s
 opal listen test listen --no-start        # only watch an already-running pipeline
 opal listen test listen --debug           # plus levels, partials, wakeword/VAD events
-opal listen test regression
-opal listen test regression --all
 ```
 
 Example `test listen --debug` output:
@@ -2328,7 +2244,7 @@ speech_end {'session_id': 'a1b2c3d4e5f6', 'reason': 'speech_end'}
 { ...full RecognitionResult... }
 ```
 
-### 7.9 `pipeline`
+### 7.9 ``pipeline`
 
 ```bash
 opal listen pipeline start
@@ -2345,42 +2261,18 @@ opal listen pipeline stop
 | `add TRANSCRIPT [--expected-intent I] [--notes N] [--log-id ID]` | Record manually |
 | `update ID [--expected-intent] [--notes] [--reviewed/--unreviewed]` | Annotate |
 | `remove ID` | Delete |
-| `promote ID --intent I [--regression/--no-regression]` | Add as a training phrase (+ regression test) |
+| `promote ID --intent I` | Add as a training phrase |
 
 ```bash
 opal listen failed list --unreviewed
 opal listen failed get 3
 opal listen failed promote 3 --intent light_turn_on
-opal listen failed promote 4 --intent get_time --no-regression
 opal listen failed update 5 --reviewed --notes "TV in background"
 opal listen failed add "dim the lounge" --expected-intent light_dim --notes "intent does not exist yet"
 opal listen failed remove 5
 ```
 
-### 7.11 `regression`
-
-| Command | Description |
-|---|---|
-| `list` | List tests |
-| `get ID` | Show one |
-| `add NAME PHRASE --expect-intent I [--slot k=v]... [--enabled/--disabled]` | Add a test |
-| `update ID [--name] [--phrase] [--expect-intent] [--slot k=v]... [--enabled/--disabled]` | Update (`--slot` replaces all expected slots) |
-| `remove ID` | Delete |
-
-Run the tests with `opal listen test regression`.
-
-```bash
-opal listen regression add lounge_on "switch on the lounge lights" \
-  --expect-intent light_turn_on --slot room_name=living_room
-opal listen regression add timer_ten "set a timer for ten minutes" \
-  --expect-intent timer_set --slot duration_minutes=10
-opal listen regression add not_a_command "order a pizza" --expect-intent no_match
-opal listen regression list
-opal listen regression update 3 --disabled
-opal listen test regression
-```
-
-### 7.12 `service` lifecycle
+### 7.11 `service` lifecycle
 
 REST-first (acts on the managed server via `/api/v1/service/*`), with a local fallback when the
 API is unreachable.
@@ -2392,7 +2284,7 @@ opal listen service log --lines 20
 opal listen service stop
 ```
 
-### 7.13 `service perf`
+### 7.12 `service perf`
 
 ```bash
 opal listen service perf last
@@ -2401,7 +2293,7 @@ opal listen service perf summary --limit 1000
 opal listen service perf history --limit 50
 ```
 
-### 7.14 `config`
+### 7.13 `config`
 
 | Command | Description |
 |---|---|
@@ -2422,7 +2314,7 @@ opal listen config load --yes                 # restore the managed snapshot
 > `--in` reads the snapshot file on the **client** machine. Without it, `load` uses the
 > managed snapshot stored on the **server**.
 
-### 7.15 `service`
+### 7.14 `service`
 
 Process lifecycle commands are **local** — they manage a server started on this machine, not the
 remote API. `start` launches `python -m opal_listener` in the background, truncates
@@ -2459,7 +2351,7 @@ Example `doctor` output:
 overall: ! warning
 ```
 
-### 7.16 `event`
+### 7.15 `event`
 
 `event publish` is the one command that does **not** call the REST API. It opens a ZeroMQ `PUB` socket,
 connects to `--xpub` (the opal event bus broker's ingest endpoint), and sends a two-frame
@@ -2509,9 +2401,8 @@ no build step. Every action calls exactly one REST operation, which is shown on 
 | **Slot detail** | Edit name, type and description. Values table with alias chips (× removes one, + adds one), and the **Add value** form with comma-separated aliases. |
 | **Profiles** | List, **Activate**, **Delete**. Click a row to edit. The form has threshold floors, `vad_settings` JSON, model paths, and checkboxes for wakewords, intents and slots (none checked = all). |
 | **Settings** | Every setting as an editable field with **Save**, **Details** and **Reset**. |
-| **Test** | **Text** test, **Audio file** upload (with *require wakeword* and *save to logs*), **Live listen** (normal or debug) with a level meter, partial transcripts, live result cards and an event log, plus a **Regression run** card. |
-| **Failed utterances** | Filter by reviewed/promoted, page through results, **Promote** (choose the intent, optional regression test), **Edit**, **Delete**, and add failures manually. |
-| **Regression** | Run all tests (optionally including disabled ones), see PASS/FAIL per test, add tests with an expected intent dropdown (including `no_match`) and `expected_slots` JSON, edit or delete tests. |
+| **Test** | **Text** test, **Audio file** upload (with *require wakeword* and *save to logs*), **Live listen** (normal or debug) with a level meter, partial transcripts, live result cards and an event log. |
+| **Failed utterances** | Filter by reviewed/promoted, page through results, **Promote** (choose the intent), **Edit**, **Delete**, and add failures manually. |
 | **Logs** | Totals (total / matched / no_match), filter by intent and match status, page through results, click a row for full details. |
 | **Performance** | Last recognition, a summary over the last 100 (match rate, confidence, latency avg/p50/p95/max), and a history table with a latency bar chart (green = matched, amber = no_match). |
 | **Config** | **Validate** the live configuration or a candidate snapshot. **Save** to the managed snapshot or **Download JSON**, load a snapshot file or paste JSON, then **Validate** / **Load**. |
@@ -2535,8 +2426,7 @@ Every test (text, audio or live) renders a result card:
    should stay well below that. Say *"computer, turn on the kitchen light"*.
 4. If a result says **NO MATCH**, click **Record as failed utterance**. Then go to **Failed utterances**,
    click **Promote**, pick the intended intent, and confirm.
-5. **Regression** → **Run regression tests** to make sure nothing else broke.
-6. **Config** → **Save snapshot**.
+5. **Config** → **Save snapshot**.
 
 ---
 
@@ -2563,12 +2453,7 @@ opal listen test text "computer make the kitchen lights crimson"
 opal listen test text "set the lounge lights to soft white"
 #   -> light_color {"room_name": "living_room", "color": "warm_white"}
 
-# 4. lock the behavior in
-opal listen regression add color_kitchen_red "make the kitchen lights crimson" \
-  --expect-intent light_color --slot room_name=kitchen --slot color=red
-opal listen test regression
-
-# 5. check the new words are known to the model
+# 4. check the new words are known to the model
 opal listen info health
 ```
 
@@ -2633,8 +2518,7 @@ flowchart LR
     C --> D{Should it match?}
     D -- yes --> E[failed promote ID --intent X]
     D -- no --> F[failed update ID --reviewed]
-    E --> G[test regression]
-    G --> A
+    E --> A
 ```
 
 ```bash
@@ -2642,7 +2526,6 @@ opal listen failed list --unreviewed
 opal listen failed promote 12 --intent timer_set
 opal listen failed promote 13 --intent light_turn_off
 opal listen failed update 14 --reviewed --notes "background conversation"
-opal listen test regression
 opal listen service perf summary
 ```
 
@@ -2725,7 +2608,6 @@ opal listen config validate --in ./config/snapshot.json
 opal listen config load --in ./config/snapshot.json --yes
 opal listen test text "computer turn on the kitchen light" --expect-intent light_turn_on --no-save
 opal listen test text "order a pizza" --expect-intent no_match --no-save
-opal listen test regression
 ```
 
 ---
@@ -2854,7 +2736,7 @@ python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixture
 
 | Suite | Location | Covers |
 |---|---|---|
-| Golden phrases | `tests/regression/golden_phrases.yaml` | Text must match the intent and slots |
+| Golden phrases | `tests/golden/golden_phrases.yaml` | Text must match the intent and slots |
 | Negative phrases | `tests/negative/negative_phrases.yaml` | Must be `no_match` with a reason |
 | Audio fixtures | `tests/audio/manifest.yaml`, `fixtures/*.wav` | Full pipeline via REST, wakeword false positives and negatives |
 | Noise | `tests/noise/test_noise.py` (`slow`) | Golden WAVs with white/pink noise at 20/10 dB SNR |
@@ -2985,12 +2867,6 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | PATCH | `/api/v1/failed_utterance/{fu_id}` | `update_failed_utterance` | `failed update` | Failed utterances |
 | DELETE | `/api/v1/failed_utterance/{fu_id}` | `delete_failed_utterance` | `failed remove` | Failed utterances |
 | POST | `/api/v1/failed_utterance/{fu_id}/promote` | `promote_to_phrase` | `failed promote` | Failed utterances |
-| GET | `/api/v1/regression/` | `list_regression_tests` | `regression list` | Regression |
-| POST | `/api/v1/regression/` | `create_regression_test` | `regression add` | Regression |
-| POST | `/api/v1/regression/run` | `run_regression_tests` | `test regression` | Regression / Test |
-| GET | `/api/v1/regression/{test_id}` | `get_regression_test` | `regression get` | Regression |
-| PATCH | `/api/v1/regression/{test_id}` | `update_regression_test` | `regression update` | Regression |
-| DELETE | `/api/v1/regression/{test_id}` | `delete_regression_test` | `regression remove` | Regression |
 | GET | `/api/v1/performance/last` | `get_last_performance` | `service perf last` | Performance |
 | GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |
 | GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |

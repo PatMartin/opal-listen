@@ -1,4 +1,4 @@
-"""opal listen failed|regression|perf"""
+"""opal listen failed|perf"""
 
 from __future__ import annotations
 
@@ -6,15 +6,13 @@ from typing import Any
 
 import typer
 
-from opal_listener.cli.catalog_cmds import _changes, parse_pairs
-from opal_listener.cli.output import console, done, print_json, render, render_kv, state
+from opal_listener.cli.catalog_cmds import _changes
+from opal_listener.cli.output import done, print_json, render, render_kv, state
 
 FAILED = "/api/v1/failed_utterance/"
-REGRESSION = "/api/v1/regression/"
 PERF = "/api/v1/performance"
 
 failed_app = typer.Typer(help="Review failed utterances and promote them to training phrases.", no_args_is_help=True)
-regression_app = typer.Typer(help="Manage saved regression tests.", no_args_is_help=True)
 perf_app = typer.Typer(help="Performance metrics.", no_args_is_help=True)
 
 FAILED_COLUMNS = (
@@ -26,7 +24,6 @@ FAILED_COLUMNS = (
     "notes",
     "created_at",
 )
-REGRESSION_COLUMNS = ("id", "name", "phrase", "expected_intent", "expected_slots", "enabled", "last_result")
 PERF_COLUMNS = ("id", "recognition_log_id", "wakeword_latency_ms", "stt_latency_ms", "intent_latency_ms",
                 "total_latency_ms", "wakeword_confidence", "intent_confidence", "matched")  # fmt: skip
 
@@ -98,82 +95,16 @@ def failed_promote(
     ctx: typer.Context,
     fu_id: str,
     intent: str = typer.Option(..., "--intent", help="Intent (id or name) that should have matched"),
-    regression: bool = typer.Option(True, "--regression/--no-regression", help="Also create a regression test"),
 ) -> None:
     """Add a failed utterance as a training phrase (slot values become {placeholders})."""
     api = state(ctx).api
     target = api.resolve("/api/v1/intent/", intent)
     result = api.post_with_etag(
         f"{FAILED}{fu_id}/promote",
-        json={"intent_id": target["id"], "create_regression": regression},
+        json={"intent_id": target["id"]},
         etag_path=f"/api/v1/intent/{target['id']}/phrase",
     )
     done(ctx, f"promoted as '{result['phrase']['phrase']}' for intent '{intent}'", result)
-
-
-# --- regression ------------------------------------------------------------------------------
-
-
-@regression_app.command("list")
-def regression_list(ctx: typer.Context) -> None:
-    """List regression tests."""
-    render(ctx, state(ctx).api.get(REGRESSION), REGRESSION_COLUMNS, "Regression tests")
-
-
-@regression_app.command("get")
-def regression_get(ctx: typer.Context, test_id: str) -> None:
-    """Show a regression test."""
-    render_kv(ctx, state(ctx).api.get(f"{REGRESSION}{test_id}"))
-
-
-@regression_app.command("add")
-def regression_add(
-    ctx: typer.Context,
-    name: str,
-    phrase: str,
-    expect_intent: str = typer.Option(..., "--expect-intent", help="Intent name or 'no_match'"),
-    slot: list[str] | None = typer.Option(None, "--slot", help="Expected slot key=value (repeatable)"),
-    enabled: bool = typer.Option(True, "--enabled/--disabled"),
-) -> None:
-    """Add a regression test."""
-    body = {
-        "name": name,
-        "phrase": phrase,
-        "expected_intent": expect_intent,
-        "expected_slots": parse_pairs(slot),
-        "enabled": enabled,
-    }
-    created = state(ctx).api.post_with_etag(REGRESSION, json=body)
-    done(ctx, f"regression test {created['id']} added", created)
-
-
-@regression_app.command("update")
-def regression_update(
-    ctx: typer.Context,
-    test_id: str,
-    name: str | None = typer.Option(None, "--name"),
-    phrase: str | None = typer.Option(None, "--phrase"),
-    expect_intent: str | None = typer.Option(None, "--expect-intent"),
-    slot: list[str] | None = typer.Option(None, "--slot", help="Replace expected slots key=value (repeatable)"),
-    enabled: bool | None = typer.Option(None, "--enabled/--disabled"),
-) -> None:
-    """Update a regression test."""
-    body = _changes(
-        name=name,
-        phrase=phrase,
-        expected_intent=expect_intent,
-        expected_slots=parse_pairs(slot) if slot else None,
-        enabled=enabled,
-    )
-    updated = state(ctx).api.patch_with_etag(f"{REGRESSION}{test_id}", json=body)
-    done(ctx, f"regression test {test_id} updated", updated)
-
-
-@regression_app.command("remove")
-def regression_remove(ctx: typer.Context, test_id: str) -> None:
-    """Delete a regression test."""
-    state(ctx).api.delete_with_etag(f"{REGRESSION}{test_id}")
-    done(ctx, f"regression test {test_id} removed")
 
 
 def _render_list(ctx: typer.Context, items: list[dict[str, Any]], columns: tuple[str, ...], title: str) -> None:

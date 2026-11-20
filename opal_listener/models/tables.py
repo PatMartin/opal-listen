@@ -183,20 +183,6 @@ class FailedUtterance(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class RegressionTest(SQLModel, table=True):
-    __tablename__ = "regression_tests"
-
-    id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(max_length=200)
-    phrase: str = Field(max_length=500)
-    expected_intent: str = Field(max_length=100)
-    expected_slots: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    enabled: bool = True
-    last_result: bool | None = None
-    last_run_at: datetime | None = None
-    created_at: datetime = Field(default_factory=utc_now)
-
-
 class PerformanceResult(SQLModel, table=True):
     __tablename__ = "performance_results"
 

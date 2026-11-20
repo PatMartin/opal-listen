@@ -23,7 +23,7 @@ from opal_listener.cli.client import ApiClient, api_url_from_env, xpub_url_from_
 from opal_listener.cli.event_cmds import event_app
 from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
-from opal_listener.cli.review_cmds import failed_app, perf_app, regression_app
+from opal_listener.cli.review_cmds import failed_app, perf_app
 from opal_listener.cli.service_cmds import config_app, info_app, service_app
 from opal_listener.cli.test_cmds import pipeline_app, recognition_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
@@ -85,12 +85,6 @@ OPERATION_COMMANDS: dict[str, str] = {
     "update_failed_utterance": "failed update",
     "remove_failed_utterance": "failed remove",
     "promote_failed_utterance": "failed promote",
-    "list_regression_tests": "regression list",
-    "create_regression_test": "regression add",
-    "show_regression_test": "regression get",
-    "update_regression_test": "regression update",
-    "remove_regression_test": "regression remove",
-    "run_regression_tests": "test regression",
     "get_performance_last": "service perf last",
     "get_performance_summary": "service perf summary",
     "get_performance_history": "service perf history",
@@ -121,7 +115,6 @@ for sub_app, name in (
     (recognition_app, "recognition"),
     (pipeline_app, "pipeline"),
     (failed_app, "failed"),
-    (regression_app, "regression"),
     (reactions_app, "reaction"),
     (config_app, "config"),
     (service_app, "service"),

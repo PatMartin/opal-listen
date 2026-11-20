@@ -44,7 +44,6 @@ WHAT IS VERIFIED (per group)
                 pipeline status/start/stop, SSE stream via `test listen` (and `--debug`)
     perf        service perf last/summary/history
     failures    add, list, get, update, promote (phrase is delexicalized and then matches), remove
-    regression  add, list, get, update, run (only this run's tests are judged), remove
     cleanup     remove alias/value/intent/slot/wakeword created above (the DELETE operations)
     config      validate (server), export to YAML, validate --from-dir, download backup,
                 import --from-dir, restore the safety backup (verifies the state), delete run backups
@@ -737,7 +736,6 @@ def _failed_promote(t: CliRestTest) -> str:
     phrase = result["phrase"]["phrase"]
     expect(phrase == f"tint the wall {{{t.slot}}}", f"unexpected promoted phrase {phrase!r}")
     expect(result["failed_utterance"]["promoted_to_phrase"] is True, "not flagged as promoted")
-    t.state["promoted_regression_id"] = (result.get("regression_test") or {}).get("id")
     matched = t.ok("test", "text", "tint the wall red", "--no-save")
     expect(matched["intent_name"] == t.intent, f"promoted phrase does not match: {matched['intent_name']}")
     return f"phrase {phrase!r} now matches 'tint the wall red'"
@@ -748,62 +746,6 @@ def _failed_remove(t: CliRestTest) -> str:
     t.ok("failed", "remove", str(t.state["failed_id"]))
     t.rejected("failed", "get", str(t.state["failed_id"]), contains="404")
     return "removed (get now returns 404)"
-
-
-@step("regression add", "create_regression_test", requires=("intent add",))
-def _reg_add(t: CliRestTest) -> str:
-    created = t.ok(
-        "regression", "add", f"smoke_{t.tag}_blue", "paint the wall blue",
-        "--expect-intent", t.intent, "--slot", f"{t.slot}=blue",
-    )  # fmt: skip
-    t.state["regression_id"] = created["id"]
-    return f"id {created['id']}"
-
-
-@step("regression list", "list_regression_tests", requires=("regression add",))
-def _reg_list(t: CliRestTest) -> str:
-    ids = [r["id"] for r in t.ok("regression", "list")]
-    expect(t.state["regression_id"] in ids, "regression test not listed")
-    return f"{len(ids)} test(s)"
-
-
-@step("regression get", "get_regression_test", requires=("regression add",))
-def _reg_get(t: CliRestTest) -> str:
-    item = t.ok("regression", "get", str(t.state["regression_id"]))
-    expect(item["expected_slots"] == {t.slot: "blue"}, f"unexpected {item}")
-    return "expected_slots match"
-
-
-@step("regression update", "update_regression_test", requires=("regression add",))
-def _reg_update(t: CliRestTest) -> str:
-    updated = t.ok("regression", "update", str(t.state["regression_id"]), "--name", f"smoke_{t.tag}_renamed")
-    expect(updated["name"] == f"smoke_{t.tag}_renamed", f"not renamed: {updated}")
-    return "renamed"
-
-
-@step("test regression", "run_regression_tests", requires=("regression add",))
-def _reg_run(t: CliRestTest) -> str:
-    call = t.run("test", "regression", "--all")
-    run = parse_json(call)
-    expect(isinstance(run, dict) and "results" in run, f"unexpected output: {_tail(call.flat)}")
-    expect(call.exit_code == (1 if run["failed"] else 0), "exit code does not reflect failures")
-    mine = {t.state["regression_id"], t.state.get("promoted_regression_id")} - {None}
-    judged = [r for r in run["results"] if r["test_id"] in mine]
-    expect(len(judged) == len(mine), f"expected {len(mine)} of this run's tests in the results")
-    failed = [r for r in judged if not r["passed"]]
-    expect(not failed, f"this run's regression tests failed: {failed}")
-    other = f", {run['failed']} failure(s) in pre-existing tests" if run["failed"] else ""
-    return f"{len(judged)} of this run's tests passed ({run['passed']}/{run['total']} overall{other})"
-
-
-@step("regression remove", "delete_regression_test", requires=("regression add",))
-def _reg_remove(t: CliRestTest) -> str:
-    ids = [t.state["regression_id"], t.state.get("promoted_regression_id")]
-    for test_id in filter(None, ids):
-        t.ok("regression", "remove", str(test_id))
-    remaining = {r["id"] for r in t.ok("regression", "list")}
-    expect(not remaining & set(filter(None, ids)), "regression tests still listed")
-    return f"removed {len(list(filter(None, ids)))} test(s)"
 
 
 @step("slot remove-alias", "delete_alias", requires=("slot add-alias",))

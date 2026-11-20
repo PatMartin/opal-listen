@@ -3,7 +3,7 @@
 #
 # Not a pass/fail suite (see ../test-cli.sh for that): this runs each command once so the
 # output can be eyeballed. State created by the run (test_slot, test_intent, test_profile,
-# test_persona, test_reaction, failed/regression rows) is removed again at the end.
+# test_persona, test_reaction, failed rows) is removed again at the end.
 #
 # Notes:
 #   - `reaction` commands edit <config_dir>/reactions.yaml directly (that is how arming
@@ -212,33 +212,12 @@ opal listen failed get "$FU_ID"
 #opal listen failed update --help
 opal listen failed update "$FU_ID" --reviewed --expected-intent test_intent
 opal listen failed get "$FU_ID"
-#opal listen failed promote --help (slot value 'green' becomes the {test_slot} placeholder,
-#  and a regression test is created alongside the new phrase)
-PROMOTED_REG=$(opal listen --json failed promote "$FU_ID" --intent test_intent \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["regression_test"]["id"])')
+#opal listen failed promote --help (slot value 'green' becomes the {test_slot} placeholder)
+opal listen failed promote "$FU_ID" --intent test_intent
 opal listen intent phrases test_intent
 opal listen test text "tint the wall blue" --expect-intent test_intent --no-save
 #opal listen failed remove --help
 opal listen failed remove "$FU_ID"
-
-echo "Testing REGRESSION..."
-#opal listen regression --help
-#opal listen regression add --help
-REG_ID=$(opal listen --json regression add test_regression "paint the wall blue" \
-    --expect-intent test_intent --slot test_slot=blue \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-#opal listen regression list --help
-opal listen regression list
-#opal listen regression get --help
-opal listen regression get "$REG_ID"
-#opal listen regression update --help
-opal listen regression update "$REG_ID" --name test_regression_renamed
-opal listen regression get "$REG_ID"
-#opal listen test regression --help (runs all enabled saved tests; exit 1 if any fail)
-opal listen test regression
-#opal listen regression remove --help
-opal listen regression remove "$REG_ID"
-[[ -n "$PROMOTED_REG" ]] && opal listen regression remove "$PROMOTED_REG"
 
 echo "Testing PERF..."
 #opal listen service perf --help

@@ -11,7 +11,6 @@ from opal_listener.models.schemas import (
     FailedUtteranceUpdate,
     IntentPhraseRead,
     PromoteResult,
-    RegressionTestRead,
 )
 from opal_listener.models.tables import FailedUtterance, Intent
 from opal_listener.service import recognition_store, review
@@ -119,13 +118,12 @@ def promote_failed_utterance(
         intent = get_or_404(session, Intent, intent_id, "intent")
         phrases = [IntentPhraseRead.model_validate(p) for p in intent.phrases]
         require_matching_etag(if_match, collection_etag(phrases), "phrases")
-        fu, phrase, regression = review.promote(
-            session, svc, parse_id(failed_utterance_id, "failed utterance"), intent, data.create_regression
+        fu, phrase = review.promote(
+            session, svc, parse_id(failed_utterance_id, "failed utterance"), intent
         )
         session.flush()
         result = PromoteResult(
             failed_utterance=FailedUtteranceRead.model_validate(fu),
             phrase=IntentPhraseRead.model_validate(phrase),
-            regression_test=RegressionTestRead.model_validate(regression) if regression else None,
         )
     return result

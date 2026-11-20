@@ -38,7 +38,7 @@ REQUIRED_COMMANDS = {
     "slot list", "slot add", "slot add-value", "slot add-alias",
     "profile list", "profile add",
     "config setting list", "config setting show", "config setting set", "config setting remove",
-    "test text", "test audio", "test listen", "test regression",
+    "test text", "test audio", "test listen",
     "recognition test",
     "failed list", "failed promote",
     "service perf last", "service perf summary",
@@ -198,22 +198,7 @@ def test_pipeline_commands(cli: CliHarness, fake_provider: type) -> None:
     assert cli.json("pipeline", "stop")["status"] == "stopped"
 
 
-def test_regression_and_failed_commands(cli: CliHarness) -> None:
-    assert cli("regression", "add", "time", "what time is it", "--expect-intent", "get_time").exit_code == 0
-    result = cli(
-        "regression", "add", "kitchen", "turn on the kitchen light",
-        "--expect-intent", "light_turn_on", "--slot", "room_name=kitchen",
-    )  # fmt: skip
-    assert result.exit_code == 0
-    assert cli("test", "regression").exit_code == 0
-    tests = cli.json("regression", "list")
-    assert tests[1]["expected_slots"] == {"room_name": "kitchen"}
-    assert cli.json("regression", "get", str(tests[0]["id"]))["last_result"] is True
-    assert cli("regression", "update", str(tests[0]["id"]), "--expect-intent", "cancel").exit_code == 0
-    failing = cli("test", "regression")
-    assert failing.exit_code == 1 and "1 regression test(s) failed" in failing.output
-    assert cli("regression", "remove", str(tests[0]["id"])).exit_code == 0
-
+def test_failed_commands(cli: CliHarness) -> None:
     added = cli.json("failed", "add", "illuminate the garage", "--notes", "user said")
     assert cli.json("failed", "get", str(added["id"]))["notes"] == "user said"
     assert cli("failed", "update", str(added["id"]), "--reviewed").exit_code == 0

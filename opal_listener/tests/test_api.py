@@ -549,21 +549,6 @@ def test_failed_utterance_crud(client: TestClient) -> None:
     assert client.delete(f"/api/v1/failed_utterance/{created['id']}").status_code == 204
 
 
-def test_regression_crud(client: TestClient) -> None:
-    created = client.post(
-        "/api/v1/regression/",
-        headers={"If-Match": _etag(client, "/api/v1/regression/")},
-        json={"name": "t", "phrase": "what time is it", "expected_intent": "get_time", "enabled": False},
-    ).json()
-    assert client.post("/api/v1/regression/run").json()["total"] == 0
-    assert client.post("/api/v1/regression/run", params={"enabled_only": False}).json()["passed"] == 1
-    path = f"/api/v1/regression/{created['id']}"
-    patched = client.patch(path, json={"enabled": True}, headers={"If-Match": _etag(client, path)})
-    assert patched.json()["enabled"] is True
-    assert client.get(path).json()["last_result"] is True
-    assert client.delete(path, headers={"If-Match": _etag(client, path)}).status_code == 204
-
-
 def test_health_report(client: TestClient) -> None:
     report = client.get("/api/v1/health/").json()
     names = {c["name"] for c in report["details"]["checks"]}

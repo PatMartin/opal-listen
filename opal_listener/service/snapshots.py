@@ -2,7 +2,7 @@
 
 The snapshot carries persistent desired configuration only: settings overrides plus the
 declarative resource collections declared by x-opal-snapshot (profiles, personas, wakewords,
-intents, slots, regression_tests). Resource identifiers are preserved verbatim across load.
+intents, slots). Resource identifiers are preserved verbatim across load.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from opal_listener.models.tables import (
     IntentPhrase,
     Persona,
     Profile,
-    RegressionTest,
     Setting,
     Slot,
     SlotAlias,
@@ -41,7 +40,7 @@ from opal_listener.service.settings_registry import (
 
 SNAPSHOT_FORMAT_VERSION = "1.0.0"
 SNAPSHOT_MODULE = "opal-listen"
-RESOURCE_SECTIONS = ("profiles", "personas", "wakewords", "intents", "slots", "regression_tests")
+RESOURCE_SECTIONS = ("profiles", "personas", "wakewords", "intents", "slots")
 
 
 def managed_snapshot_path(data_dir: Path) -> Path:
@@ -140,17 +139,6 @@ def build_snapshot(session: Session) -> s.OpalConfigSnapshot:
                 }
                 for sl in session.exec(select(Slot).order_by(Slot.id)).all()
             ],
-            "regression_tests": [
-                {
-                    "id": str(t.id),
-                    "name": t.name,
-                    "phrase": t.phrase,
-                    "expected_intent": t.expected_intent,
-                    "expected_slots": dict(t.expected_slots),
-                    "enabled": t.enabled,
-                }
-                for t in session.exec(select(RegressionTest).order_by(RegressionTest.id)).all()
-            ],
         },
     )
 
@@ -182,7 +170,6 @@ def apply_snapshot(session: Session, snapshot: s.OpalConfigSnapshot) -> dict[str
         Wakeword,
         Profile,
         Persona,
-        RegressionTest,
     ):
         session.exec(delete(model))  # type: ignore[call-overload]
     session.flush()
@@ -267,18 +254,6 @@ def apply_snapshot(session: Session, snapshot: s.OpalConfigSnapshot) -> dict[str
                 enabled=p.get("enabled", True),
                 created_at=now,
                 updated_at=now,
-            )
-        )
-    for t in resources["regression_tests"]:
-        session.add(
-            RegressionTest(
-                id=_item_id(t),
-                name=t["name"],
-                phrase=t["phrase"],
-                expected_intent=t["expected_intent"],
-                expected_slots=dict(t.get("expected_slots", {})),
-                enabled=t.get("enabled", True),
-                created_at=now,
             )
         )
     existing = {r.key: r for r in session.exec(select(Setting)).all()}

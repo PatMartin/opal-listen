@@ -539,10 +539,6 @@ class ListenerService:
     def test_text(self, text: str, save_log: bool = True) -> s.RecognitionResult:
         return self._record(self.interpret(text, self.snapshot, source="text"), save_log)
 
-    def interpret_text(self, text: str) -> s.RecognitionResult:
-        """Pure intent evaluation (no logging) used by regression runs."""
-        return self.interpret(text, self.snapshot, source="text")
-
     def test_audio(self, data: bytes, save_log: bool = True, require_wakeword: bool = False) -> s.RecognitionResult:
         if len(data) > self.app_settings.max_upload_bytes:
             raise InvalidRequestError(f"audio file exceeds {self.app_settings.max_upload_bytes} bytes")

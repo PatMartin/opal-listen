@@ -64,7 +64,6 @@ def test_config_save_managed_writes_snapshot_and_keeps_revision(client: TestClie
         "wakewords",
         "intents",
         "slots",
-        "regression_tests",
     }
     assert managed_snapshot_path(app_settings.data_dir).exists()
     assert _revision(client) == before

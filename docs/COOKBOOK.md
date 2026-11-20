@@ -80,7 +80,7 @@ opal listen config setting set --name wakeword_distractors --value "commuter,com
 opal listen failed list
 ```
 
-### 5. Regression-test a folder of golden WAVs
+### 5. Batch-test a folder of golden WAVs
 
 `test audio` feeds a real 16-bit PCM file through wakeword detection, STT and
 intent matching end-to-end. `--require-wakeword` makes a file score as `no_match`
@@ -130,18 +130,20 @@ Only live-microphone matches fire. `test text`/`test audio` never do, so
 diagnostics can't trigger side effects. Repeats inside `dedup_window_ms` are
 suppressed as well.
 
-### 8. Put a regression gate in front of catalog edits
+### 8. Put a phrase gate in front of catalog edits
 
-Pin the phrases that matter as named regression tests (with expected slots),
-then make `test regression` a hard gate — it exits 1 on any failure, before and
+Keep the phrases that matter in a file and make `test text --expect-intent` a
+hard gate — it exits 1 when a phrase resolves to a different intent, before and
 after every vocabulary change.
 
 ```bash
-opal listen regression add lights_kitchen "turn on the kitchen light" \
-  --expect-intent light_turn_on --slot room_name=kitchen
-opal listen regression add lights_den "turn on the den light" \
-  --expect-intent light_turn_on --slot room_name=office
-opal listen test regression
+while IFS='|' read -r phrase intent; do
+  opal listen test text "$phrase" --expect-intent "$intent" --no-save
+done <<'EOF'
+turn on the kitchen light|light_turn_on
+turn on the den light|light_turn_on
+order a pizza|no_match
+EOF
 ```
 
 ### 9. Wire the service into CI, systemd and Kubernetes
@@ -185,7 +187,7 @@ opal listen config load --in ./before-surgery.json --yes
 ### 12. Keep your whole voice model in git
 
 `config save --out` writes one JSON snapshot envelope (wakewords, intents, slots,
-profiles, personas, regression tests, settings) as reviewable source. Validate
+profiles, personas, settings) as reviewable source. Validate
 offline, then load — which validates again and applies atomically.
 
 ```bash
@@ -229,16 +231,14 @@ opal listen profile activate default
 ### 15. Turn "it didn't understand me" into training data
 
 Users report misses; you log them, review, and `failed promote` writes the
-corrected transcript into the right intent *and* creates a regression test —
-so it can never silently break again.
+corrected transcript into the right intent as a generalized training phrase.
 
 ```bash
 opal listen failed add "light on in the kitchen" --expected-intent light_turn_on \
   --notes "field report: quiet voice at distance"
 opal listen failed list --unreviewed
-opal listen failed promote 7 --intent light_turn_on --regression
+opal listen failed promote 7 --intent light_turn_on
 # -> promoted as 'light on in the {room_name}' (slot values are generalized)
-opal listen test regression
 ```
 
 ### 16. Mine the recognition history for what people really say

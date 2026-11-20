@@ -222,7 +222,7 @@ written and can be read back. Validation checks configuration, not microphone
 availability or successful model loading.
 
 Snapshots contain desired settings overrides, profiles, personas, wakewords,
-intents, slots and regression tests. They exclude secrets, audio/models,
+intents and slots. They exclude secrets, audio/models,
 recognition history and the separate reactions file. Without `--out`, `config
 save` replaces the server's single managed snapshot in the data directory,
 `managed_config_snapshot.json`; it is not a full database backup.
@@ -252,18 +252,14 @@ can report a conflict. Restore the initial snapshot before repeating the guide.
 Purpose: catch future vocabulary changes that break an intent or its slots.
 
 ```bash
-opal listen regression add quickstart_kitchen "turn on the kitchen light" \
-  --expect-intent light_turn_on --slot room_name=kitchen
-opal listen regression add quickstart_timer "set a timer for five minutes" \
-  --expect-intent timer_set --slot duration_minutes=5
-opal listen test regression
-opal listen regression list
+opal listen test text "computer, turn on the kitchen light" --expect-intent light_turn_on --no-save
+opal listen test text "computer, set a timer for five minutes" --expect-intent timer_set --no-save
+opal listen test text "order a pizza" --expect-intent no_match --no-save
 ```
 
-On a fresh installation, expect `2/2 passed`, exit status 0, and successful
-`last_result` values in the list. Existing installations may have additional
-tests. A failing regression run exits 1. These are text regression tests, not WAV
-or microphone tests.
+Each command prints `MATCH` and exits 0; `--expect-intent` exits 1 when the text
+resolves to a different intent, so the same checks can guard a script. These are
+text tests, not WAV or microphone tests.
 
 ### 4. Change a setting and select an environment profile
 
@@ -302,18 +298,16 @@ replace a database that has already been seeded; use the CLI for ongoing edits.
 
 Purpose: undo the additions above without deleting recognition history.
 
-**This replaces the current desired configuration**, including regression tests.
+**This replaces the current desired configuration**.
 Only run it against the installation you used for these examples:
 
 ```bash
 opal listen config load --in ./quickstart-before.json --yes
 opal listen intent list
-opal listen regression list
 opal listen config validate
 ```
 
-Verify `quickstart_music` and the two newly added regression tests are gone, and
-configuration is valid. The slot alias and setting/profile changes are restored
+Verify `quickstart_music` is gone and configuration is valid. The slot alias and setting/profile changes are restored
 too. Omitting `--yes` prompts for confirmation. A snapshot is specific to its
 module/format; an arbitrary YAML seed file is not a snapshot.
 
@@ -512,7 +506,7 @@ opal listen service perf summary
 ```
 
 The tree is generated from the installed CLI. Failed-utterance review supports
-manual records and promotion to phrases/regression cases. Text `no_match`
+manual records and promotion to phrases. Text `no_match`
 diagnostics are **not** automatically added to the failed-utterance queue;
 audio/live failures can be. Personas provide optional local identity metadata
 and do not require another module for local CRUD.
@@ -576,7 +570,7 @@ assume managed stop controls an untracked foreground server.
 
 ## Validation scope
 
-The source install, text/catalog/profile/snapshot/regression workflows, positive
+The source install, text/catalog/profile/snapshot workflows, positive
 and negative Vosk WAV tests, and managed/foreground service lifecycles were
 exercised on Linux with Python 3.12. Microphone capture was not opened on the
 shared validation host; faster-whisper installation/inference was not run.
