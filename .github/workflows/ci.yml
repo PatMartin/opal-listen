@@ -29,7 +29,17 @@ jobs:
       # No microphone hardware or Vosk model required; model-dependent tests are
       # excluded by marker rather than skipped silently (see the 'model' job).
       - name: Unit/API/contract/fake-provider tests
-        run: uv run pytest -m "not vosk" -q
+        run: |
+          uv run pytest -m "not vosk" -q \
+            --cov=opal_listener --cov-branch \
+            --cov-report=term-missing --cov-report=xml --cov-report=html
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-py${{ matrix.python }}
+          path: htmlcov/
+          if-no-files-found: ignore
 
   model:
     # Optional job for tests that need a Vosk model on disk

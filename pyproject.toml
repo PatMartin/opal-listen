@@ -66,6 +66,7 @@ addopts = "-ra"
 [tool.coverage.run]
 source = ["opal_listener"]
 omit = ["opal_listener/tests/*"]
+branch = true
 
 [tool.coverage.report]
 show_missing = true

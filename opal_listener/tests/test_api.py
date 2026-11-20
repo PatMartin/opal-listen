@@ -616,3 +616,37 @@ def test_pipeline_start_stop_idempotent(client: TestClient, fake_provider: type)
     status = client.get("/api/v1/recognition/status").json()
     assert status["running"] is False
     assert status["provider"] == "fake"
+
+
+def test_health_probes(client: TestClient, monkeypatch) -> None:
+    import opal_listener.view.api.health as health_api
+    from opal_listener.service.health import run_health_checks
+
+    live = client.get("/api/v1/health/live")
+    assert live.status_code == 200
+    assert live.json()["status"] == "ok" and live.json()["ready"] is True
+
+    ready = client.get("/api/v1/health/ready")
+    assert ready.status_code in (200, 503)
+    assert ready.json()["ready"] == (ready.status_code == 200)
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    monkeypatch.setattr(service.db, "ping", lambda: (_ for _ in ()).throw(RuntimeError("db gone")))
+    down = client.get("/api/v1/health/live")
+    assert down.status_code == 503
+    assert down.json()["status"] == "unavailable" and "db gone" in down.json()["details"]["error"]
+    monkeypatch.undo()
+
+    baseline = run_health_checks(service)
+    degraded = baseline.model_copy(update={"status": "degraded"})
+    monkeypatch.setattr(health_api, "run_health_checks", lambda svc: degraded)
+    resp = client.get("/api/v1/health/ready")
+    assert resp.status_code == 200 and resp.json()["status"] == "degraded"
+
+    failed = baseline.model_copy(
+        update={"status": "error", "details": {"checks": [{"name": "x", "status": "error", "detail": "boom"}]}}
+    )
+    monkeypatch.setattr(health_api, "run_health_checks", lambda svc: failed)
+    resp = client.get("/api/v1/health/ready")
+    assert resp.status_code == 503 and resp.json()["ready"] is False
+    assert resp.json()["details"]["failures"] == ["boom"]

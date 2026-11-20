@@ -54,3 +54,25 @@ synthesized WAV. Requires `../opal-event` and `../opal-say` checkouts with worki
 
 Note: opal-event's ingest route is `POST /api/v1/event/` (singular) — see
 `service/http_events.py`.
+
+## Coverage
+
+Branch-inclusive coverage is measured with:
+
+```bash
+OPAL_NO_DOTENV=1 python -m pytest opal_listener/tests --cov=opal_listener --cov-branch \
+  --cov-report=term-missing --cov-report=html -q
+```
+
+CI uploads an `htmlcov` artifact per Python version (visibility only — no `fail_under` yet).
+
+Baseline (v0.2.0, ~550 tests): **~84% statements+branches overall**.
+By area: API handlers ~95%, config mgmt ~95%, event publishing ~88%, recognition
+pipeline ~88%, CLI ~80%, lifecycle/capture ~55%, providers ~50%
+(`vosk_provider`/`whisper_refiner` need the model/extra dep — largely untestable
+without them; `dotenv.py` is excluded by design when `OPAL_NO_DOTENV=1`).
+
+Recommended minimums once thresholds are enabled: **80% overall**, with
+`view/api/*` and `service/` business logic ≥85%, allowing environment-dependent
+files (`capture.py`, `vosk_provider.py`, `whisper_refiner.py`, `dotenv.py`,
+`lifecycle.py` process-spawn paths) to sit lower until integration fixtures exist.
