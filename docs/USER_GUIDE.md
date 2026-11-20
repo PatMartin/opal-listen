@@ -2051,9 +2051,13 @@ opal listen intent remove play_music
 | `add NAME [--type list\|number\|text] [--description D] [--value V]...` | Add a slot, optionally with values |
 | `update NAME\|ID [--name] [--type] [--description]` | Update |
 | `remove NAME\|ID` | Remove (fails while phrases use it) |
-| `values SLOT` | List values with aliases |
-| `add-value SLOT VALUE [--alias A]...` | Add a value, optionally with aliases |
-| `remove-value SLOT VALUE\|ID` | Remove a value |
+`opal listen slot value` manages canonical values; aliases stay on `slot`:
+
+| Command | Description |
+|---|---|
+| `value list SLOT` | List values with aliases |
+| `value add SLOT VALUE [--alias A]...` | Add a value, optionally with aliases |
+| `value remove SLOT VALUE\|ID` | Remove a value |
 | `aliases SLOT VALUE` | List aliases of a value |
 | `add-alias SLOT VALUE ALIAS` | Add an alias |
 | `remove-alias SLOT VALUE ALIAS\|ID` | Remove an alias |
@@ -2061,12 +2065,12 @@ opal listen intent remove play_music
 ```bash
 opal listen slot list
 opal listen slot add color --description "Bulb colors" --value red --value blue --value warm_white
-opal listen slot add-value color green --alias lime --alias emerald
+opal listen slot value add color green --alias lime --alias emerald
 opal listen slot add-alias color red crimson
-opal listen slot values color
+opal listen slot value list color
 opal listen slot aliases color red
 opal listen slot remove-alias color red crimson
-opal listen slot remove-value color green
+opal listen slot value remove color green
 opal listen slot add brightness --type number --description "Percent"
 opal listen slot update brightness --description "Brightness 0-100"
 ```
@@ -2803,9 +2807,9 @@ Every REST operation maps to one CLI command (enforced by tests via `OPERATION_C
 | GET | `/api/v1/slot/{slot_id}` | `show_slot` | `slot show` | Slots |
 | PATCH | `/api/v1/slot/{slot_id}` | `update_slot` | `slot update` | Slots |
 | DELETE | `/api/v1/slot/{slot_id}` | `remove_slot` | `slot remove` | Slots |
-| GET | `/api/v1/slot/{slot_id}/value` | `list_slot_values` | `slot values` | Slots |
-| POST | `/api/v1/slot/{slot_id}/value` | `add_slot_value` | `slot add-value` | Slots |
-| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}` | `remove_slot_value` | `slot remove-value` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value` | `list_slot_values` | `slot value list` | Slots |
+| POST | `/api/v1/slot/{slot_id}/value` | `add_slot_value` | `slot value add` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}` | `remove_slot_value` | `slot value remove` | Slots |
 | GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `list_aliases` | `slot aliases` | Slots |
 | POST | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `add_alias` | `slot add-alias` | Slots |
 | DELETE | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `remove_alias` | `slot remove-alias` | Slots |

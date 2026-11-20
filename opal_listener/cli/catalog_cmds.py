@@ -22,6 +22,8 @@ wakewords_app = typer.Typer(help="Manage wakewords.", no_args_is_help=True)
 intents_app = typer.Typer(help="Manage intents and training phrases.", no_args_is_help=True)
 phrases_app = typer.Typer(help="Manage intent training phrases.", no_args_is_help=True)
 slots_app = typer.Typer(help="Manage slots, slot values and aliases.", no_args_is_help=True)
+slot_values_app = typer.Typer(help="Manage slot values.", no_args_is_help=True)
+slots_app.add_typer(slot_values_app, name="value")
 profiles_app = typer.Typer(help="Manage recognition profiles.", no_args_is_help=True)
 
 
@@ -288,8 +290,8 @@ def slots_remove(ctx: typer.Context, slot: str = typer.Argument(..., help="Name 
     done(ctx, f"slot '{item['name']}' removed")
 
 
-@slots_app.command("values")
-def slots_values(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
+@slot_values_app.command("list")
+def slot_values_list(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
     """List the values of a slot with aliases."""
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
@@ -299,8 +301,8 @@ def slots_values(ctx: typer.Context, slot: str = typer.Argument(..., help="Name 
     render(ctx, values, ("id", "value", "aliases"), f"{item['name']} values")
 
 
-@slots_app.command("add-value")
-def slots_add_value(
+@slot_values_app.command("add")
+def slot_values_add(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Canonical value"),
@@ -315,8 +317,8 @@ def slots_add_value(
     done(ctx, f"value '{created['value']}' added to '{item['name']}'", created)
 
 
-@slots_app.command("remove-value")
-def slots_remove_value(
+@slot_values_app.command("remove")
+def slot_values_remove(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Value or value id"),

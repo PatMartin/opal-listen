@@ -45,11 +45,11 @@ opal listen slot show test_slot
 #opal listen slot update --help
 opal listen slot update test_slot --description "Updated test slot"
 opal listen slot show test_slot
-#opal listen slot values --help
-opal listen slot values test_slot
-#opal listen slot add-value --help
-opal listen slot add-value test_slot green --alias emerald
-opal listen slot values test_slot
+#opal listen slot value list --help
+opal listen slot value list test_slot
+#opal listen slot value add --help
+opal listen slot value add test_slot green --alias emerald
+opal listen slot value list test_slot
 #opal listen slot aliases --help
 opal listen slot aliases test_slot green
 #opal listen slot add-alias --help
@@ -58,9 +58,9 @@ opal listen slot aliases test_slot blue
 #opal listen slot remove-alias --help
 opal listen slot remove-alias test_slot blue azure
 opal listen slot aliases test_slot blue
-#opal listen slot remove-value --help
-opal listen slot remove-value test_slot red
-opal listen slot values test_slot
+#opal listen slot value remove --help
+opal listen slot value remove test_slot red
+opal listen slot value list test_slot
 
 echo "Testing INTENTS..."
 #opal listen intent --help

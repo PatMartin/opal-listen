@@ -277,8 +277,8 @@ opal
     ├── wakeword    list | show | add | update | remove
     ├── intent      list | show | add | update | remove
     ├── phrase      list | add | remove
-    ├── slot        list | show | add | update | remove
-    │               values | add-value | remove-value | aliases | add-alias | remove-alias
+    ├── slot        list | show | add | update | remove | aliases | add-alias | remove-alias
+    │               └── value   list | add | remove
     ├── profile     list | show | add | update | activate | remove
     ├── persona     list | show | add | update | remove | validate
     ├── test        text | audio | listen | reaction
@@ -481,13 +481,15 @@ spoken as spaces.
 | `--value V` | | Initial value (repeatable, `add` only) |
 | `--name N` | | Rename (on `update` only) |
 
-### Value and alias commands
+### `slot value`: values and aliases
+
+`opal listen slot value` manages a slot's canonical values; aliases stay on `slot`:
 
 | Command | Description |
 |---|---|
-| `values SLOT` | List values with their aliases |
-| `add-value SLOT VALUE [--alias A]...` | Add a canonical value, optionally with aliases |
-| `remove-value SLOT VALUE` | Remove a value (by text or id) and its aliases |
+| `value list SLOT` | List values with their aliases |
+| `value add SLOT VALUE [--alias A]...` | Add a canonical value, optionally with aliases |
+| `value remove SLOT VALUE` | Remove a value (by text or id) and its aliases |
 | `aliases SLOT VALUE` | List the aliases of one value |
 | `add-alias SLOT VALUE ALIAS` | Add an alias to a value |
 | `remove-alias SLOT VALUE ALIAS` | Remove an alias (by text or id) |
@@ -523,16 +525,16 @@ opal listen slot remove test_slot
 
 ```bash
 # List the values of a slot (columns: id, value, aliases)
-opal listen slot values room_name
+opal listen slot value list room_name
 
 # Add a value
-opal listen slot add-value test_slot 42
+opal listen slot value add test_slot 42
 
 # Add a value together with aliases
-opal listen slot add-value color green --alias lime --alias emerald
+opal listen slot value add color green --alias lime --alias emerald
 
 # Remove a value by text (its aliases are removed too)
-opal listen slot remove-value test_slot 42
+opal listen slot value remove test_slot 42
 
 # List the aliases of one value
 opal listen slot aliases room_name living_room
@@ -1307,9 +1309,9 @@ opal listen phrase list test_intent                        # one phrase left
 # --- slots, values and aliases ------------------------------------------------------------
 opal listen slot add test_slot --description "Test slot"
 opal listen slot update test_slot --description "Updated test slot"
-opal listen slot add-value test_slot 42
-opal listen slot values test_slot
-opal listen slot remove-value test_slot 42
+opal listen slot value add test_slot 42
+opal listen slot value list test_slot
+opal listen slot value remove test_slot 42
 opal listen slot aliases room_name living_room
 opal listen slot add-alias room_name living_room martin_hall
 opal listen slot aliases room_name living_room                # now includes martin_hall
@@ -1473,7 +1475,7 @@ opal listen config load --in ./opal-config/snapshot.json --yes
 ```bash
 # Add many values to a slot
 for room in attic basement porch; do
-  opal listen slot add-value room_name "$room"
+  opal listen slot value add room_name "$room"
 done
 
 # Add a phrase file line by line
@@ -1540,9 +1542,9 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `slot show` | `GET /api/v1/slot/{id}` |
 | `slot update` | `PATCH /api/v1/slot/{id}` (If-Match) |
 | `slot remove` | `DELETE /api/v1/slot/{id}` (If-Match) |
-| `slot values` | `GET /api/v1/slot/{id}/value` |
-| `slot add-value` | `POST /api/v1/slot/{id}/value` (+ `POST .../alias` per `--alias`) |
-| `slot remove-value` | `DELETE /api/v1/slot/{id}/value/{value_id}` (If-Match) |
+| `slot value list` | `GET /api/v1/slot/{id}/value` |
+| `slot value add` | `POST /api/v1/slot/{id}/value` (+ `POST .../alias` per `--alias`) |
+| `slot value remove` | `DELETE /api/v1/slot/{id}/value/{value_id}` (If-Match) |
 | `slot aliases` | `GET /api/v1/slot/{id}/value/{value_id}/alias` |
 | `slot add-alias` | `POST /api/v1/slot/{id}/value/{value_id}/alias` |
 | `slot remove-alias` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |

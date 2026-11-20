@@ -47,7 +47,7 @@ seeded `light_turn_on` intent already uses `{room_name}` — teach it a new
 nickname and the slot comes back canonical.
 
 ```bash
-opal listen slot values room_name
+opal listen slot value list room_name
 opal listen slot add-alias room_name office "the den"
 opal listen test text "computer, turn on the den light" --expect-intent light_turn_on --verbose
 # -> "slot_values": {"room_name": "office"}

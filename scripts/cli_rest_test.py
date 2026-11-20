@@ -31,7 +31,7 @@ WHAT IS VERIFIED (per group)
     health      service health (/api/v1/health/), live/ready probes via direct REST (no CLI commands)
     settings    list, set, show, remove (valid value, rejected invalid value and unknown key, restored)
     wakewords   add, list, show, update (threshold/disabled)
-    slots       add with value, add-value with alias, add-alias, list, set, values, aliases, update
+    slots       add with value, value add with alias, add-alias, list, set, values, aliases, update
     intents     add with phrase, list, show, update; phrases via `phrase add` (+ invalid phrase
                 rejected), `phrase list`, `phrase remove`; text recognition with the new slot alias
     profiles    list, add (thresholds/VAD/filters), show, update, activate (recognition uses it),
@@ -441,9 +441,9 @@ def _slot_add(t: CliRestTest) -> str:
     return f"created '{t.slot}' with value 'red'"
 
 
-@step("slot add-value", "add_slot_value", "add_alias", requires=("slot add",))
+@step("slot value add", "add_slot_value", "add_alias", requires=("slot add",))
 def _slot_add_value(t: CliRestTest) -> str:
-    created = t.ok("slot", "add-value", t.slot, "blue", "--alias", "navy")
+    created = t.ok("slot", "value", "add", t.slot, "blue", "--alias", "navy")
     expect(created["value"] == "blue", f"unexpected value {created}")
     return "value 'blue' with alias 'navy'"
 
@@ -462,7 +462,7 @@ def _slot_list(t: CliRestTest) -> str:
     return f"{len(names)} slot(s)"
 
 
-@step("slot show", "show_slot", requires=("slot add-value", "slot add-alias"))
+@step("slot show", "show_slot", requires=("slot value add", "slot add-alias"))
 def _slot_get(t: CliRestTest) -> str:
     slot = t.ok("slot", "show", t.slot)
     values = {v["value"]: sorted(a["alias"] for a in v["aliases"]) for v in slot["values"]}
@@ -470,9 +470,9 @@ def _slot_get(t: CliRestTest) -> str:
     return f"values {values}"
 
 
-@step("slot values", "list_slot_values", requires=("slot add-value",))
+@step("slot value list", "list_slot_values", requires=("slot value add",))
 def _slot_values(t: CliRestTest) -> str:
-    values = [v["value"] for v in t.ok("slot", "values", t.slot)]
+    values = [v["value"] for v in t.ok("slot", "value", "list", t.slot)]
     expect(values == ["red", "blue"], f"unexpected values {values}")
     return "red, blue"
 
@@ -733,10 +733,10 @@ def _slot_remove_alias(t: CliRestTest) -> str:
     return "crimson removed"
 
 
-@step("slot remove-value", "remove_slot_value", requires=("slot add-value",))
+@step("slot value remove", "remove_slot_value", requires=("slot value add",))
 def _slot_remove_value(t: CliRestTest) -> str:
-    t.ok("slot", "remove-value", t.slot, "blue")
-    values = [v["value"] for v in t.ok("slot", "values", t.slot)]
+    t.ok("slot", "value", "remove", t.slot, "blue")
+    values = [v["value"] for v in t.ok("slot", "value", "list", t.slot)]
     expect(values == ["red"], f"unexpected values {values}")
     return "blue removed"
 

@@ -209,7 +209,7 @@ Purpose: discover the seeded catalog and create a rollback point before editing.
 ```bash
 opal listen wakeword list
 opal listen intent list
-opal listen slot values room_name
+opal listen slot value list room_name
 opal listen profile list
 opal listen config validate
 opal listen config save --out ./quickstart-before.json
