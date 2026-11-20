@@ -20,6 +20,7 @@ SETTINGS = "/api/v1/setting/"
 
 wakewords_app = typer.Typer(help="Manage wakewords.", no_args_is_help=True)
 intents_app = typer.Typer(help="Manage intents and training phrases.", no_args_is_help=True)
+phrases_app = typer.Typer(help="Manage intent training phrases.", no_args_is_help=True)
 slots_app = typer.Typer(help="Manage slots, slot values and aliases.", no_args_is_help=True)
 profiles_app = typer.Typer(help="Manage recognition profiles.", no_args_is_help=True)
 
@@ -171,8 +172,8 @@ def intents_remove(ctx: typer.Context, intent: str = typer.Argument(..., help="N
     done(ctx, f"intent '{item['name']}' removed")
 
 
-@intents_app.command("phrases")
-def intents_phrases(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
+@phrases_app.command("list")
+def phrases_list(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
     """List training phrases of an intent."""
     api = state(ctx).api
     item = api.resolve(INTENTS, intent)
@@ -184,8 +185,8 @@ def intents_phrases(ctx: typer.Context, intent: str = typer.Argument(..., help="
     )
 
 
-@intents_app.command("add-phrase")
-def intents_add_phrase(
+@phrases_app.command("add")
+def phrases_add(
     ctx: typer.Context,
     intent: str = typer.Argument(..., help="Name or id"),
     phrase: str = typer.Argument(..., help="e.g. 'turn on [the] {room_name} light'"),
@@ -197,8 +198,8 @@ def intents_add_phrase(
     done(ctx, f"phrase added to '{item['name']}' (id {created['id']})", created)
 
 
-@intents_app.command("remove-phrase")
-def intents_remove_phrase(
+@phrases_app.command("remove")
+def phrases_remove(
     ctx: typer.Context,
     intent: str = typer.Argument(..., help="Name or id"),
     phrase: str = typer.Argument(..., help="Phrase id or exact text"),

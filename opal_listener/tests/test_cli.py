@@ -34,7 +34,7 @@ def command_paths() -> set[str]:
 
 REQUIRED_COMMANDS = {
     "wakeword list", "wakeword add", "wakeword remove",
-    "intent list", "intent add", "intent remove", "intent add-phrase",
+    "intent list", "intent add", "intent remove", "phrase list", "phrase add", "phrase remove",
     "slot list", "slot add", "slot add-value", "slot add-alias",
     "profile list", "profile add",
     "config setting list", "config setting show", "config setting set", "config setting remove",
@@ -72,12 +72,12 @@ def test_wakewords_commands(cli: CliHarness) -> None:
 def test_intents_commands(cli: CliHarness) -> None:
     result = cli("intent", "add", "music_play", "--phrase", "play music", "--description", "Music")
     assert result.exit_code == 0, result.output
-    assert cli("intent", "add-phrase", "music_play", "play (some | the) music").exit_code == 0
-    assert len(cli.json("intent", "phrases", "music_play")) == 2
+    assert cli("phrase", "add", "music_play", "play (some | the) music").exit_code == 0
+    assert len(cli.json("phrase", "list", "music_play")) == 2
     assert cli.json("intent", "show", "music_play")["description"] == "Music"
-    assert cli("intent", "remove-phrase", "music_play", "play music").exit_code == 0
+    assert cli("phrase", "remove", "music_play", "play music").exit_code == 0
     assert cli("intent", "update", "music_play", "--threshold", "0.9").exit_code == 0
-    bad = cli("intent", "add-phrase", "music_play", "play {ghost}")
+    bad = cli("phrase", "add", "music_play", "play {ghost}")
     assert bad.exit_code == 1 and "unknown slot" in bad.output
     assert cli("intent", "remove", "music_play").exit_code == 0
     assert "light_turn_on" in cli("intent", "list").output

@@ -235,7 +235,7 @@ value, without acoustic training.
 ```bash
 opal listen intent add quickstart_music \
   --description "Quickstart music request" --phrase "play some music"
-opal listen intent phrases quickstart_music
+opal listen phrase list quickstart_music
 opal listen test text "computer, play some music" --expect-intent quickstart_music
 opal listen slot add-alias room_name office "the den"
 opal listen test text "computer, turn on the den light" \

@@ -169,8 +169,8 @@ Child items can also be referenced by their text:
 | Alias | Alias id or alias text |
 
 ```bash
-opal listen intent remove-phrase test_intent "Test intent one"   # by exact text
-opal listen intent remove-phrase test_intent 57                  # by phrase id
+opal listen phrase remove test_intent "Test intent one"   # by exact text
+opal listen phrase remove test_intent 57                  # by phrase id
 opal listen slot remove-alias room_name living_room lounge       # value and alias by text
 ```
 
@@ -219,7 +219,7 @@ interprets (`[`, `]`, `(`, `)`, `|`, `{`, `}`):
 
 ```bash
 opal listen wakeword add "hey opal"
-opal listen intent add-phrase light_turn_on "turn on [the] {room_name} (light | lights)"
+opal listen phrase add light_turn_on "turn on [the] {room_name} (light | lights)"
 ```
 
 ### Confirmation prompts
@@ -275,7 +275,8 @@ opal
     ├── tree [--ascii]
     ├── gui
     ├── wakeword    list | show | add | update | remove
-    ├── intent      list | show | add | update | remove | phrases | add-phrase | remove-phrase
+    ├── intent      list | show | add | update | remove
+    ├── phrase      list | add | remove
     ├── slot        list | show | add | update | remove
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
     ├── profile     list | show | add | update | activate | remove
@@ -357,9 +358,14 @@ phrases**, which are templates the recognizer matches against the transcript.
 | `add NAME [--description D] [--threshold F] [--enabled/--disabled] [--phrase P]...` | Add an intent, optionally with phrases |
 | `update INTENT [--name N] [--description D] [--threshold F] [--enabled/--disabled]` | Change an intent |
 | `remove INTENT` | Delete an intent **and all its phrases** |
-| `phrases INTENT` | List the phrases of an intent |
-| `add-phrase INTENT PHRASE` | Add one phrase |
-| `remove-phrase INTENT PHRASE` | Remove a phrase by id or exact text |
+
+`opal listen phrase` manages an intent's training phrases:
+
+| Command | Description |
+|---|---|
+| `list INTENT` | List the phrases of an intent |
+| `add INTENT PHRASE` | Add one phrase |
+| `remove INTENT PHRASE` | Remove a phrase by id or exact text |
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -424,16 +430,16 @@ opal listen intent update play_music --name music_play
 
 ```bash
 # List phrases (columns: id, phrase, created_at)
-opal listen intent phrases test_intent
+opal listen phrase list test_intent
 
 # Add a phrase. Always quote it.
-opal listen intent add-phrase light_turn_on "illuminate [the] {room_name}"
+opal listen phrase add light_turn_on "illuminate [the] {room_name}"
 
 # Remove a phrase by its exact text...
-opal listen intent remove-phrase test_intent "Test intent one"
+opal listen phrase remove test_intent "Test intent one"
 
-# ...or by its id, as shown by 'intents phrases'
-opal listen intent remove-phrase test_intent 57
+# ...or by its id, as shown by 'phrase list'
+opal listen phrase remove test_intent 57
 
 # Delete the whole intent, including its phrases
 opal listen intent remove test_intent
@@ -1294,9 +1300,9 @@ opal listen intent add test_intent \
   --phrase "Test intent one" --phrase "Test intent two" \
   --description "This is a test intent"
 opal listen intent update test_intent --description "Updated description"
-opal listen intent phrases test_intent
-opal listen intent remove-phrase test_intent "Test intent one"
-opal listen intent phrases test_intent                        # one phrase left
+opal listen phrase list test_intent
+opal listen phrase remove test_intent "Test intent one"
+opal listen phrase list test_intent                        # one phrase left
 
 # --- slots, values and aliases ------------------------------------------------------------
 opal listen slot add test_slot --description "Test slot"
@@ -1376,7 +1382,7 @@ opal listen service perf summary
 opal listen failed list --unreviewed
 
 # 3. Teach real commands that should have matched
-opal listen intent add-phrase light_turn_on "turn on the {room_name} light"
+opal listen phrase add light_turn_on "turn on the {room_name} light"
 
 # 4. Mark noise as reviewed so it doesn't show up again
 opal listen failed update 13 --reviewed --notes "background TV"
@@ -1472,7 +1478,7 @@ done
 
 # Add a phrase file line by line
 while IFS= read -r phrase; do
-  opal listen intent add-phrase light_turn_on "$phrase"
+  opal listen phrase add light_turn_on "$phrase"
 done < phrases.txt
 
 # Disable all intents whose name starts with "wip_"
@@ -1526,9 +1532,9 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `intent show` | `GET /api/v1/intent/{id}` |
 | `intent update` | `PATCH /api/v1/intent/{id}` (If-Match) |
 | `intent remove` | `DELETE /api/v1/intent/{id}` (If-Match) |
-| `intent phrases` | `GET /api/v1/intent/{id}/phrase` |
-| `intent add-phrase` | `POST /api/v1/intent/{id}/phrase` |
-| `intent remove-phrase` | `DELETE /api/v1/intent/{id}/phrase/{phrase_id}` (If-Match) |
+| `phrase list` | `GET /api/v1/intent/{id}/phrase` |
+| `phrase add` | `POST /api/v1/intent/{id}/phrase` |
+| `phrase remove` | `DELETE /api/v1/intent/{id}/phrase/{phrase_id}` (If-Match) |
 | `slot list` | `GET /api/v1/slot/` |
 | `slot add` | `POST /api/v1/slot/` (+ `POST .../value` per `--value`) |
 | `slot show` | `GET /api/v1/slot/{id}` |

@@ -239,7 +239,7 @@ into the right intent as a training phrase.
 opal listen failed add "light on in the kitchen" --expected-intent light_turn_on \
   --notes "field report: quiet voice at distance"
 opal listen failed list --unreviewed
-opal listen intent add-phrase light_turn_on "light on in the {room_name}"
+opal listen phrase add light_turn_on "light on in the {room_name}"
 ```
 
 ### 16. Mine the recognition history for what people really say

@@ -2014,9 +2014,13 @@ opal listen wakeword remove "hey opal"
 | `add NAME [--description D] [--threshold F] [--enabled/--disabled] [--phrase P]...` | Add an intent, optionally with phrases |
 | `update NAME\|ID [--name] [--description] [--threshold] [--enabled/--disabled]` | Update |
 | `remove NAME\|ID` | Remove the intent and its phrases |
-| `phrases NAME\|ID` | List phrases |
-| `add-phrase NAME\|ID PHRASE` | Add a phrase |
-| `remove-phrase NAME\|ID PHRASE_ID\|TEXT` | Remove a phrase by id or exact text |
+`opal listen phrase` manages the training phrases of an intent:
+
+| Command | Description |
+|---|---|
+| `list NAME\|ID` | List phrases |
+| `add NAME\|ID PHRASE` | Add a phrase |
+| `remove NAME\|ID PHRASE_ID\|TEXT` | Remove a phrase by id or exact text |
 
 ```bash
 opal listen intent list
@@ -2028,9 +2032,9 @@ opal listen intent add play_music \
   --phrase "play [some] music" \
   --phrase "(start | put on) [some] music"
 
-opal listen intent add-phrase light_turn_on "illuminate [the] {room_name}"
-opal listen intent phrases light_turn_on
-opal listen intent remove-phrase light_turn_on "illuminate [the] {room_name}"
+opal listen phrase add light_turn_on "illuminate [the] {room_name}"
+opal listen phrase list light_turn_on
+opal listen phrase remove light_turn_on "illuminate [the] {room_name}"
 opal listen intent update play_music --threshold 0.8 --description "Music on"
 opal listen intent update cancel --disabled
 opal listen intent remove play_music
@@ -2453,15 +2457,15 @@ flowchart LR
     A[Use it normally] --> B[no_match captured<br/>as failed utterance]
     B --> C[failed list --unreviewed]
     C --> D{Should it match?}
-    D -- yes --> E[intent add-phrase X "transcript"]
+    D -- yes --> E[phrase add X "transcript"]
     D -- no --> F[failed update ID --reviewed]
     E --> A
 ```
 
 ```bash
 opal listen failed list --unreviewed
-opal listen intent add-phrase timer_set "start a ten minute timer"
-opal listen intent add-phrase light_turn_off "lights off in the lounge"
+opal listen phrase add timer_set "start a ten minute timer"
+opal listen phrase add light_turn_off "lights off in the lounge"
 opal listen failed update 14 --reviewed --notes "background conversation"
 opal listen service perf summary
 ```
@@ -2763,9 +2767,9 @@ Every REST operation maps to one CLI command (enforced by tests via `OPERATION_C
 | GET | `/api/v1/intent/{intent_id}` | `show_intent` | `intent show` | Intents |
 | PATCH | `/api/v1/intent/{intent_id}` | `update_intent` | `intent update` | Intents |
 | DELETE | `/api/v1/intent/{intent_id}` | `remove_intent` | `intent remove` | Intents |
-| GET | `/api/v1/intent/{intent_id}/phrase` | `list_phrases` | `intent phrases` | Intents |
-| POST | `/api/v1/intent/{intent_id}/phrase` | `add_phrase` | `intent add-phrase` | Intents |
-| DELETE | `/api/v1/intent/{intent_id}/phrase/{phrase_id}` | `remove_phrase` | `intent remove-phrase` | Intents |
+| GET | `/api/v1/intent/{intent_id}/phrase` | `list_phrases` | `phrase list` | Intents |
+| POST | `/api/v1/intent/{intent_id}/phrase` | `add_phrase` | `phrase add` | Intents |
+| DELETE | `/api/v1/intent/{intent_id}/phrase/{phrase_id}` | `remove_phrase` | `phrase remove` | Intents |
 | GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |
 | GET | `/api/v1/performance/last` | `get_performance_last` | `service perf last` | Performance |
 | GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |

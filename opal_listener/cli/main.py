@@ -15,6 +15,7 @@ from opal_listener.cli import catalog_cmds
 from opal_listener.cli.catalog_cmds import (
     intents_app,
     personas_app,
+    phrases_app,
     profiles_app,
     slots_app,
     wakewords_app,
@@ -39,9 +40,9 @@ OPERATION_COMMANDS: dict[str, str] = {
     "show_intent": "intent show",
     "update_intent": "intent update",
     "remove_intent": "intent remove",
-    "list_phrases": "intent phrases",
-    "add_phrase": "intent add-phrase",
-    "remove_phrase": "intent remove-phrase",
+    "list_phrases": "phrase list",
+    "add_phrase": "phrase add",
+    "remove_phrase": "phrase remove",
     "list_slots": "slot list",
     "create_slot": "slot add",
     "show_slot": "slot show",
@@ -104,6 +105,7 @@ service_app.add_typer(perf_app, name="perf")
 for sub_app, name in (
     (wakewords_app, "wakeword"),
     (intents_app, "intent"),
+    (phrases_app, "phrase"),
     (slots_app, "slot"),
     (profiles_app, "profile"),
     (personas_app, "persona"),

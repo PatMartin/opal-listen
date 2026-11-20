@@ -77,14 +77,14 @@ opal listen intent update test_intent --description "Updated description"
 opal listen intent show test_intent
 
 echo "Testing INTENT PHRASES..."
-#opal listen intent phrases --help
-opal listen intent phrases test_intent
-#opal listen intent add-phrase --help
-opal listen intent add-phrase test_intent "Test intent three"
-opal listen intent phrases test_intent
-#opal listen intent remove-phrase --help
-opal listen intent remove-phrase test_intent "Test intent three"
-opal listen intent phrases test_intent
+#opal listen phrase list --help
+opal listen phrase list test_intent
+#opal listen phrase add --help
+opal listen phrase add test_intent "Test intent three"
+opal listen phrase list test_intent
+#opal listen phrase remove --help
+opal listen phrase remove test_intent "Test intent three"
+opal listen phrase list test_intent
 
 echo "Testing PROFILES..."
 #opal listen profile --help
@@ -203,8 +203,8 @@ opal listen failed show "$FU_ID"
 #opal listen failed update --help
 opal listen failed update "$FU_ID" --reviewed --expected-intent test_intent
 opal listen failed show "$FU_ID"
-opal listen intent add-phrase test_intent "tint the wall {test_slot}"
-opal listen intent phrases test_intent
+opal listen phrase add test_intent "tint the wall {test_slot}"
+opal listen phrase list test_intent
 opal listen test text "tint the wall blue" --expect-intent test_intent --no-save
 #opal listen failed remove --help
 opal listen failed remove "$FU_ID"
@@ -241,7 +241,7 @@ opal listen gui --print
 
 echo "Cleaning up..."
 # the added phrase and the intent must go before their slot can be removed
-opal listen intent remove-phrase test_intent "tint the wall {test_slot}"
+opal listen phrase remove test_intent "tint the wall {test_slot}"
 opal listen intent remove test_intent
 opal listen slot remove test_slot
 opal listen intent list

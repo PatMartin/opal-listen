@@ -8,7 +8,7 @@ WHAT IT DOES
 
         [PASS] 11 wakewords add            create_wakeword  POST /api/v1/wakeword/        0.41s
                created 'hey smoke qzkx' (id 2)
-        [FAIL] 26 intents add-phrase       add_phrase       POST /api/v1/intent/{...}     0.38s
+        [FAIL] 26 phrase add               add_phrase       POST /api/v1/intent/{...}     0.38s
                expected exit code 0, got 1: HTTP 422: ...
                $ python -m opal_listener.cli listen --api-url ... --json intents add-phrase ...
 
@@ -32,8 +32,8 @@ WHAT IS VERIFIED (per group)
     settings    list, set, show, remove (valid value, rejected invalid value and unknown key, restored)
     wakewords   add, list, show, update (threshold/disabled)
     slots       add with value, add-value with alias, add-alias, list, set, values, aliases, update
-    intents     add with phrase, list, show, add-phrase (+ invalid phrase rejected), phrases, update,
-                text recognition with the new slot alias, remove-phrase
+    intents     add with phrase, list, show, update; phrases via `phrase add` (+ invalid phrase
+                rejected), `phrase list`, `phrase remove`; text recognition with the new slot alias
     profiles    list, add (thresholds/VAD/filters), show, update, activate (recognition uses it),
                 re-activate the original profile, remove
     test        test audio (WAV through wakeword + STT + intent; skipped without a Vosk model),
@@ -512,17 +512,17 @@ def _intent_get(t: CliRestTest) -> str:
     return f"id {intent['id']}"
 
 
-@step("intent add-phrase", "add_phrase", requires=("intent add",))
-def _intent_add_phrase(t: CliRestTest) -> str:
-    created = t.ok("intent", "add-phrase", t.intent, f"color it {{{t.slot}}}")
+@step("phrase add", "add_phrase", requires=("intent add",))
+def _phrase_add(t: CliRestTest) -> str:
+    created = t.ok("phrase", "add", t.intent, f"color it {{{t.slot}}}")
     expect(created["phrase"] == f"color it {{{t.slot}}}", f"unexpected phrase {created}")
-    t.rejected("intent", "add-phrase", t.intent, "paint {ghost_slot}", contains="unknown slot")
+    t.rejected("phrase", "add", t.intent, "paint {ghost_slot}", contains="unknown slot")
     return "valid phrase added, phrase with unknown slot rejected (validate before apply)"
 
 
-@step("intent phrases", "list_phrases", requires=("intent add-phrase",))
+@step("phrase list", "list_phrases", requires=("phrase add",))
 def _intent_phrases(t: CliRestTest) -> str:
-    phrases = [p["phrase"] for p in t.ok("intent", "phrases", t.intent)]
+    phrases = [p["phrase"] for p in t.ok("phrase", "list", t.intent)]
     expect(len(phrases) == 2, f"expected 2 phrases, got {phrases}")
     return f"{len(phrases)} phrases"
 
@@ -541,10 +541,10 @@ def _test_text(t: CliRestTest) -> str:
     return f"'paint the wall crimson' -> {result['intent_name']} {result['slot_values']}"
 
 
-@step("intent remove-phrase", "remove_phrase", requires=("intent add-phrase",))
-def _intent_remove_phrase(t: CliRestTest) -> str:
-    t.ok("intent", "remove-phrase", t.intent, f"color it {{{t.slot}}}")
-    phrases = [p["phrase"] for p in t.ok("intent", "phrases", t.intent)]
+@step("phrase remove", "remove_phrase", requires=("phrase add",))
+def _phrase_remove(t: CliRestTest) -> str:
+    t.ok("phrase", "remove", t.intent, f"color it {{{t.slot}}}")
+    phrases = [p["phrase"] for p in t.ok("phrase", "list", t.intent)]
     expect(len(phrases) == 1, f"phrase not removed: {phrases}")
     return "1 phrase left"
 
