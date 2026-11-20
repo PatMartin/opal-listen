@@ -141,13 +141,13 @@ Start a managed background server:
 
 ```bash
 opal listen service start
-opal listen service live
+opal listen info health
 opal listen pipeline status
 ```
 
 The start result reports a PID and log location. If the service is still
-initializing, repeat `service live` after a few seconds. Liveness should return
-`status: ok`. The pipeline should show `running: false`: starting the service
+initializing, repeat `info health` after a few seconds. The health report should be
+`ok` (or `degraded`). The pipeline should show `running: false`: starting the service
 does **not** start the microphone by default.
 
 The managed process writes `logs/opal_listen.log` and `logs/opal_listen.pid`.
@@ -271,7 +271,7 @@ opal listen config setting show --name cooldown_ms
 opal listen config setting set --name cooldown_ms --value 800
 opal listen config setting show --name cooldown_ms
 opal listen profile activate kitchen
-opal listen --json profile get kitchen
+opal listen --json profile show kitchen
 opal listen test text "computer, turn on the kitchen light" \
   --expect-intent light_turn_on
 opal listen profile activate default
@@ -330,7 +330,6 @@ opal listen config setting set --name vosk_model_path \
 opal listen config setting set --name listener_provider --value vosk
 opal listen config setting show --name listener_provider
 opal listen info health
-opal listen service ready
 opal listen test audio \
   opal_listener/tests/audio/fixtures/golden_kitchen_light_on.wav \
   --require-wakeword --expect-intent light_turn_on
@@ -385,11 +384,11 @@ checked as stream data arrives, so Ctrl-C is the reliable manual stop.
 To select a device, use an index from your health report or an actual unique
 substring of its name as the `audio_device` setting value. Device indices are
 machine-specific; do not copy someone else's index. For capture problems, return
-to the system default and inspect the debug stream:
+to the system default and inspect the live stream's debug events:
 
 ```bash
 opal listen config setting set --name audio_device --value ""
-opal listen test listen --debug --duration 15
+curl -N "http://localhost:8000/api/v1/recognition/stream?debug=true"
 ```
 
 Expect audio-level/status events and, when speech is recognized, partial/final
@@ -450,7 +449,7 @@ and restart the managed service before selecting it:
 ```bash
 python -m pip install -e ".[whisper]"
 opal listen service start --append
-opal listen service live
+opal listen info health
 opal listen config setting set --name whisper_model --value tiny.en
 opal listen config setting set --name whisper_compute_type --value int8
 opal listen config setting set --name stt_refiner --value faster_whisper
@@ -477,14 +476,13 @@ OPAL Event. Before managing any, inspect their locations and current contents:
 ```bash
 opal listen reaction path
 opal listen reaction list
-opal listen reaction test --help
-opal listen event publish --help
+opal listen test reaction --help
 ```
 
 Reaction commands manage the **CLI machine's local** configuration file and
 execution journal, not a remote server's files. Reactions are outside configuration
 snapshots; protect that file separately. Ordinary diagnostic tests do not dispatch
-actions, but the explicit `reaction test --execute` operation **does execute
+actions, but the explicit `test reaction --execute` operation **does execute
 commands**. Inspect configured actions before using it.
 
 For external intent delivery, OPAL Event must be running and configured using
@@ -493,8 +491,7 @@ For external intent delivery, OPAL Event must be running and configured using
 `both` is rejected. These are startup environment settings, unlike stored
 recognition settings. The default `intent_dispatch=auto` uses the initially-off
 `event_publication_enabled` and `reactions_enabled` switches. Do not enable them
-until receivers/actions are ready. Manual `event publish` is a separate ZeroMQ
-utility, not a test of automatic HTTP event delivery.
+until receivers/actions are ready.
 
 Discover more supported operations without guessing commands:
 
@@ -527,7 +524,7 @@ To start it again:
 
 ```bash
 opal listen service start --append
-opal listen service live
+opal listen info health
 ```
 
 `service start` also **restarts an already managed server**; there is no separate

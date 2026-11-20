@@ -540,12 +540,6 @@ def test_failed_utterance_crud(client: TestClient) -> None:
     assert client.get("/api/v1/failed_utterance/", params={"reviewed": False}).json() == []
     bad_log = client.post("/api/v1/failed_utterance/", json={"transcript": "x", "recognition_log_id": "42"})
     assert bad_log.status_code == 404
-    bad_intent = client.post(
-        f"/api/v1/failed_utterance/{created['id']}/promote",
-        json={"intent_id": "nope"},
-        headers={"If-Match": '"precondition"'},
-    )
-    assert bad_intent.status_code == 404
     assert client.delete(f"/api/v1/failed_utterance/{created['id']}").status_code == 204
 
 

@@ -16,12 +16,6 @@ DEFAULT_API_URL = "http://localhost:8000"
 API_URL_ENV = "OPAL_LISTEN_API_URL"
 # Bearer credential sent to servers running with OPAL_LISTENER_API_TOKEN configured.
 API_TOKEN_ENV = "OPAL_LISTENER_API_TOKEN"
-# opal-event broker endpoints (see opal-event zeromq.publishers/subscribers): producers connect
-# PUB to the XSUB frontend on 5555, consumers connect SUB to the XPUB backend on 5556.
-DEFAULT_XPUB_URL = "tcp://127.0.0.1:5555"
-DEFAULT_XSUB_URL = "tcp://127.0.0.1:5556"
-XPUB_URL_ENV = "OPAL_EVENT_XPUB_URL"
-XSUB_URL_ENV = "OPAL_EVENT_XSUB_URL"
 
 # typer >= 0.27 vendors its own click; use whichever ClickException typer actually catches.
 _ClickException: type[Exception] = next(c for c in typer.BadParameter.__mro__ if c.__name__ == "ClickException")
@@ -207,9 +201,3 @@ def api_url_from_env() -> str:
     return os.environ.get(API_URL_ENV, DEFAULT_API_URL)
 
 
-def xpub_url_from_env() -> str:
-    return os.environ.get(XPUB_URL_ENV, DEFAULT_XPUB_URL)
-
-
-def xsub_url_from_env() -> str:
-    return os.environ.get(XSUB_URL_ENV, DEFAULT_XSUB_URL)

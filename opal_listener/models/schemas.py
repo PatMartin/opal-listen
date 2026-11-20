@@ -504,7 +504,6 @@ class FailedUtteranceRead(FailedUtteranceBase, _Read):
     id: PublicId
     recognition_log_id: PublicId | None
     reviewed: bool
-    promoted_to_phrase: bool
     created_at: datetime
 
 
@@ -514,24 +513,8 @@ class FailedUtteranceUpdate(BaseModel):
     expected_intent: str | None = None
     notes: str | None = None
     reviewed: bool | None = None
-    promoted_to_phrase: bool | None = None
 
     _at_least_one = model_validator(mode="before")(_require_one_field)
-
-
-class FailedUtterancePromoteRequest(BaseModel):
-    """Contract FailedUtterancePromoteRequest: target intent id."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    intent_id: str = Field(
-        min_length=1, description="Identifier of the intent this utterance becomes a training phrase for."
-    )
-
-
-class PromoteResult(BaseModel):
-    failed_utterance: FailedUtteranceRead
-    phrase: IntentPhraseRead
 
 
 # --- performance -----------------------------------------------------------------------------

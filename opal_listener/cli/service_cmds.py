@@ -12,7 +12,7 @@ import yaml
 
 from opal_listener.app_settings import get_app_settings
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state
+from opal_listener.cli.output import console, done, escape, print_json, render, state
 from opal_listener.service.errors import NotFoundError
 from opal_listener.service.lifecycle import ServiceProcessManager, stop_pid
 
@@ -154,20 +154,6 @@ def info_health(ctx: typer.Context) -> None:
         console.print(f"{report['name']} {report['version']} (api {report['api_version']}) live={report['live']} ready={report['ready']}")
     if report["status"] == "error":
         raise CliError("health check failed")
-
-
-@service_app.command("live")
-def service_live(ctx: typer.Context) -> None:
-    """OPAL liveness probe (cheap: process + database reachability)."""
-    probe = state(ctx).api.get(f"{HEALTH}/live")
-    done(ctx, f"status: {probe['status']}", probe)
-
-
-@service_app.command("ready")
-def service_ready(ctx: typer.Context) -> None:
-    """OPAL readiness probe (full: configuration compiles, provider loads, ...)."""
-    probe = state(ctx).api.get(f"{HEALTH}/ready")
-    done(ctx, f"status: {probe['status']}", probe)
 
 
 # --- server process lifecycle --------------------------------------------------------------------

@@ -59,7 +59,7 @@ There are three ways to use it, and all three can do the same things:
 | **Profile** | Environment preset: wakewords, thresholds, VAD tuning, model paths, enabled intents/slots. Exactly one is active. | `default`, `noisy_room`, `car`, `kitchen` |
 | **Setting** | A typed global key/value, for example `cooldown_ms` or `stt_mode`. | `cooldown_ms = 1500` |
 | **Recognition log** | Every recognition result (mic, audio file or text), stored in SQLite. | |
-| **Failed utterance** | A `no_match` result saved for review. It can be *promoted* to a training phrase. | |
+| **Failed utterance** | A `no_match` result saved for review. | |
 | **Pipeline** | The live microphone loop: wakeword → VAD → STT → intent. | |
 
 ### Phrase syntax
@@ -189,11 +189,10 @@ Useful URLs:
 ### 2.6 Verify the installation
 
 ```bash
-opal listen service live
 opal listen info health
 opal listen test text "computer, turn on the kitchen light"
 opal listen test audio opal_listener/tests/audio/fixtures/golden_kitchen_light_on.wav
-opal listen test listen --debug      # live microphone, Ctrl-C to stop
+opal listen test listen             # live microphone, Ctrl-C to stop
 ```
 
 `info health` should show `✓` on every line. Microphone problems show as warnings, because text and
@@ -248,7 +247,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable --now opal-listen-svc
 journalctl -u opal-listen-svc -f
-opal listen config setting set auto_start_listener true   # start the microphone on every boot
+opal listen config setting set --name auto_start_listener --value true   # start the microphone on every boot
 ```
 
 ### 2.9 Docker
@@ -348,8 +347,7 @@ The code is organized in three layers:
 | Service | `opal_listener/service/*` | Business logic: runtime, pipeline, NLU, providers, audio, config snapshots, health |
 | Data | `opal_listener/data/*`, `opal_listener/models/*` | SQLite access, Alembic migrations, SQLModel tables, Pydantic schemas |
 
-The CLI (`opal_listener/cli/*`) is a pure HTTP client, except `event publish` which bypasses REST entirely
-and writes straight to the ZeroMQ bus (see [6. Live results](#6-live-results-server-sent-events)).
+The CLI (`opal_listener/cli/*`) is a pure HTTP client.
 
 ### 3.2 Components
 
@@ -473,7 +471,7 @@ The best candidate wins. Up to a few runners-up are returned in `alternatives`.
 | Reason | Meaning | What to try |
 |---|---|---|
 | `empty_transcript` | Nothing left after normalization and wakeword stripping | Speak after the wakeword; check levels |
-| `no_candidate` | No phrase is similar enough | Add a phrase or promote the failure |
+| `no_candidate` | No phrase is similar enough | Add a phrase |
 | `missing_slot` | A phrase matched but a required slot could not be extracted | Add values/alias |
 | `below_threshold` | Best score is below the effective threshold | Add phrases, or lower the threshold |
 | `low_stt_confidence` | STT confidence is below the profile's `stt` floor | Improve the mic/room, or lower the floor |
@@ -666,7 +664,7 @@ Invalid values are rejected with `422`.
 | `event_publication_enabled` | bool | `false` | | Legacy flag → `event` target while `intent_dispatch=auto` |
 | `reactions_enabled` | bool | `false` | | Legacy flag → `local` target while `intent_dispatch=auto` |
 | `transcript_retention_days` | int | `0` | 0–36500 | Days to keep transcript text on recognition logs; 0 = forever. Rows and performance aggregates are always kept |
-| `unreviewed_failure_ttl_days` | int | `90` | 0–36500 | Auto-delete unreviewed, unpromoted failed utterances after this many days; 0 = forever. Reviewed rows are kept |
+| `unreviewed_failure_ttl_days` | int | `90` | 0–36500 | Auto-delete unreviewed failed utterances after this many days; 0 = forever. Reviewed rows are kept |
 | `filler_words` | str | `uh,um,er,please` | CSV | Words dropped during normalization |
 | `slot_fuzzy_min_score` | float | `0.85` | 0–1 | Minimum fuzzy score for slot values |
 | `token_fuzzy_min_score` | float | `0.8` | 0–1 | Minimum fuzzy score for phrase tokens |
@@ -1410,7 +1408,7 @@ settings-map `If-Match`.
 curl -s -X DELETE $API/api/v1/setting/cooldown_ms -H "If-Match: $ETAG" -w '%{http_code}\n'
 ```
 
-CLI equivalents: `opal listen config setting show <key>`, `opal listen config setting set <key> <value>` (per-key PUT),
+CLI equivalents: `opal listen config setting show --name <key>`, `opal listen config setting set --name <key> --value <value>` (per-key PUT),
 `opal listen config setting remove <key>` (DELETE → default).
 
 ---
@@ -1614,15 +1612,13 @@ Returns `404` when no managed log file exists.
 
 ### 5.12 Failed utterances — `/api/v1/failed_utterance`
 
-Failed utterance object: `{id, transcript, expected_intent, notes, recognition_log_id, reviewed,
-promoted_to_phrase, created_at}`.
+Failed utterance object: `{id, transcript, expected_intent, notes, recognition_log_id, reviewed, created_at}`.
 
 #### `GET /api/v1/failed_utterance/` — list (newest first)
 
 | Query | Default | Meaning |
 |---|---|---|
 | `reviewed` | | `true` / `false` |
-| `promoted` | | `true` / `false` |
 | `limit` | `50` (max 500) | |
 | `offset` | `0` | |
 
@@ -1649,7 +1645,7 @@ curl -s $API/api/v1/failed_utterance/3
 
 #### `PATCH /api/v1/failed_utterance/{fu_id}` — annotate
 
-Fields: `expected_intent`, `notes`, `reviewed`, `promoted_to_phrase`.
+Fields: `expected_intent`, `notes`, `reviewed`.
 
 ```bash
 curl -s -X PATCH $API/api/v1/failed_utterance/3 -H 'Content-Type: application/json' \
@@ -1661,34 +1657,6 @@ curl -s -X PATCH $API/api/v1/failed_utterance/3 -H 'Content-Type: application/js
 ```bash
 curl -s -X DELETE $API/api/v1/failed_utterance/3
 ```
-
-#### `POST /api/v1/failed_utterance/{fu_id}/promote` — turn a failure into a training phrase
-
-This is the core of the tuning loop. It:
-
-1. Strips the wakeword and fillers from the transcript.
-2. Replaces known slot values and aliases with `{slot}` placeholders ("kitchen" → `{room_name}`).
-3. Adds the result as a phrase of the intent, unless an identical phrase already exists.
-4. Marks the failure as `reviewed` and `promoted_to_phrase`, and sets `expected_intent`.
-
-The change is validated like any other configuration change.
-
-| Query | Required | Meaning |
-|---|---|---|
-| `intent_name` | yes | Intent that should have matched |
-
-```bash
-curl -s -X POST "$API/api/v1/failed_utterance/3/promote?intent_name=light_turn_on"
-```
-```json
-{
-  "failed_utterance": {"id": 3, "transcript": "computer lights up in the kitchen", "expected_intent": "light_turn_on",
-                       "reviewed": true, "promoted_to_phrase": true, "...": "..."},
-  "phrase": {"id": 40, "intent_id": 1, "phrase": "lights up in the {room_name}", "created_at": "..."}
-}
-```
-
----
 
 ### 5.13 Performance — `/api/v1/performance`
 
@@ -1979,8 +1947,7 @@ print(result["intent_name"], result["slot_values"])
 ```
 
 Like SSE, this is fire-and-forget: a `PUB` socket has no delivery guarantee, so a subscriber that
-connects after the event fires simply misses it. See [CLI.md §18](CLI.md#18-event--publish-zeromq-events)
-for `opal listen event publish`, which writes to the same bus from the command line.
+connects after the event fires simply misses it.
 
 ---
 
@@ -1989,23 +1956,20 @@ for `opal listen event publish`, which writes to the same bus from the command l
 ### 7.1 Global usage
 
 ```
-opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout SECONDS] <group> <command> [args] [options]
+opal listen [--api-url URL] [--json] [--timeout SECONDS] <group> <command> [args] [options]
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--api-url` | `$OPAL_LISTEN_API_URL` or `http://localhost:8000` | Server to talk to |
-| `--xpub` | `$OPAL_EVENT_XPUB_URL` or `tcp://127.0.0.1:5555` | ZeroMQ event bus target for `event publish` |
-| `--xsub` | `$OPAL_EVENT_XSUB_URL` or `tcp://127.0.0.1:5556` | ZeroMQ event bus subscriber endpoint (reserved) |
 | `--json` | off | Print raw API JSON instead of tables. Must come **before** the group. |
 | `--timeout` | `60` | HTTP timeout in seconds |
 
 Rules:
 
-- Every command except `event publish` is one or more REST calls; the CLI never touches the database.
-  `event publish` instead talks directly to the ZeroMQ event bus (see [7.15 `event`](#715-event)).
-- Wherever a resource is referenced, you can pass its **name or id**: `intent get light_turn_on` or
-  `intent get 1`. Phrases, values and aliases can also be referenced by their text.
+- Every command is one or more REST calls; the CLI never touches the database.
+- Wherever a resource is referenced, you can pass its **name or id**: `intent show light_turn_on` or
+  `intent show 1`. Phrases, values and aliases can also be referenced by their text.
 - `--help` works at every level: `opal listen --help`, `opal listen intent --help`,
   `opal listen intent add --help`.
 
@@ -2028,7 +1992,7 @@ OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
 | Command | REST | Description |
 |---|---|---|
 | `list` | `GET /api/v1/wakeword/` | List wakewords |
-| `get NAME\|ID` | `GET /api/v1/wakeword/{id}` | Show one |
+| `show NAME\|ID` | `GET /api/v1/wakeword/{id}` | Show one |
 | `add NAME [--threshold F] [--enabled/--disabled]` | `POST /api/v1/wakeword/` | Add (default threshold 0.8) |
 | `update NAME\|ID [--name N] [--threshold F] [--enabled/--disabled]` | `PATCH` | Update |
 | `remove NAME\|ID` | `DELETE` | Remove |
@@ -2046,7 +2010,7 @@ opal listen wakeword remove "hey opal"
 | Command | Description |
 |---|---|
 | `list` | List intents with phrase counts |
-| `get NAME\|ID` | Show an intent and its phrases |
+| `show NAME\|ID` | Show an intent and its phrases |
 | `add NAME [--description D] [--threshold F] [--enabled/--disabled] [--phrase P]...` | Add an intent, optionally with phrases |
 | `update NAME\|ID [--name] [--description] [--threshold] [--enabled/--disabled]` | Update |
 | `remove NAME\|ID` | Remove the intent and its phrases |
@@ -2056,7 +2020,7 @@ opal listen wakeword remove "hey opal"
 
 ```bash
 opal listen intent list
-opal listen intent get light_turn_on
+opal listen intent show light_turn_on
 
 opal listen intent add play_music \
   --description "Start music playback" \
@@ -2079,7 +2043,7 @@ opal listen intent remove play_music
 | Command | Description |
 |---|---|
 | `list` | List slots with values and aliases |
-| `get NAME\|ID` | Show a slot (JSON) |
+| `show NAME\|ID` | Show a slot (JSON) |
 | `add NAME [--type list\|number\|text] [--description D] [--value V]...` | Add a slot, optionally with values |
 | `update NAME\|ID [--name] [--type] [--description]` | Update |
 | `remove NAME\|ID` | Remove (fails while phrases use it) |
@@ -2108,7 +2072,7 @@ opal listen slot update brightness --description "Brightness 0-100"
 | Command | Description |
 |---|---|
 | `list` | List profiles |
-| `get NAME\|ID` | Show a profile |
+| `show NAME\|ID` | Show a profile |
 | `add NAME [--description] [--activate] [options...]` | Add a profile |
 | `update NAME\|ID [--name] [--description] [options...]` | Update. List/map options **replace** the stored value. |
 | `activate NAME\|ID` | Make this the active profile |
@@ -2130,7 +2094,7 @@ a boolean.
 
 ```bash
 opal listen profile list
-opal listen profile get noisy_room
+opal listen profile show noisy_room
 
 opal listen profile add late_night --description "Quiet evenings" \
   --wakeword computer \
@@ -2155,7 +2119,7 @@ spoken feedback keeps a consistent voice. They travel in `config save`/`config l
 | Command | Description |
 |---|---|
 | `list [--enabled/--no-enabled]` | List personas |
-| `get ID\|NAME` | Show a persona |
+| `show ID\|NAME` | Show a persona |
 | `add PERSONA_ID --name N [--description] [--voice V] [--enabled/--disabled]` | Register a persona |
 | `update ID\|NAME [--name] [--description] [--voice V] [--enabled/--disabled]` | Update a persona |
 | `remove ID\|NAME` | Remove a persona |
@@ -2171,21 +2135,19 @@ opal listen persona validate amy
 | Command | Description |
 |---|---|
 | `list` | All settings |
-| `show KEY` | One setting's value, default and `pending_restart` |
-| `set KEY VALUE` | Atomically set one setting (fetches the ETag and sends `If-Match` automatically) |
-| `update K=V ...` | Atomically set several settings in one PATCH (`patch` is a hidden alias) |
-| `remove KEY` | Revert a key to its default |
+| `show --name KEY` | One setting's value, default and `pending_restart` |
+| `set --name KEY --value VALUE` | Atomically set one setting (fetches the ETag and sends `If-Match` automatically) |
+| `remove --name KEY` | Revert a key to its default |
 
-Flat aliases: `setting get` = `config setting show`, `setting unset` = `config setting remove`.
 
 ```bash
 opal listen config setting list
-opal listen config setting set cooldown_ms 1000
-opal listen config setting set audio_device 2                 # device index
-opal listen config setting set audio_device "USB"             # or name substring
-opal listen config setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
-opal listen config setting set auto_start_listener true
-opal listen config setting set stt_refiner faster_whisper     # requires the [whisper] extra
+opal listen config setting set --name cooldown_ms --value 1000
+opal listen config setting set --name audio_device --value 2                 # device index
+opal listen config setting set --name audio_device --value "USB"             # or name substring
+opal listen config setting set --name wakeword_distractors --value "commuter,compute,computing,commute,commuting"
+opal listen config setting set --name auto_start_listener --value true
+opal listen config setting set --name stt_refiner --value faster_whisper     # requires the [whisper] extra
 ```
 
 ### 7.8 ``test`
@@ -2194,7 +2156,7 @@ opal listen config setting set stt_refiner faster_whisper     # requires the [wh
 |---|---|
 | `text TEXT [--save/--no-save] [--expect-intent I] [-v]` | Recognize text |
 | `audio WAV [--save/--no-save] [--require-wakeword] [--expect-intent I] [-v]` | Recognize a WAV file |
-| `listen [-n COUNT] [--duration S] [--start/--no-start] [--debug] [-v]` | Live microphone results; `--debug` also shows levels, partials, wakeword and VAD events |
+| `listen [-n COUNT] [--duration S] [--start/--no-start] [-v]` | Live microphone results (debug-level events: `?debug=true` on the stream) |
 
 ```bash
 opal listen test text "computer, turn on the kitchen light"
@@ -2225,23 +2187,22 @@ opal listen test listen                   # starts the pipeline if needed and st
 opal listen test listen -n 3              # stop after 3 results
 opal listen test listen --duration 30     # stop after 30 s
 opal listen test listen --no-start        # only watch an already-running pipeline
-opal listen test listen --debug           # plus levels, partials, wakeword/VAD events
+curl -N "http://localhost:8000/api/v1/recognition/stream?debug=true"  # levels, partials, wakeword/VAD events
 ```
 
-Example `test listen --debug` output:
+Example `test listen` output:
 
 ```
 listening... say the wakeword (Ctrl-C to stop)
-status: listening
-     idle ███████·······················  -62.3 dBFS
-wakeword_candidate {'session_id': 'a1b2c3d4e5f6', 'wakeword': 'computer'}
-capturing ██████████████████············  -28.1 dBFS
-… turn on the
-wakeword_confirmed {'session_id': 'a1b2c3d4e5f6', 'wakeword': 'computer', 'confidence': 0.97}
-speech_start {'session_id': 'a1b2c3d4e5f6'}
-… turn on the kitchen light
-speech_end {'session_id': 'a1b2c3d4e5f6', 'reason': 'speech_end'}
-{ ...full RecognitionResult... }
+MATCH
+{
+  "wakeword": "computer",
+  "transcript": "turn on the kitchen light",
+  "intent_name": "light_turn_on",
+  "slot_values": {"room_name": "kitchen"},
+  "matched": true,
+  "total_latency_ms": 412
+}
 ```
 
 ### 7.9 ``pipeline`
@@ -2256,17 +2217,15 @@ opal listen pipeline stop
 
 | Command | Description |
 |---|---|
-| `list [--reviewed/--unreviewed] [--promoted/--not-promoted] [--limit N] [--offset N]` | List failures |
-| `get ID` | Show one |
+| `list [--reviewed/--unreviewed] [--limit N] [--offset N]` | List failures |
+| `show ID` | Show one |
 | `add TRANSCRIPT [--expected-intent I] [--notes N] [--log-id ID]` | Record manually |
 | `update ID [--expected-intent] [--notes] [--reviewed/--unreviewed]` | Annotate |
 | `remove ID` | Delete |
-| `promote ID --intent I` | Add as a training phrase |
 
 ```bash
 opal listen failed list --unreviewed
-opal listen failed get 3
-opal listen failed promote 3 --intent light_turn_on
+opal listen failed show 3
 opal listen failed update 5 --reviewed --notes "TV in background"
 opal listen failed add "dim the lounge" --expected-intent light_dim --notes "intent does not exist yet"
 opal listen failed remove 5
@@ -2328,12 +2287,9 @@ opal listen service start --port 8001 --data-dir /var/lib/opal
 opal listen service log           # last 10 lines (--lines N for more)
 opal listen service stop
 
-opal listen service live          # GET /api/v1/health/live
-opal listen info health          # GET /api/v1/health/
-opal listen info health        # GET /api/v1/health/ (exit 1 on errors)
-opal listen info health       # GET /api/v1/health/audio_devices
-opal listen service live          # GET /api/v1/health/live  (OPAL v1.2 liveness probe)
-opal listen service ready         # GET /api/v1/health/ready (OPAL v1.2 readiness probe)
+opal listen info health           # GET /api/v1/health/ (exit 1 on errors)
+curl -s http://localhost:8000/api/v1/health/live   # OPAL v1.2 liveness probe (REST only)
+curl -si http://localhost:8000/api/v1/health/ready # OPAL v1.2 readiness probe (REST only)
 ```
 
 Example `doctor` output:
@@ -2350,25 +2306,6 @@ Example `doctor` output:
 ✓ disk             48213 MiB free
 overall: ! warning
 ```
-
-### 7.15 `event`
-
-`event publish` is the one command that does **not** call the REST API. It opens a ZeroMQ `PUB` socket,
-connects to `--xpub` (the opal event bus broker's ingest endpoint), and sends a two-frame
-`[TOPIC, MESSAGE]` message for anyone subscribed to that topic.
-
-```bash
-opal listen event publish wakeword "computer detected"
-opal listen event publish recognition.result '{"intent_name": "light_turn_on", "matched": true}'
-
-# Point at a remote broker
-opal listen --xpub tcp://pi5.local:5555 event publish wakeword "computer"
-export OPAL_EVENT_XPUB_URL=tcp://pi5.local:5555   # or set it once for the session
-```
-
-`--xpub`/`--xsub` default to `tcp://127.0.0.1:5555`/`tcp://127.0.0.1:5556` and can also be set via
-`OPAL_EVENT_XPUB_URL`/`OPAL_EVENT_XSUB_URL`. `PUB` sockets are fire-and-forget: there is no delivery
-confirmation, so `publish` reports success once the message is handed to the socket.
 
 ---
 
@@ -2402,7 +2339,7 @@ no build step. Every action calls exactly one REST operation, which is shown on 
 | **Profiles** | List, **Activate**, **Delete**. Click a row to edit. The form has threshold floors, `vad_settings` JSON, model paths, and checkboxes for wakewords, intents and slots (none checked = all). |
 | **Settings** | Every setting as an editable field with **Save**, **Details** and **Reset**. |
 | **Test** | **Text** test, **Audio file** upload (with *require wakeword* and *save to logs*), **Live listen** (normal or debug) with a level meter, partial transcripts, live result cards and an event log. |
-| **Failed utterances** | Filter by reviewed/promoted, page through results, **Promote** (choose the intent), **Edit**, **Delete**, and add failures manually. |
+| **Failed utterances** | Filter by reviewed, page through results, **Edit**, **Delete**, and add failures manually. |
 | **Logs** | Totals (total / matched / no_match), filter by intent and match status, page through results, click a row for full details. |
 | **Performance** | Last recognition, a summary over the last 100 (match rate, confidence, latency avg/p50/p95/max), and a history table with a latency bar chart (green = matched, amber = no_match). |
 | **Config** | **Validate** the live configuration or a candidate snapshot. **Save** to the managed snapshot or **Download JSON**, load a snapshot file or paste JSON, then **Validate** / **Load**. |
@@ -2485,7 +2422,7 @@ opal listen test text "set the office lights to 40 percent"
 ### 9.3 Tune for a noisy room
 
 ```bash
-opal listen test listen --debug --duration 20    # note the idle level (noise) and the speech level
+curl -N "http://localhost:8000/api/v1/recognition/stream?debug=true"  # note the idle level (noise) and the speech level
 opal listen profile activate noisy_room         # built-in: wakeword 0.9, intent 0.8, stricter VAD
 opal listen test listen -n 5
 
@@ -2506,7 +2443,7 @@ Rules of thumb:
 | Quiet speech is ignored | Lower `energy_threshold_dbfs` (e.g. -50), or move the mic closer |
 | The first word of the command is lost | Raise `pre_roll_ms` (up to 3000) |
 | False wakeword triggers | Raise the wakeword threshold or profile `wakeword` floor, and add sound-alikes to `wakeword_distractors` |
-| Wakeword missed | Lower the wakeword threshold. Check the level with `test listen --debug`. Try `wakeword_trigger=partial`. |
+| Wakeword missed | Lower the wakeword threshold. Check the level via the debug stream (`GET /api/v1/recognition/stream?debug=true`). Try `wakeword_trigger=partial`. |
 | Wrong intent chosen | Add more distinctive phrases, or raise that intent's threshold |
 
 ### 9.4 The review and tuning loop
@@ -2516,15 +2453,15 @@ flowchart LR
     A[Use it normally] --> B[no_match captured<br/>as failed utterance]
     B --> C[failed list --unreviewed]
     C --> D{Should it match?}
-    D -- yes --> E[failed promote ID --intent X]
+    D -- yes --> E[intent add-phrase X "transcript"]
     D -- no --> F[failed update ID --reviewed]
     E --> A
 ```
 
 ```bash
 opal listen failed list --unreviewed
-opal listen failed promote 12 --intent timer_set
-opal listen failed promote 13 --intent light_turn_off
+opal listen intent add-phrase timer_set "start a ten minute timer"
+opal listen intent add-phrase light_turn_off "lights off in the lounge"
 opal listen failed update 14 --reviewed --notes "background conversation"
 opal listen service perf summary
 ```
@@ -2578,9 +2515,9 @@ opal listen profile update default --model vosk_model=/models/vosk-model-en-us-0
 opal listen info health                 # the provider check loads the model
 
 # faster-whisper second pass (pip install -e ".[whisper]")
-opal listen config setting set stt_refiner faster_whisper
-opal listen config setting set whisper_model tiny.en
-opal listen config setting set whisper_compute_type int8
+opal listen config setting set --name stt_refiner --value faster_whisper
+opal listen config setting set --name whisper_model --value tiny.en
+opal listen config setting set --name whisper_compute_type --value int8
 opal listen service perf summary                  # stt_latency_ms goes up, accuracy should too
 ```
 
@@ -2591,7 +2528,7 @@ Model changes are checked before they are applied. A non-existent path is reject
 ```bash
 opal listen slot add message --type text
 opal listen intent add send_note --phrase "(note | remember) that {message}"
-opal listen config setting set stt_mode open
+opal listen config setting set --name stt_mode --value open
 opal listen test text "remember that the milk is in the fridge"
 #   -> send_note {"message": "the milk is in the fridge"}
 ```
@@ -2717,7 +2654,7 @@ myengine = "my_package.provider:MyListenerProvider"
 ```
 
 ```bash
-opal listen config setting set listener_provider myengine
+opal listen config setting set --name listener_provider --value myengine
 ```
 
 ---
@@ -2760,7 +2697,7 @@ Markers: `vosk` (needs the model on disk) and `slow` (noise tests).
 | `provider` or `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH`, the `vosk_model_path` setting or a profile's `model_paths.vosk_model` at a directory that contains `am/` and `conf/`. |
 | `503 listener provider unavailable` | Same as above. The model cannot be loaded. |
 | `microphone` warning | Install `libportaudio2`. Check `arecord -l`. Add the user to the `audio` group. In Docker, check `/dev/snd` and `AUDIO_GID`. |
-| Wakeword never triggers | Run `test listen --debug`. If levels stay near -90 dBFS, choose another device with `info health` and `setting set audio_device <index>`. Lower the wakeword threshold. |
+| Wakeword never triggers | Watch `GET /api/v1/recognition/stream?debug=true`. If levels stay near -90 dBFS, choose another device with `info health` and `config setting set --name audio_device --value <index>`. Lower the wakeword threshold. |
 | Triggers on similar words | Add them to `wakeword_distractors`. Raise the wakeword threshold or the profile's `wakeword` floor. |
 | Command cut off, or ends too late | Tune the active profile's `vad_settings`, e.g. `profile update default --vad silence_end_ms=900`. |
 | `vocabulary` warning | A phrase or alias uses a word that the model does not know. Rephrase it, or use a larger model. |
@@ -2805,78 +2742,74 @@ vocabularies, consider `stt_mode=open`.
 
 ## 13. Appendix: operation ↔ CLI ↔ GUI map
 
-Every REST operation has exactly one CLI command and one GUI page. The mapping is enforced by tests
-(`OPERATION_COMMANDS` in [opal_listener/cli/main.py](../opal_listener/cli/main.py)).
+Every REST operation maps to one CLI command (enforced by tests via `OPERATION_COMMANDS` in
+[opal_listener/cli/main.py](../opal_listener/cli/main.py)); the live/ready probe endpoints are REST-only.
 
 | Method | Path | Operation | `opal listen ...` | GUI page |
 |---|---|---|---|---|
-| GET | `/api/v1/health/` | `opal_info_get` | `info health` | System |
-| GET | `/api/v1/health/live` | `opal_info_ping` | `service live` | System |
-| GET | `/api/v1/wakeword/` | `list_wakewords` | `wakeword list` | Wakewords |
-| POST | `/api/v1/wakeword/` | `create_wakeword` | `wakeword add` | Wakewords |
-| GET | `/api/v1/wakeword/{wakeword_id}` | `get_wakeword` | `wakeword get` | Wakewords |
-| PATCH | `/api/v1/wakeword/{wakeword_id}` | `update_wakeword` | `wakeword update` | Wakewords |
-| DELETE | `/api/v1/wakeword/{wakeword_id}` | `delete_wakeword` | `wakeword remove` | Wakewords |
+| POST | `/api/v1/config/load` | `opal_config_load` | `config load` | Config |
+| POST | `/api/v1/config/save` | `opal_config_save` | `config save` | Config |
+| POST | `/api/v1/config/validate` | `opal_config_validate` | `config validate` | Config |
+| GET | `/api/v1/failed_utterance/` | `list_failed_utterances` | `failed list` | Failed utterances |
+| POST | `/api/v1/failed_utterance/` | `create_failed_utterance` | `failed add` | Failed utterances |
+| GET | `/api/v1/failed_utterance/{failed_utterance_id}` | `show_failed_utterance` | `failed show` | Failed utterances |
+| PATCH | `/api/v1/failed_utterance/{failed_utterance_id}` | `update_failed_utterance` | `failed update` | Failed utterances |
+| DELETE | `/api/v1/failed_utterance/{failed_utterance_id}` | `remove_failed_utterance` | `failed remove` | Failed utterances |
+| GET | `/api/v1/health/` | `opal_health_get` | `info health` | System |
+| GET | `/api/v1/health/live` | `opal_health_live_get` | — | — |
+| GET | `/api/v1/health/ready` | `opal_health_ready_get` | — | — |
 | GET | `/api/v1/intent/` | `list_intents` | `intent list` | Intents |
 | POST | `/api/v1/intent/` | `create_intent` | `intent add` | Intents |
-| GET | `/api/v1/intent/{intent_id}` | `get_intent` | `intent get` | Intents |
+| GET | `/api/v1/intent/{intent_id}` | `show_intent` | `intent show` | Intents |
 | PATCH | `/api/v1/intent/{intent_id}` | `update_intent` | `intent update` | Intents |
-| DELETE | `/api/v1/intent/{intent_id}` | `delete_intent` | `intent remove` | Intents |
+| DELETE | `/api/v1/intent/{intent_id}` | `remove_intent` | `intent remove` | Intents |
 | GET | `/api/v1/intent/{intent_id}/phrase` | `list_phrases` | `intent phrases` | Intents |
 | POST | `/api/v1/intent/{intent_id}/phrase` | `add_phrase` | `intent add-phrase` | Intents |
-| DELETE | `/api/v1/intent/{intent_id}/phrase/{phrase_id}` | `delete_phrase` | `intent remove-phrase` | Intents |
-| GET | `/api/v1/slot/` | `list_slots` | `slot list` | Slots |
-| POST | `/api/v1/slot/` | `create_slot` | `slot add` | Slots |
-| GET | `/api/v1/slot/{slot_id}` | `get_slot` | `slot get` | Slots |
-| PATCH | `/api/v1/slot/{slot_id}` | `update_slot` | `slot update` | Slots |
-| DELETE | `/api/v1/slot/{slot_id}` | `delete_slot` | `slot remove` | Slots |
-| GET | `/api/v1/slot/{slot_id}/value` | `list_slot_values` | `slot values` | Slots |
-| POST | `/api/v1/slot/{slot_id}/value` | `add_slot_value` | `slot add-value` | Slots |
-| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}` | `delete_slot_value` | `slot remove-value` | Slots |
-| GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `list_aliases` | `slot aliases` | Slots |
-| POST | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `add_alias` | `slot add-alias` | Slots |
-| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `delete_alias` | `slot remove-alias` | Slots |
+| DELETE | `/api/v1/intent/{intent_id}/phrase/{phrase_id}` | `remove_phrase` | `intent remove-phrase` | Intents |
+| GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |
+| GET | `/api/v1/performance/last` | `get_performance_last` | `service perf last` | Performance |
+| GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |
+| GET | `/api/v1/persona/` | `opal_persona_list` | `persona list` | Personas |
+| POST | `/api/v1/persona/` | `opal_persona_create` | `persona add` | Personas |
+| GET | `/api/v1/persona/{persona_id}` | `opal_persona_get` | `persona show` | Personas |
+| PATCH | `/api/v1/persona/{persona_id}` | `opal_persona_patch` | `persona update` | Personas |
+| DELETE | `/api/v1/persona/{persona_id}` | `opal_persona_delete` | `persona remove` | Personas |
+| POST | `/api/v1/persona/{persona_id}/validate` | `opal_persona_validate` | `persona validate` | Personas |
 | GET | `/api/v1/profile/` | `opal_profile_list` | `profile list` | Profiles |
 | POST | `/api/v1/profile/` | `opal_profile_create` | `profile add` | Profiles |
-| GET | `/api/v1/profile/{profile_id}` | `opal_profile_get` | `profile get` | Profiles |
+| GET | `/api/v1/profile/{profile_id}` | `opal_profile_get` | `profile show` | Profiles |
 | PATCH | `/api/v1/profile/{profile_id}` | `opal_profile_patch` | `profile update` | Profiles |
 | DELETE | `/api/v1/profile/{profile_id}` | `opal_profile_delete` | `profile remove` | Profiles |
 | POST | `/api/v1/profile/{profile_id}/activate` | `opal_profile_activate` | `profile activate` | Profiles |
+| POST | `/api/v1/recognition/start` | `start_recognition` | `pipeline start` | Pipeline |
+| GET | `/api/v1/recognition/status` | `show_recognition_status` | `pipeline status` | Pipeline |
+| POST | `/api/v1/recognition/stop` | `stop_recognition` | `pipeline stop` | Pipeline |
+| GET | `/api/v1/recognition/stream` | `stream_recognition` | `test listen` | Test |
+| POST | `/api/v1/recognition/test_audio` | `test_recognition_audio` | `test audio` | Test |
+| POST | `/api/v1/recognition/test_text` | `test_recognition_text` | `test text` | Test |
+| GET | `/api/v1/service/log` | `opal_service_log` | `service log` | Service |
+| POST | `/api/v1/service/start` | `opal_service_start` | `service start` | Service |
+| POST | `/api/v1/service/stop` | `opal_service_stop` | `service stop` | Service |
 | GET | `/api/v1/setting/` | `opal_setting_list` | `config setting list` | Settings |
 | GET | `/api/v1/setting/{key}` | `opal_setting_get` | `config setting show` | Settings |
 | PUT | `/api/v1/setting/{key}` | `opal_setting_put` | `config setting set` | Settings |
 | DELETE | `/api/v1/setting/{key}` | `opal_setting_delete` | `config setting remove` | Settings |
-| GET | `/api/v1/persona/` | `opal_persona_list` | `persona list` | Personas |
-| POST | `/api/v1/persona/` | `opal_persona_create` | `persona add` | Personas |
-| GET | `/api/v1/persona/{persona_id}` | `opal_persona_get` | `persona get` | Personas |
-| PATCH | `/api/v1/persona/{persona_id}` | `opal_persona_patch` | `persona update` | Personas |
-| DELETE | `/api/v1/persona/{persona_id}` | `opal_persona_delete` | `persona remove` | Personas |
-| POST | `/api/v1/persona/{persona_id}/validate` | `opal_persona_validate` | `persona validate` | Personas |
-| POST | `/api/v1/recognition/test_text` | `test_text` | `test text` | Test |
-| POST | `/api/v1/recognition/test_audio` | `test_audio` | `test audio` | Test |
-| POST | `/api/v1/recognition/start` | `start_pipeline` | `pipeline start` | Pipeline |
-| POST | `/api/v1/recognition/stop` | `stop_pipeline` | `pipeline stop` | Pipeline |
-| GET | `/api/v1/recognition/status` | `get_status` | `pipeline status` | Pipeline |
-| GET | `/api/v1/recognition/stream` | `stream_results` | `test listen [--debug]` | Test |
-| POST | `/api/v1/service/start` | `opal_service_start` | `service start` | Service |
-| POST | `/api/v1/service/stop` | `opal_service_stop` | `service stop` | Service |
-| GET | `/api/v1/service/log` | `opal_service_log` | `service log` | Service |
-| GET | `/api/v1/failed_utterance/` | `list_failed_utterances` | `failed list` | Failed utterances |
-| POST | `/api/v1/failed_utterance/` | `create_failed_utterance` | `failed add` | Failed utterances |
-| GET | `/api/v1/failed_utterance/{fu_id}` | `get_failed_utterance` | `failed get` | Failed utterances |
-| PATCH | `/api/v1/failed_utterance/{fu_id}` | `update_failed_utterance` | `failed update` | Failed utterances |
-| DELETE | `/api/v1/failed_utterance/{fu_id}` | `delete_failed_utterance` | `failed remove` | Failed utterances |
-| POST | `/api/v1/failed_utterance/{fu_id}/promote` | `promote_to_phrase` | `failed promote` | Failed utterances |
-| GET | `/api/v1/performance/last` | `get_last_performance` | `service perf last` | Performance |
-| GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |
-| GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |
-| GET | `/api/v1/health/` | `opal_health_get` | `info health` | System |
-| GET | `/api/v1/health/audio_devices` | `get_audio_devices` | `info health` | System |
-| GET | `/api/v1/health/live` | `opal_health_live_get` | `service live` | System |
-| GET | `/api/v1/health/ready` | `opal_health_ready_get` | `service ready` | System |
-| POST | `/api/v1/config/save` | `opal_config_save` | `config save` | Config |
-| POST | `/api/v1/config/load` | `opal_config_load` | `config load` | Config |
-| POST | `/api/v1/config/validate` | `opal_config_validate` | `config validate` | Config |
+| GET | `/api/v1/slot/` | `list_slots` | `slot list` | Slots |
+| POST | `/api/v1/slot/` | `create_slot` | `slot add` | Slots |
+| GET | `/api/v1/slot/{slot_id}` | `show_slot` | `slot show` | Slots |
+| PATCH | `/api/v1/slot/{slot_id}` | `update_slot` | `slot update` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}` | `remove_slot` | `slot remove` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value` | `list_slot_values` | `slot values` | Slots |
+| POST | `/api/v1/slot/{slot_id}/value` | `add_slot_value` | `slot add-value` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}` | `remove_slot_value` | `slot remove-value` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `list_aliases` | `slot aliases` | Slots |
+| POST | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `add_alias` | `slot add-alias` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `remove_alias` | `slot remove-alias` | Slots |
+| GET | `/api/v1/wakeword/` | `list_wakewords` | `wakeword list` | Wakewords |
+| POST | `/api/v1/wakeword/` | `create_wakeword` | `wakeword add` | Wakewords |
+| GET | `/api/v1/wakeword/{wakeword_id}` | `show_wakeword` | `wakeword show` | Wakewords |
+| PATCH | `/api/v1/wakeword/{wakeword_id}` | `update_wakeword` | `wakeword update` | Wakewords |
+| DELETE | `/api/v1/wakeword/{wakeword_id}` | `remove_wakeword` | `wakeword remove` | Wakewords |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
 REST contract [opal_listen_v0.2.0.yaml](../openapi/opal_listen_v0.2.0.yaml).

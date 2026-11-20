@@ -5,8 +5,7 @@ The `opal` command is the terminal interface to the opal listener. All recogniti
 with text, audio files or the microphone, review failures, and back up or restore
 the configuration.
 
-The CLI is a thin REST client. **Every command except `event publish` calls the opal listener REST API**
-(`event publish` talks directly to the ZeroMQ event bus instead). It never opens the database directly.
+The CLI is a thin REST client. **Every command calls the opal listener REST API**. It never opens the database directly.
 The server must therefore be running, either locally or on another machine.
 
 ---
@@ -98,14 +97,12 @@ opal --show-completion bash        # print the script instead of installing it
 Global options belong to the `listen` group. Put them **after `listen` and before the command group**:
 
 ```
-opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout SECONDS] <group> <command> [ARGS] [OPTIONS]
+opal listen [--api-url URL] [--json] [--timeout SECONDS] <group> <command> [ARGS] [OPTIONS]
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--api-url URL` | `$OPAL_LISTEN_API_URL`, otherwise `http://localhost:8000` | Base URL of the REST API |
-| `--xpub URL` | `$OPAL_EVENT_XPUB_URL`, otherwise `tcp://127.0.0.1:5555` | ZeroMQ event bus publisher target (used by `event publish`; see [18. `event`](#18-event--publish-zeromq-events)) |
-| `--xsub URL` | `$OPAL_EVENT_XSUB_URL`, otherwise `tcp://127.0.0.1:5556` | ZeroMQ event bus subscriber target (reserved for future `event subscribe`-style commands) |
 | `--json` | off | Print raw API JSON instead of tables and messages |
 | `--timeout SECONDS` | `60` | HTTP timeout for each request |
 
@@ -121,12 +118,11 @@ opal listen intent list --json
 ### Environment variables
 
 Set `OPAL_LISTEN_API_URL` once so you don't have to pass `--api-url` on every call. Note that this
-variable has no `ER` in it, unlike the server's `OPAL_LISTENER_*` variables. `OPAL_EVENT_XPUB_URL` and
-`OPAL_EVENT_XSUB_URL` work the same way for `--xpub`/`--xsub`.
+variable has no `ER` in it, unlike the server's `OPAL_LISTENER_*` variables.
 
 ```bash
 export OPAL_LISTEN_API_URL=http://192.168.1.50:8000
-opal listen service live            # talks to 192.168.1.50
+opal listen info health              # talks to 192.168.1.50
 
 # One-off override for a single command
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
@@ -138,7 +134,7 @@ opal listen --api-url http://localhost:8000 system info
 ### Checking the connection
 
 ```bash
-opal listen service live            # ✓ http://localhost:8000 is up
+opal listen info health              # ✓ http://localhost:8000 is up
 opal listen info health            # service name and version
 ```
 
@@ -158,10 +154,10 @@ Start it with 'python -m opal_listener' or set OPAL_LISTEN_API_URL.
 Wherever a command takes a resource, you can pass its **name** or its numeric **id**:
 
 ```bash
-opal listen intent get get_time   # by name
-opal listen intent get 5          # by id
-opal listen profile get 4         # profile with id 4
-opal listen profile get kitchen   # profile named "kitchen"
+opal listen intent show get_time   # by name
+opal listen intent show 5          # by id
+opal listen profile show 4         # profile with id 4
+opal listen profile show kitchen   # profile named "kitchen"
 ```
 
 Child items can also be referenced by their text:
@@ -187,7 +183,7 @@ By default the CLI prints human-friendly output:
 | Command kind | Default output |
 |---|---|
 | `list`, `values`, `aliases`, ... | A table with the most important columns |
-| `get` | A key/value table |
+| `show` | A key/value table |
 | `add`, `update`, `remove`, ... | A one-line confirmation, e.g. `✓ wakeword 'nabu' added (id 2)` |
 | `test text` / `test audio` | `MATCH` or `NO MATCH`, then a JSON summary |
 
@@ -275,25 +271,24 @@ environments.
 
 ```
 opal
-└── listen [--api-url] [--xpub] [--xsub] [--json] [--timeout]
+└── listen [--api-url] [--json] [--timeout]
     ├── tree [--ascii]
     ├── gui
-    ├── wakeword    list | get | add | update | remove
-    ├── intent      list | get | add | update | remove | phrases | add-phrase | remove-phrase
-    ├── slot        list | get | add | update | remove
+    ├── wakeword    list | show | add | update | remove
+    ├── intent      list | show | add | update | remove | phrases | add-phrase | remove-phrase
+    ├── slot        list | show | add | update | remove
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
-    ├── profile     list | get | add | update | activate | remove
-    ├── persona     list | get | add | update | remove | validate
-    ├── setting     get | unset        (aliases for `config setting show` / `config setting remove`)
-    ├── test        text | audio | listen [--debug]
+    ├── profile     list | show | add | update | activate | remove
+    ├── persona     list | show | add | update | remove | validate
+    ├── test        text | audio | listen | reaction
     ├── pipeline    start | stop | status
-    ├── failed      list | get | add | update | remove | promote
-    ├── service     start | stop | log | doctor | devices | live | ready | info | ping
+    ├── failed      list | show | add | update | remove
+    ├── service     start | stop | log | perf
     │               └── perf  last | summary | history
     ├── config      save | load | validate
     │               └── setting   list | show | set | remove
     ├── event       publish
-    └── reaction    list | get | add | update | remove | enable | disable | test | log | path
+    └── reaction    list | show | add | update | remove | enable | disable | log | path
 ```
 
 ---
@@ -306,7 +301,7 @@ normalized to lowercase without punctuation.
 | Command | Description |
 |---|---|
 | `list` | List all wakewords |
-| `get WAKEWORD` | Show one wakeword (name or id) |
+| `show WAKEWORD` | Show one wakeword (name or id) |
 | `add NAME [--threshold F] [--enabled/--disabled]` | Add a wakeword |
 | `update WAKEWORD [--name N] [--threshold F] [--enabled/--disabled]` | Change a wakeword |
 | `remove WAKEWORD` | Delete a wakeword |
@@ -324,8 +319,8 @@ normalized to lowercase without punctuation.
 opal listen wakeword list
 
 # Show one wakeword by name, or by id
-opal listen wakeword get computer
-opal listen wakeword get 1
+opal listen wakeword show computer
+opal listen wakeword show 1
 
 # Add a wakeword with a custom threshold, disabled for now
 opal listen wakeword add nabu --threshold 0.7 --disabled
@@ -359,7 +354,7 @@ phrases**, which are templates the recognizer matches against the transcript.
 | Command | Description |
 |---|---|
 | `list` | List intents with phrase counts |
-| `get INTENT` | Show an intent and its phrases |
+| `show INTENT` | Show an intent and its phrases |
 | `add NAME [--description D] [--threshold F] [--enabled/--disabled] [--phrase P]...` | Add an intent, optionally with phrases |
 | `update INTENT [--name N] [--description D] [--threshold F] [--enabled/--disabled]` | Change an intent |
 | `remove INTENT` | Delete an intent **and all its phrases** |
@@ -396,7 +391,7 @@ and saves nothing. Typical mistakes are an unknown slot, unbalanced brackets, or
 opal listen intent list
 
 # Show an intent: a key/value table followed by a table of its phrases
-opal listen intent get get_time
+opal listen intent show get_time
 
 # Add an intent with two literal phrases and a description
 opal listen intent add test_intent \
@@ -469,7 +464,7 @@ spoken as spaces.
 | Command | Description |
 |---|---|
 | `list` | List slots with their values and aliases |
-| `get SLOT` | Show one slot as JSON (values and aliases included) |
+| `show SLOT` | Show one slot as JSON (values and aliases included) |
 | `add NAME [--type T] [--description D] [--value V]...` | Add a slot, optionally with initial values |
 | `update SLOT [--name N] [--type T] [--description D]` | Change a slot |
 | `remove SLOT` | Delete a slot. This fails while phrases still use it. |
@@ -500,7 +495,7 @@ spoken as spaces.
 opal listen slot list
 
 # Show one slot as JSON
-opal listen slot get temperature
+opal listen slot show temperature
 
 # Add a list slot with initial values
 opal listen slot add color --description "Bulb colors" \
@@ -565,7 +560,7 @@ modules' settings untouched. Editing a foreign compartment is rejected with 422.
 | Command | Description |
 |---|---|
 | `list` | List profiles |
-| `get PROFILE` | Show a profile (name or id) |
+| `show PROFILE` | Show a profile (name or id) |
 | `add [NAME] [--description D] [--is-active] [OPTIONS...]` | Add a profile |
 | `update PROFILE [--name N] [--description D] [--is-active/--no-is-active] [OPTIONS...]` | Change a profile |
 | `activate PROFILE` | Make this profile active (all others are deactivated) |
@@ -624,8 +619,8 @@ The server rejects unknown keys and out-of-range values with HTTP `422`.
 opal listen profile list
 
 # Show one profile by id or by name
-opal listen profile get 4
-opal listen profile get noisy_room
+opal listen profile show 4
+opal listen profile show noisy_room
 
 # Create a full profile and print the result as JSON
 opal listen --json profile add test_profile \
@@ -677,7 +672,7 @@ configuration: they travel in `config save`/`config load` snapshots (`resources.
 | Command | Description |
 |---|---|
 | `list [--enabled/--no-enabled]` | List personas, optionally filtered by enabled state |
-| `get PERSONA` | Show a persona (persona_id or name) |
+| `show PERSONA` | Show a persona (persona_id or name) |
 | `add [PERSONA_ID] --name N [--description D] [--voice-id V] [--enabled/--no-enabled] [--persona-id ID] [--if-match ETAG]` | Register a persona |
 | `update PERSONA [--name N] [--description D] [--voice V] [--enabled/--no-enabled]` | Change a persona |
 | `remove PERSONA` | Remove a persona |
@@ -705,8 +700,7 @@ current strong `ETag` and send it back as `If-Match` automatically, so updates a
 another client changed settings concurrently (a stale `If-Match` is rejected with `412`, a missing one
 with `428`).
 
-The canonical commands live under `config setting`; the contract also declares two flat aliases,
-`opal listen setting get` (= `show`) and `opal listen setting unset` (= `remove`).
+The commands live under `config setting`.
 
 | Command | Description |
 |---|---|
@@ -800,7 +794,6 @@ opal listen config setting set --name whisper_model --value tiny.en
 | `text TEXT` | Run text through normalization, intent matching and slot extraction |
 | `audio WAV` | Run a WAV file through the full wakeword → VAD → STT → intent pipeline |
 | `listen` | Stream live microphone results |
-| `listen --debug` | Like `listen`, plus audio levels, partial transcripts, and wakeword and VAD events |
 
 ### `test text`
 
@@ -903,7 +896,7 @@ opal listen test audio my_command.wav -v
 ### `test listen`
 
 ```
-opal listen test listen [-n COUNT] [--duration SECONDS] [--start/--no-start] [--debug] [-v]
+opal listen test listen [-n COUNT] [--duration SECONDS] [--start/--no-start] [-v]
 ```
 
 | Option | Default | Meaning |
@@ -911,8 +904,7 @@ opal listen test listen [-n COUNT] [--duration SECONDS] [--start/--no-start] [--
 | `-n`, `--count N` | `0` (unlimited) | Stop after N results |
 | `--duration S` | `0` (unlimited) | Stop after S seconds |
 | `--start/--no-start` | `--start` | Start the pipeline if it isn't running |
-| `--debug` | off | Also show audio levels, partial transcripts, wakeword and VAD events (implies full results) |
-| `-v`, `--verbose` | off | Print full results (`--debug` implies it) |
+| `-v`, `--verbose` | off | Print full results |
 
 If `test listen` started the pipeline, it stops it again on exit or Ctrl-C. A pipeline that was already
 running keeps running.
@@ -930,36 +922,29 @@ opal listen test listen --duration 30
 opal listen test listen --no-start
 
 # Debug view: 10 results or 10 seconds, whichever comes first
-opal listen test listen --debug --count 10 --duration 10 --start
+opal listen test listen --count 10 --duration 10 --start
 ```
 
-Example `test listen --debug` output:
+Example `test listen` output:
 
 ```
 listening... say the wakeword (Ctrl-C to stop)
-status: listening
-     idle ███████·······················  -62.3 dBFS
-wakeword_candidate {'session_id': 'a1b2c3d4e5f6', 'wakeword': 'computer'}
-capturing ██████████████████············  -28.1 dBFS
-… turn on the
-wakeword_confirmed {'session_id': 'a1b2c3d4e5f6', 'wakeword': 'computer', 'confidence': 0.97}
-speech_start {'session_id': 'a1b2c3d4e5f6'}
-… turn on the kitchen light
-speech_end {'session_id': 'a1b2c3d4e5f6', 'reason': 'speech_end'}
-{ ...full recognition result... }
+MATCH
+{
+  "wakeword": "computer",
+  "transcript": "turn on the kitchen light",
+  "intent_name": "light_turn_on",
+  "slot_values": {"room_name": "kitchen"},
+  "matched": true,
+  "total_latency_ms": 412
+}
 ```
 
-How to read it:
+Only `result` events are printed (`-v` for the full result). Debug-level stream events — audio levels,
+partial transcripts, wakeword and VAD events — are still emitted by the server on
+`GET /api/v1/recognition/stream?debug=true` (try `curl -N`, or the **Listen (debug)** page in the GUI).
 
-| Line | Meaning |
-|---|---|
-| `idle` / `capturing` bar | Live input level in dBFS. Use it to set `energy_threshold_dbfs`. |
-| `… text` | Partial transcript while you speak |
-| `wakeword_candidate` / `wakeword_confirmed` / `wakeword_rejected` | Wakeword detection stages |
-| `speech_start` / `speech_end` | VAD boundaries. `reason` is `speech_end`, `stt_endpoint`, `no_speech` or `max_length`. |
-| `status: ...` | Pipeline state changes and errors |
-
-With `--json`, each debug event is printed as `{"event": "...", "data": {...}}`. This is handy for piping
+With `--json`, each stream event is printed as `{"event": "...", "data": {...}}`. This is handy for piping
 into `jq`.
 
 ---
@@ -998,17 +983,15 @@ Important `status` fields:
 ## 13. `failed`: failed utterance review
 
 When `auto_capture_failures` is `true` (the default), every `no_match` from the microphone or an audio
-file is stored as a **failed utterance**. You review these, annotate them, and *promote* useful ones to
-training phrases.
+file is stored as a **failed utterance**. You review and annotate these.
 
 | Command | Description |
 |---|---|
-| `list [--reviewed/--unreviewed] [--promoted/--not-promoted] [--limit N] [--offset N]` | List failures, newest first |
-| `get ID` | Show one failure |
+| `list [--reviewed/--unreviewed] [--limit N] [--offset N]` | List failures, newest first |
+| `show ID` | Show one failure |
 | `add TRANSCRIPT [--expected-intent I] [--notes N] [--log-id ID]` | Record a failure manually |
 | `update ID [--expected-intent I] [--notes N] [--reviewed/--unreviewed]` | Annotate a failure |
 | `remove ID` | Delete a failure |
-| `promote ID --intent I` | Add the transcript as a training phrase of intent `I` |
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -1016,24 +999,14 @@ training phrases.
 | `--offset N` | `0` | Skip N rows |
 | `--log-id ID` | | Link to a recognition log entry |
 
-When a failure is promoted, recognized slot values in the transcript are replaced with `{placeholders}`.
-For example, *"switch the kitchen lamp on"* becomes `switch the {room_name} lamp on`.
-
 ### Examples
 
 ```bash
 # Unreviewed failures only
 opal listen failed list --unreviewed
 
-# Failures that have not been promoted yet, in pages of 20
-opal listen failed list --not-promoted --limit 20
-opal listen failed list --not-promoted --limit 20 --offset 20
-
 # Inspect one failure
-opal listen failed get 3
-
-# Promote it to a phrase of light_turn_on
-opal listen failed promote 3 --intent light_turn_on
+opal listen failed show 3
 
 # Mark a failure as reviewed and leave a note
 opal listen failed update 5 --reviewed --notes "TV in background"
@@ -1184,8 +1157,6 @@ they fall back to the same local pidfile/log management the server-side ops use 
 | `start [--host H] [--port P] [--data-dir DIR] [--append]` | Start the managed server (replaces a running one). `--append` appends to `logs/opal_listen.log` instead of truncating. Returns immediately. |
 | `stop` | Stop the managed server, if it is running |
 | `log [--lines N]` | Show the last N lines of the managed server's log (default 10) |
-| `live` | OPAL liveness probe: process + database reachability (`GET /api/v1/health/live`) |
-| `ready` | OPAL readiness probe: configuration compiles, provider loads, etc. (`GET /api/v1/health/ready`) |
 | `perf last\|summary\|history` | Performance metrics sub-group (see [§16](#16-service-perf--performance-metrics)) |
 
 ```bash
@@ -1197,9 +1168,9 @@ opal listen service stop
 # Aggregate health report: identity, status, checks and audio devices
 opal listen info health
 
-# Standard OPAL liveness/readiness probes (status: ok | degraded | unavailable; 503 when unavailable)
-opal listen service live
-opal listen service ready
+# Standard OPAL liveness/readiness probes are REST-only (no CLI commands):
+curl -s http://localhost:8000/api/v1/health/live
+curl -si http://localhost:8000/api/v1/health/ready
 
 # Audio input devices are listed in the health report's details
 opal listen --json info health | jq '.details.audio_devices'
@@ -1226,49 +1197,7 @@ tests work without a microphone. A missing model is an error.
 
 ---
 
-## 18. `event`: publish ZeroMQ events
-
-`opal listen event publish` fires a message directly onto the opal event bus, independently of the REST
-API. It opens a ZeroMQ `PUB` socket, connects to `--xpub`, and sends a two-frame `[TOPIC, MESSAGE]`
-message; anything subscribed to that topic through the event bus receives it. `--xpub`/`--xsub` name the
-two sides of that bus (an XPUB/XSUB broker); `publish` only uses `--xpub` today — `--xsub` is reserved for
-future subscriber-side tooling.
-
-| Command | Description |
-|---|---|
-| `publish TOPIC MESSAGE` | Publish `MESSAGE` under `TOPIC` |
-
-| Option | Default | Meaning |
-|---|---|---|
-| `--xpub URL` | `$OPAL_EVENT_XPUB_URL`, otherwise `tcp://127.0.0.1:5555` | ZeroMQ event bus target that `publish` connects to |
-| `--xsub URL` | `$OPAL_EVENT_XSUB_URL`, otherwise `tcp://127.0.0.1:5556` | The event bus's other endpoint; not used by `publish`, accepted here for symmetry with future event-bus tooling |
-
-Like `--api-url`, both are **global options** that belong right after `listen`:
-
-```bash
-opal listen --xpub tcp://pi5.local:5555 event publish wakeword "computer"
-```
-
-```bash
-opal listen event publish wakeword "computer detected"
-opal listen event publish recognition.result '{"intent_name": "light_turn_on", "matched": true}'
-
-# Point at a remote broker for the rest of the shell session
-export OPAL_EVENT_XPUB_URL=tcp://pi5.local:5555
-opal listen event publish wakeword "computer"
-```
-
-> `MESSAGE` is sent as opaque bytes (UTF-8 encoded). If it's JSON, quote it so the shell passes it through
-> as one argument, as in the `recognition.result` example above.
-
-Because `publish` opens a brand-new socket for a single message, it waits briefly after connecting before
-sending — the classic ZeroMQ "slow joiner" mitigation for a short-lived publisher. There is still no
-delivery confirmation (ZeroMQ `PUB` sockets are fire-and-forget), so `publish` reports success once the
-message has been handed to the socket, not once a subscriber has received it.
-
----
-
-## 19. `reaction`: intent-triggered shell commands
+## 18. `reaction`: intent-triggered shell commands
 
 Reactions run shell commands when a live-mic recognition matches an intent (see the User Guide §4.5
 for the full model: gating, condition grammar, stdin contract).
@@ -1295,7 +1224,7 @@ opal listen reaction add kitchen_lights \
     --timeout 15 --env HUE_BRIDGE=192.168.1.10
 
 # Show the full reaction
-opal listen reaction get kitchen_lights
+opal listen reaction show kitchen_lights
 
 # Rename it, retime every action, replace conditions wholesale
 opal listen reaction update kitchen_lights --name lights_kitchen --timeout 30
@@ -1313,18 +1242,18 @@ opal listen reaction remove lights_kitchen
 `exists` takes no value; values are YAML scalars, so `[a, b]` gives a list). `--run` is repeatable —
 each becomes one `command` action receiving the match JSON on stdin. `--env KEY=VALUE` is repeatable.
 
-`reaction test` dry-runs a payload against the armed reactions and shows which would fire and why
+`test reaction` dry-runs a payload against the armed reactions and shows which would fire and why
 not — nothing executes unless `--execute` is passed:
 
 ```bash
 # With a literal result payload
-opal listen reaction test --payload '{"intent_name":"light_turn_on","intent_confidence":0.9}'
+opal listen test reaction --payload '{"intent_name":"light_turn_on","intent_confidence":0.9}'
 
 # With a real utterance through the live pipeline (needs the service running)
-opal listen reaction test --text "turn on the kitchen light"
+opal listen test reaction --text "turn on the kitchen light"
 
 # Actually run the matching commands (debugging your scripts)
-opal listen reaction test --payload '{"intent_name":"light_turn_on"}' --execute
+opal listen test reaction --payload '{"intent_name":"light_turn_on"}' --execute
 ```
 
 `reaction log` tails the execution journal `<data_dir>/reaction_log.jsonl` (one JSON record per run:
@@ -1343,7 +1272,7 @@ at runtime without editing files.
 
 ---
 
-## 20. Walkthroughs
+## 19. Walkthroughs
 
 ### 20.1 Full CRUD tour (based on `scripts/test-cli.sh`)
 
@@ -1351,15 +1280,15 @@ This tour exercises every catalog group and cleans up after itself. You can run 
 
 ```bash
 # --- sanity -------------------------------------------------------------------------------
-opal listen service live
+opal listen info health
 opal listen info health
 
 # --- wakewords ----------------------------------------------------------------------------
 opal listen wakeword list
-opal listen wakeword get computer
+opal listen wakeword show computer
 opal listen wakeword add nabu --threshold 0.7 --disabled     # created disabled
 opal listen wakeword update nabu --threshold 0.95 --enabled   # now enabled, stricter
-opal listen wakeword get nabu
+opal listen wakeword show nabu
 
 # --- intents and phrases ------------------------------------------------------------------
 opal listen intent add test_intent \
@@ -1406,7 +1335,7 @@ opal listen test audio resources/cmds/cmd-kitchen-lights-off.wav
 # --- pipeline -----------------------------------------------------------------------------
 opal listen pipeline status
 opal listen pipeline start
-opal listen test listen --debug --count 10 --duration 10 --no-start
+opal listen test listen --count 10 --duration 10 --no-start
 opal listen pipeline stop
 
 # --- clean up -----------------------------------------------------------------------------
@@ -1447,8 +1376,8 @@ opal listen test listen --duration 300
 opal listen service perf summary
 opal listen failed list --unreviewed
 
-# 3. Promote real commands that should have matched
-opal listen failed promote 12 --intent light_turn_on
+# 3. Teach real commands that should have matched
+opal listen intent add-phrase light_turn_on "turn on the {room_name} light"
 
 # 4. Mark noise as reviewed so it doesn't show up again
 opal listen failed update 13 --reviewed --notes "background TV"
@@ -1461,7 +1390,7 @@ opal listen service perf summary
 
 ```bash
 # 1. Watch the levels while the room is noisy (but nobody is speaking)
-opal listen test listen --debug --duration 20
+opal listen test listen --duration 20
 
 # 2. Activate the noisy_room profile, or tune it
 opal listen profile update noisy_room \
@@ -1470,7 +1399,7 @@ opal listen profile update noisy_room \
 opal listen profile activate noisy_room
 
 # 3. Test again
-opal listen test listen --debug -n 5
+opal listen test listen -n 5
 ```
 
 ### 20.5 Back up and move configuration to another machine
@@ -1488,7 +1417,7 @@ opal listen config load --in ./opal-config/snapshot.json --yes
 
 ---
 
-## 21. Scripting and automation
+## 20. Scripting and automation
 
 ### JSON output with `jq`
 
@@ -1519,7 +1448,7 @@ opal listen --json test listen | jq -c '{intent_name, slot_values}'
 #!/usr/bin/env bash
 set -euo pipefail
 
-opal listen service live
+opal listen info health
 opal listen test text "computer, turn on the kitchen light" --no-save --expect-intent light_turn_on
 opal listen test text "order a pizza"                       --no-save --expect-intent no_match
 opal listen test audio resources/cmds/cmd-cancel.wav        --no-save --expect-intent cancel
@@ -1558,7 +1487,7 @@ opal listen --json intent list \
 
 ---
 
-## 22. Troubleshooting
+## 21. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -1571,7 +1500,7 @@ opal listen --json intent list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen --debug` to see levels. |
+| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Debug-level stream events (audio levels, partials) are available via `GET /api/v1/recognition/stream?debug=true`. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
 | `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
@@ -1579,26 +1508,23 @@ opal listen --json intent list \
 
 ---
 
-## 23. Appendix: CLI ↔ REST mapping
+## 22. Appendix: CLI ↔ REST mapping
 
 All paths are relative to the API base URL. Commands that take a name or id first resolve it with a
 `GET` on the collection. Per the OPAL v1.2 standard, every `PATCH`/`DELETE` below on wakewords, intents,
 phrases, slots, slot values, aliases, profiles, personas and settings requires a strong `If-Match`; the CLI fetches
 the current `ETag` automatically before sending the mutation (missing precondition → `428`, stale → `412`).
 
-> `event publish` has no REST counterpart: it talks directly to the ZeroMQ event bus (`--xpub`), not the
-> REST API, and so is intentionally absent from the table below.
-
 | CLI (`opal listen ...`) | REST |
 |---|---|
 | `wakeword list` | `GET /api/v1/wakeword/` |
 | `wakeword add` | `POST /api/v1/wakeword/` |
-| `wakeword get` | `GET /api/v1/wakeword/{id}` |
+| `wakeword show` | `GET /api/v1/wakeword/{id}` |
 | `wakeword update` | `PATCH /api/v1/wakeword/{id}` (If-Match) |
 | `wakeword remove` | `DELETE /api/v1/wakeword/{id}` (If-Match) |
 | `intent list` | `GET /api/v1/intent/` |
 | `intent add` | `POST /api/v1/intent/` |
-| `intent get` | `GET /api/v1/intent/{id}` |
+| `intent show` | `GET /api/v1/intent/{id}` |
 | `intent update` | `PATCH /api/v1/intent/{id}` (If-Match) |
 | `intent remove` | `DELETE /api/v1/intent/{id}` (If-Match) |
 | `intent phrases` | `GET /api/v1/intent/{id}/phrase` |
@@ -1606,7 +1532,7 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `intent remove-phrase` | `DELETE /api/v1/intent/{id}/phrase/{phrase_id}` (If-Match) |
 | `slot list` | `GET /api/v1/slot/` |
 | `slot add` | `POST /api/v1/slot/` (+ `POST .../value` per `--value`) |
-| `slot get` | `GET /api/v1/slot/{id}` |
+| `slot show` | `GET /api/v1/slot/{id}` |
 | `slot update` | `PATCH /api/v1/slot/{id}` (If-Match) |
 | `slot remove` | `DELETE /api/v1/slot/{id}` (If-Match) |
 | `slot values` | `GET /api/v1/slot/{id}/value` |
@@ -1617,32 +1543,31 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `slot remove-alias` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |
 | `profile list` | `GET /api/v1/profile/` |
 | `profile add` | `POST /api/v1/profile/` |
-| `profile get` | `GET /api/v1/profile/{id}` |
+| `profile show` | `GET /api/v1/profile/{id}` |
 | `profile update` | `PATCH /api/v1/profile/{id}` (If-Match) |
 | `profile remove` | `DELETE /api/v1/profile/{id}` (If-Match) |
 | `profile activate` | `POST /api/v1/profile/{id}/activate` |
 | `persona list` | `GET /api/v1/persona/` |
 | `persona add` | `POST /api/v1/persona/` |
-| `persona get` | `GET /api/v1/persona/{persona_id}` |
+| `persona show` | `GET /api/v1/persona/{persona_id}` |
 | `persona update` | `PATCH /api/v1/persona/{persona_id}` (If-Match) |
 | `persona remove` | `DELETE /api/v1/persona/{persona_id}` (If-Match) |
 | `persona validate` | `POST /api/v1/persona/{persona_id}/validate` |
 | `config setting list` | `GET /api/v1/setting/` |
 | `config setting show` | `GET /api/v1/setting/{key}` |
 | `config setting set` | `PUT /api/v1/setting/{key}` (If-Match) |
-| `config setting remove` (`setting unset`) | `DELETE /api/v1/setting/{key}` (If-Match) |
+| `config setting remove` | `DELETE /api/v1/setting/{key}` (If-Match) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
-| `test listen [--debug]` | `GET /api/v1/recognition/stream` (SSE) |
+| `test listen` | `GET /api/v1/recognition/stream` (SSE) |
 | `pipeline start` | `POST /api/v1/recognition/start` |
 | `pipeline stop` | `POST /api/v1/recognition/stop` |
 | `pipeline status` | `GET /api/v1/recognition/status` |
 | `failed list` | `GET /api/v1/failed_utterance/` |
 | `failed add` | `POST /api/v1/failed_utterance/` |
-| `failed get` | `GET /api/v1/failed_utterance/{id}` |
+| `failed show` | `GET /api/v1/failed_utterance/{id}` |
 | `failed update` | `PATCH /api/v1/failed_utterance/{id}` |
 | `failed remove` | `DELETE /api/v1/failed_utterance/{id}` |
-| `failed promote` | `POST /api/v1/failed_utterance/{id}/promote` |
 | `service start` | `POST /api/v1/service/start` (falls back to local spawn when the API is unreachable) |
 | `service stop` | `POST /api/v1/service/stop` (falls back to local pidfile stop when unreachable) |
 | `service log` | `GET /api/v1/service/log` (falls back to the local log file when unreachable) |
@@ -1654,9 +1579,6 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config load` | `POST /api/v1/config/load` (If-Match; managed, or `{snapshot}` with `--in`) |
 | `info health` | `GET /api/v1/health/` |
 | `info health` | `GET /api/v1/health/audio_devices` |
-| `service live` | `GET /api/v1/health/live` (liveness probe) |
-| `service ready` | `GET /api/v1/health/ready` (readiness probe) |
 | `info health` | `GET /api/v1/health/` |
-| `service live` | `GET /api/v1/health/live` |
 
 See the [User Guide](USER_GUIDE.md) for the REST API, configuration files and architecture.

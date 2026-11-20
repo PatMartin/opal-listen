@@ -54,16 +54,16 @@ opal listen reaction list
 opal listen reaction get kitchen_lights
 
 # Dry-run against a literal payload — shows ✓/✗ per reaction with the failing condition
-opal listen reaction test --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}'
-opal listen reaction test --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "den"}}'
+opal listen test reaction --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}'
+opal listen test reaction --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "den"}}'
 
 # Dry-run with a REAL utterance through the live pipeline (needs the service)
-opal listen reaction test --text "turn on the kitchen light"
+opal listen test reaction --text "turn on the kitchen light"
 
 # Actually run the matching command (stdin JSON -> python -m json.tool echoes it).
 # Note: the payload must satisfy every condition — a missing field (e.g. no
 # intent_confidence here) makes the reaction NOT match and nothing executes.
-opal listen reaction test --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}' --execute
+opal listen test reaction --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}' --execute
 
 # Update: rename + retime; toggle off and on
 opal listen reaction update kitchen_lights --name lights_kitchen --timeout 30

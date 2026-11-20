@@ -179,7 +179,6 @@ class FailedUtterance(SQLModel, table=True):
     notes: str | None = Field(default=None, max_length=1000)
     recognition_log_id: int | None = _fk("recognition_logs.id", nullable=True, ondelete="SET NULL")
     reviewed: bool = False
-    promoted_to_phrase: bool = False
     created_at: datetime = Field(default_factory=utc_now)
 
 

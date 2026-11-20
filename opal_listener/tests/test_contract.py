@@ -291,8 +291,11 @@ def test_every_operation_has_a_cli_command() -> None:
     from opal_listener.cli.main import OPERATION_COMMANDS
 
     docs = {"openapi", "swagger_ui_html", "swagger_ui_redirect", "redoc_html"}
+    # Infrastructure probes for external monitors (k8s liveness/readiness); intentionally
+    # have no CLI command — `info health` is the human-facing health check.
+    probe_ops = {"opal_health_live_get", "opal_health_ready_get"}
     operations = {r.name for r in _iter_routes(create_app(AppSettings()).routes) if hasattr(r, "methods")} - docs
-    missing = sorted(operations - set(OPERATION_COMMANDS))
+    missing = sorted(operations - set(OPERATION_COMMANDS) - probe_ops)
     assert not missing, f"REST operations without CLI command: {missing}"
     assert not sorted(set(OPERATION_COMMANDS) - operations), "stale CLI mapping entries"
 
@@ -315,7 +318,9 @@ def test_web_ui_parity_table_matches_api_and_cli(generated: dict[str, Any]) -> N
             api[name] = (method.upper(), path)
     assert {n: (m, p) for n, (m, p, _) in ui.items()} == api
     for name, (_m, _p, cli) in ui.items():
-        assert OPERATION_COMMANDS[name] in cli, f"{name}: UI says '{cli}', CLI says '{OPERATION_COMMANDS[name]}'"
+        command = OPERATION_COMMANDS.get(name)
+        if command is not None:
+            assert command in cli, f"{name}: UI says '{cli}', CLI says '{command}'"
 
 
 def test_info_version_matches_contract(generated: dict[str, Any]) -> None:

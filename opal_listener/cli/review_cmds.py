@@ -12,7 +12,7 @@ from opal_listener.cli.output import done, print_json, render, render_kv, state
 FAILED = "/api/v1/failed_utterance/"
 PERF = "/api/v1/performance"
 
-failed_app = typer.Typer(help="Review failed utterances and promote them to training phrases.", no_args_is_help=True)
+failed_app = typer.Typer(help="Review failed utterances.", no_args_is_help=True)
 perf_app = typer.Typer(help="Performance metrics.", no_args_is_help=True)
 
 FAILED_COLUMNS = (
@@ -20,7 +20,6 @@ FAILED_COLUMNS = (
     "transcript",
     "expected_intent",
     "reviewed",
-    "promoted_to_phrase",
     "notes",
     "created_at",
 )
@@ -35,17 +34,16 @@ PERF_COLUMNS = ("id", "recognition_log_id", "wakeword_latency_ms", "stt_latency_
 def failed_list(
     ctx: typer.Context,
     reviewed: bool | None = typer.Option(None, "--reviewed/--unreviewed"),
-    promoted: bool | None = typer.Option(None, "--promoted/--not-promoted"),
     limit: int = typer.Option(50, "--limit", max=500),
 ) -> None:
     """List failed utterances (newest first)."""
-    params = {"limit": limit, "reviewed": reviewed, "promoted": promoted}
+    params = {"limit": limit, "reviewed": reviewed}
     items = state(ctx).api.get(FAILED, params={k: v for k, v in params.items() if v is not None})
     render(ctx, items, FAILED_COLUMNS, "Failed utterances")
 
 
-@failed_app.command("get")
-def failed_get(ctx: typer.Context, fu_id: str) -> None:
+@failed_app.command("show")
+def failed_show(ctx: typer.Context, fu_id: str) -> None:
     """Show a failed utterance."""
     render_kv(ctx, state(ctx).api.get(f"{FAILED}{fu_id}"))
 
@@ -88,23 +86,6 @@ def failed_remove(ctx: typer.Context, fu_id: str) -> None:
     """Delete a failed utterance."""
     state(ctx).api.delete(f"{FAILED}{fu_id}")
     done(ctx, f"failed utterance {fu_id} removed")
-
-
-@failed_app.command("promote")
-def failed_promote(
-    ctx: typer.Context,
-    fu_id: str,
-    intent: str = typer.Option(..., "--intent", help="Intent (id or name) that should have matched"),
-) -> None:
-    """Add a failed utterance as a training phrase (slot values become {placeholders})."""
-    api = state(ctx).api
-    target = api.resolve("/api/v1/intent/", intent)
-    result = api.post_with_etag(
-        f"{FAILED}{fu_id}/promote",
-        json={"intent_id": target["id"]},
-        etag_path=f"/api/v1/intent/{target['id']}/phrase",
-    )
-    done(ctx, f"promoted as '{result['phrase']['phrase']}' for intent '{intent}'", result)
 
 
 def _render_list(ctx: typer.Context, items: list[dict[str, Any]], columns: tuple[str, ...], title: str) -> None:

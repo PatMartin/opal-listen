@@ -24,7 +24,7 @@ def test_golden_phrase(client: TestClient, case: dict[str, Any]) -> None:
 
 
 def test_failed_utterance_promotion_loop(client: TestClient) -> None:
-    """no_match -> failed utterance -> promote -> phrase -> now matches."""
+    """no_match -> failed utterance -> add phrase -> now matches."""
     text = "illuminate the kitchen"
     first = client.post("/api/v1/recognition/test_text", json={"text": text}).json()
     assert first["matched"] is False
@@ -34,14 +34,16 @@ def test_failed_utterance_promotion_loop(client: TestClient) -> None:
     ).json()
     intent = next(i for i in client.get("/api/v1/intent/").json() if i["name"] == "light_turn_on")
     phrases_etag = client.get(f"/api/v1/intent/{intent['id']}/phrase").headers["etag"]
-    promoted = client.post(
-        f"/api/v1/failed_utterance/{fu['id']}/promote",
-        json={"intent_id": intent["id"]},
+    added = client.post(
+        f"/api/v1/intent/{intent['id']}/phrase",
+        json={"phrase": "illuminate the {room_name}"},
         headers={"If-Match": phrases_etag},
+    )
+    assert added.status_code in (200, 201), added.text
+    updated = client.patch(
+        f"/api/v1/failed_utterance/{fu['id']}", json={"reviewed": True, "expected_intent": "light_turn_on"}
     ).json()
-    assert promoted["phrase"]["phrase"] == "illuminate the {room_name}"
-    assert promoted["failed_utterance"]["promoted_to_phrase"] is True
-    assert promoted["failed_utterance"]["reviewed"] is True
+    assert updated["reviewed"] is True
 
     again = client.post("/api/v1/recognition/test_text", json={"text": "illuminate the bedroom"}).json()
     assert again["intent_name"] == "light_turn_on"

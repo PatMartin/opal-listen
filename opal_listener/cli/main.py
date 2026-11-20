@@ -1,5 +1,5 @@
 """`opal listen ...` CLI. Most commands call the REST API (see OPERATION_COMMANDS for the mapping);
-`event publish` is the exception and talks directly to the ZeroMQ event bus."""
+"""
 
 from __future__ import annotations
 
@@ -19,25 +19,24 @@ from opal_listener.cli.catalog_cmds import (
     slots_app,
     wakewords_app,
 )
-from opal_listener.cli.client import ApiClient, api_url_from_env, xpub_url_from_env, xsub_url_from_env
-from opal_listener.cli.event_cmds import event_app
+from opal_listener.cli.client import ApiClient, api_url_from_env
 from opal_listener.cli.output import CliState, done, state
 from opal_listener.cli.reactions_cmds import reactions_app
 from opal_listener.cli.review_cmds import failed_app, perf_app
 from opal_listener.cli.service_cmds import config_app, info_app, service_app
-from opal_listener.cli.test_cmds import pipeline_app, recognition_app, test_app
+from opal_listener.cli.test_cmds import pipeline_app, test_app
 from opal_listener.cli.tree_cmds import register as register_tree
 
 # REST operation (FastAPI function name) -> CLI command. Checked by the parity test.
 OPERATION_COMMANDS: dict[str, str] = {
     "list_wakewords": "wakeword list",
     "create_wakeword": "wakeword add",
-    "show_wakeword": "wakeword get",
+    "show_wakeword": "wakeword show",
     "update_wakeword": "wakeword update",
     "remove_wakeword": "wakeword remove",
     "list_intents": "intent list",
     "create_intent": "intent add",
-    "show_intent": "intent get",
+    "show_intent": "intent show",
     "update_intent": "intent update",
     "remove_intent": "intent remove",
     "list_phrases": "intent phrases",
@@ -45,7 +44,7 @@ OPERATION_COMMANDS: dict[str, str] = {
     "remove_phrase": "intent remove-phrase",
     "list_slots": "slot list",
     "create_slot": "slot add",
-    "show_slot": "slot get",
+    "show_slot": "slot show",
     "update_slot": "slot update",
     "remove_slot": "slot remove",
     "list_slot_values": "slot values",
@@ -56,13 +55,13 @@ OPERATION_COMMANDS: dict[str, str] = {
     "remove_alias": "slot remove-alias",
     "opal_profile_list": "profile list",
     "opal_profile_create": "profile add",
-    "opal_profile_get": "profile get",
+    "opal_profile_get": "profile show",
     "opal_profile_patch": "profile update",
     "opal_profile_delete": "profile remove",
     "opal_profile_activate": "profile activate",
     "opal_persona_list": "persona list",
     "opal_persona_create": "persona add",
-    "opal_persona_get": "persona get",
+    "opal_persona_get": "persona show",
     "opal_persona_patch": "persona update",
     "opal_persona_delete": "persona remove",
     "opal_persona_validate": "persona validate",
@@ -81,16 +80,13 @@ OPERATION_COMMANDS: dict[str, str] = {
     "stream_recognition": "test listen",
     "list_failed_utterances": "failed list",
     "create_failed_utterance": "failed add",
-    "show_failed_utterance": "failed get",
+    "show_failed_utterance": "failed show",
     "update_failed_utterance": "failed update",
     "remove_failed_utterance": "failed remove",
-    "promote_failed_utterance": "failed promote",
     "get_performance_last": "service perf last",
     "get_performance_summary": "service perf summary",
     "get_performance_history": "service perf history",
     "opal_health_get": "info health",
-    "opal_health_live_get": "service live",
-    "opal_health_ready_get": "service ready",
     "opal_service_start": "service start",
     "opal_service_stop": "service stop",
     "opal_service_log": "service log",
@@ -112,14 +108,12 @@ for sub_app, name in (
     (profiles_app, "profile"),
     (personas_app, "persona"),
     (test_app, "test"),
-    (recognition_app, "recognition"),
     (pipeline_app, "pipeline"),
     (failed_app, "failed"),
     (reactions_app, "reaction"),
     (config_app, "config"),
     (service_app, "service"),
     (info_app, "info"),
-    (event_app, "event"),
 ):
     listen_app.add_typer(sub_app, name=name)
 
@@ -166,8 +160,6 @@ def listen_gui(
 def listen_callback(
     ctx: typer.Context,
     api_url: str = typer.Option(None, "--api-url", help="REST API base URL [env: OPAL_LISTEN_API_URL]"),
-    xpub: str = typer.Option(None, "--xpub", help="ZeroMQ event publisher URL [env: OPAL_EVENT_XPUB_URL]"),
-    xsub: str = typer.Option(None, "--xsub", help="ZeroMQ event subscriber URL [env: OPAL_EVENT_XSUB_URL]"),
     json_output: bool = typer.Option(False, "--json", help="Print raw JSON responses"),
     timeout: float = typer.Option(60.0, "--timeout", help="HTTP timeout in seconds"),
     env_file: str = typer.Option(None, "--env-file", help="Load this dotenv file instead of ./.env"),
@@ -183,8 +175,6 @@ def listen_callback(
     ctx.obj = CliState(
         ApiClient(api_url or api_url_from_env(), timeout),
         json_output,
-        xpub_url=xpub or xpub_url_from_env(),
-        xsub_url=xsub or xsub_url_from_env(),
     )
 
 

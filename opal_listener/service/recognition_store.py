@@ -93,9 +93,9 @@ def prune_transcripts(session: Session, retention_days: int) -> int:
 
 
 def prune_failed_utterances(session: Session, ttl_days: int) -> int:
-    """Hard-delete unreviewed, unpromoted failed utterances older than ``ttl_days``.
+    """Hard-delete unreviewed failed utterances older than ``ttl_days``.
 
-    Reviewed or promoted failures are intentionally curated and always kept; ``0`` keeps
+    Reviewed failures are intentionally curated and always kept; ``0`` keeps
     everything. Returns the number of rows deleted."""
     if ttl_days <= 0:
         return 0
@@ -104,7 +104,6 @@ def prune_failed_utterances(session: Session, ttl_days: int) -> int:
         delete(FailedUtterance)
         .where(col(FailedUtterance.created_at) < cutoff)
         .where(FailedUtterance.reviewed == False)  # noqa: E712
-        .where(FailedUtterance.promoted_to_phrase == False)  # noqa: E712
     )
     return result.rowcount or 0
 
@@ -137,13 +136,11 @@ def count_logs(session: Session) -> dict[str, int]:
 
 
 def list_failed(
-    session: Session, reviewed: bool | None, promoted: bool | None, limit: int, offset: int = 0
+    session: Session, reviewed: bool | None, limit: int, offset: int = 0
 ) -> list[FailedUtterance]:
     query = select(FailedUtterance)
     if reviewed is not None:
         query = query.where(FailedUtterance.reviewed == reviewed)
-    if promoted is not None:
-        query = query.where(FailedUtterance.promoted_to_phrase == promoted)
     query = query.order_by(col(FailedUtterance.id).desc()).offset(offset).limit(limit)
     return list(session.exec(query).all())
 
@@ -160,7 +157,7 @@ def create_failed(session: Session, data: s.FailedUtteranceCreate) -> FailedUtte
 def update_failed(session: Session, obj_id: int, data: s.FailedUtteranceUpdate) -> FailedUtterance:
     obj = get_or_404(session, FailedUtterance, obj_id, "failed utterance")
     for key, value in data.model_dump(exclude_unset=True).items():
-        if key in ("reviewed", "promoted_to_phrase") and value is None:
+        if key == "reviewed" and value is None:
             continue
         setattr(obj, key, value)
     session.add(obj)

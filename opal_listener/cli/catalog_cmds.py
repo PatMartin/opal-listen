@@ -53,8 +53,8 @@ def wakewords_list(ctx: typer.Context) -> None:
     render(ctx, state(ctx).api.get(WAKEWORDS), WAKEWORD_COLUMNS, "Wakewords")
 
 
-@wakewords_app.command("get")
-def wakewords_get(ctx: typer.Context, wakeword: str = typer.Argument(..., help="Name or id")) -> None:
+@wakewords_app.command("show")
+def wakewords_show(ctx: typer.Context, wakeword: str = typer.Argument(..., help="Name or id")) -> None:
     """Show one wakeword."""
     api = state(ctx).api
     render_kv(ctx, api.get(f"{WAKEWORDS}{api.resolve(WAKEWORDS, wakeword)['id']}"))
@@ -112,8 +112,8 @@ def intents_list(ctx: typer.Context) -> None:
     render(ctx, items, INTENT_COLUMNS, "Intents")
 
 
-@intents_app.command("get")
-def intents_get(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
+@intents_app.command("show")
+def intents_show(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
     """Show an intent with its phrases."""
     api = state(ctx).api
     item = api.get(f"{INTENTS}{api.resolve(INTENTS, intent)['id']}")
@@ -238,8 +238,8 @@ def slots_list(ctx: typer.Context) -> None:
     render(ctx, items, ("id", "name", "slot_type", "values", "description"), "Slots")
 
 
-@slots_app.command("get")
-def slots_get(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
+@slots_app.command("show")
+def slots_show(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
     """Show a slot."""
     api = state(ctx).api
     render(ctx, api.get(f"{SLOTS}{api.resolve(SLOTS, slot)['id']}"))
@@ -439,8 +439,8 @@ def profiles_list(ctx: typer.Context) -> None:
     render(ctx, state(ctx).api.get(PROFILES), PROFILE_COLUMNS, "Profiles")
 
 
-@profiles_app.command("get")
-def profiles_get(ctx: typer.Context, profile: str = typer.Argument(..., help="Name or id")) -> None:
+@profiles_app.command("show")
+def profiles_show(ctx: typer.Context, profile: str = typer.Argument(..., help="Name or id")) -> None:
     """Show a profile."""
     api = state(ctx).api
     render_kv(ctx, api.get(f"{PROFILES}{api.resolve(PROFILES, profile)['id']}"))
@@ -607,8 +607,8 @@ def personas_list(
     render(ctx, state(ctx).api.get(PERSONAS, params=params), PERSONA_COLUMNS, "Personas")
 
 
-@personas_app.command("get")
-def personas_get(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
+@personas_app.command("show")
+def personas_show(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
     """Show one persona."""
     api = state(ctx).api
     render_kv(ctx, api.get(f"{PERSONAS}{_persona_id(api, persona)}"))

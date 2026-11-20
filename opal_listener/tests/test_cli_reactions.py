@@ -48,18 +48,18 @@ def test_add_list_get_update_remove(cli: CliHarness, cfg: tuple[Path, Path]) -> 
     assert listed[0]["name"] == "kitchen"
     assert len(listed[0]["conditions"]) == 3
 
-    got = cli.json("reaction", "get", "kitchen")
+    got = cli.json("reaction", "show", "kitchen")
     assert got["conditions"][1] == {"path": "slot_values.room_name", "operator": "eq", "value": "kitchen"}
 
     assert cli("reaction", "update", "kitchen", "--name", "kitchen_lights", "--timeout", "5").exit_code == 0
-    got = cli.json("reaction", "get", "kitchen_lights")
+    got = cli.json("reaction", "show", "kitchen_lights")
     assert got["actions"][0]["timeout_s"] == 5.0
 
     assert cli("reaction", "update", "kitchen_lights", "--clear-conditions").exit_code == 0
-    assert cli.json("reaction", "get", "kitchen_lights")["conditions"] == []
+    assert cli.json("reaction", "show", "kitchen_lights")["conditions"] == []
 
     assert cli("reaction", "disable", "kitchen_lights").exit_code == 0
-    assert cli.json("reaction", "get", "kitchen_lights")["enabled"] is False
+    assert cli.json("reaction", "show", "kitchen_lights")["enabled"] is False
     assert cli("reaction", "enable", "kitchen_lights").exit_code == 0
 
     assert cli("reaction", "remove", "kitchen_lights").exit_code == 0
@@ -82,7 +82,7 @@ def test_cond_parsing_and_validation(cli: CliHarness, cfg: tuple[Path, Path]) ->
         "reaction", "add", "ok", "--run", "/bin/true",
         "--cond", "slot_values.room in [kitchen, den]",
     ).exit_code == 0
-    got = cli.json("reaction", "get", "ok")
+    got = cli.json("reaction", "show", "ok")
     assert got["conditions"][0]["value"] == ["kitchen", "den"]
 
 
@@ -93,14 +93,14 @@ def test_update_replaces_conditions_and_actions(cli: CliHarness, cfg: tuple[Path
         "--cond", "intent_name eq y",
         "--run", "b 2", "--run", "c 3", "--env", "K=V",
     ).exit_code == 0
-    got = cli.json("reaction", "get", "r")
+    got = cli.json("reaction", "show", "r")
     assert got["conditions"] == [{"path": "intent_name", "operator": "eq", "value": "y"}]
     assert [a["argv"] for a in got["actions"]] == [["b", "2"], ["c", "3"]]
     assert all(a["env"] == {"K": "V"} for a in got["actions"])
 
 
 def test_missing_name_errors(cli: CliHarness, cfg: tuple[Path, Path]) -> None:
-    assert cli("reaction", "get", "ghost").exit_code != 0
+    assert cli("reaction", "show", "ghost").exit_code != 0
     assert cli("reaction", "update", "ghost", "--disabled").exit_code != 0
     assert cli("reaction", "remove", "ghost").exit_code != 0
     assert cli("reaction", "enable", "ghost").exit_code != 0
@@ -112,16 +112,16 @@ def test_dry_run_with_payload(cli: CliHarness, cfg: tuple[Path, Path]) -> None:
         "--cond", "intent_name eq get_time",
         "--cond", "intent_confidence gte 0.8",
     ).exit_code == 0
-    hit = cli.json("reaction", "test", "--payload",
+    hit = cli.json("test", "reaction", "--payload",
                    '{"intent_name": "get_time", "intent_confidence": 0.9}')
     assert hit == [{"name": "time", "enabled": True, "match": True, "failed_conditions": []}]
-    miss = cli.json("reaction", "test", "--payload",
+    miss = cli.json("test", "reaction", "--payload",
                     '{"intent_name": "get_time", "intent_confidence": 0.5}')
     assert miss[0]["match"] is False
     assert miss[0]["failed_conditions"][0]["path"] == "intent_confidence"
     # exactly one source flag
-    assert cli("reaction", "test").exit_code != 0
-    assert cli("reaction", "test", "--payload", "{}", "--text", "x").exit_code != 0
+    assert cli("test", "reaction").exit_code != 0
+    assert cli("test", "reaction", "--payload", "{}", "--text", "x").exit_code != 0
 
 
 def test_execute_runs_matched_commands(cli: CliHarness, cfg: tuple[Path, Path], tmp_path: Path) -> None:
@@ -133,19 +133,19 @@ def test_execute_runs_matched_commands(cli: CliHarness, cfg: tuple[Path, Path], 
         "reaction", "add", "r", "--run", f"{sys.executable} {script} {marker}",
         "--cond", "intent_name eq light_turn_on",
     ).exit_code == 0
-    result = cli("reaction", "test", "--payload", '{"intent_name": "light_turn_on"}', "--execute")
+    result = cli("test", "reaction", "--payload", '{"intent_name": "light_turn_on"}', "--execute")
     assert result.exit_code == 0, result.output
     assert marker.read_text() == "light_turn_on"
     # non-matching payload: nothing runs
     marker.unlink()
-    result = cli("reaction", "test", "--payload", '{"intent_name": "other"}', "--execute")
+    result = cli("test", "reaction", "--payload", '{"intent_name": "other"}', "--execute")
     assert result.exit_code == 0
     assert not marker.exists()
 
 
 def test_text_uses_real_recognition(cli: CliHarness, cfg: tuple[Path, Path]) -> None:
     assert cli("reaction", "add", "r", "--run", "/bin/true", "--cond", "intent_name eq light_turn_on").exit_code == 0
-    report = cli.json("reaction", "test", "--text", "turn on the kitchen light")
+    report = cli.json("test", "reaction", "--text", "turn on the kitchen light")
     assert report[0]["match"] is True
 
 

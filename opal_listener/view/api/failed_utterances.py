@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 
-from opal_listener.models.opal_standard import OPAL_404_RESPONSE, OPAL_PRECONDITION_RESPONSES
+from opal_listener.models.opal_standard import OPAL_404_RESPONSE
 from opal_listener.models.schemas import (
     IdPath,
     FailedUtteranceCreate,
-    FailedUtterancePromoteRequest,
     FailedUtteranceRead,
     FailedUtteranceUpdate,
-    IntentPhraseRead,
-    PromoteResult,
 )
-from opal_listener.models.tables import FailedUtterance, Intent
-from opal_listener.service import recognition_store, review
-from opal_listener.service.catalog import get_by_ref, get_or_404, parse_id
-from opal_listener.service.concurrency import collection_etag, require_matching_etag
+from opal_listener.models.tables import FailedUtterance
+from opal_listener.service import recognition_store
+from opal_listener.service.catalog import get_by_ref, parse_id
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.view.api.deps import get_service
 
@@ -27,12 +23,11 @@ _LIMIT = Query(default=100, ge=1, le=500)
 @router.get("/", response_model=list[FailedUtteranceRead], operation_id="list_failed_utterances")
 def list_failed_utterances(
     reviewed: bool | None = None,
-    promoted: bool | None = None,
     limit: int = _LIMIT,
     svc: ListenerService = Depends(get_service),
 ) -> list[FailedUtteranceRead]:
     with svc.db.session() as session:
-        rows = recognition_store.list_failed(session, reviewed, promoted, limit, 0)
+        rows = recognition_store.list_failed(session, reviewed, limit, 0)
         return [FailedUtteranceRead.model_validate(r) for r in rows]
 
 
@@ -98,32 +93,3 @@ def remove_failed_utterance(
         session.delete(get_by_ref(session, FailedUtterance, failed_utterance_id, "failed utterance"))
         session.commit()
     return Response(status_code=204)
-
-
-@router.post(
-    "/{failed_utterance_id}/promote",
-    response_model=PromoteResult,
-    responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="promote_failed_utterance",
-)
-def promote_failed_utterance(
-    data: FailedUtterancePromoteRequest,
-    failed_utterance_id: IdPath,
-    if_match: str = Header(..., alias="If-Match", pattern=r'^"[^"]+"$'),
-    svc: ListenerService = Depends(get_service),
-) -> PromoteResult:
-    """Promote a failed utterance as a training phrase for the given intent id."""
-    with svc.config_change() as session:
-        intent_id = parse_id(data.intent_id, "intent")
-        intent = get_or_404(session, Intent, intent_id, "intent")
-        phrases = [IntentPhraseRead.model_validate(p) for p in intent.phrases]
-        require_matching_etag(if_match, collection_etag(phrases), "phrases")
-        fu, phrase = review.promote(
-            session, svc, parse_id(failed_utterance_id, "failed utterance"), intent
-        )
-        session.flush()
-        result = PromoteResult(
-            failed_utterance=FailedUtteranceRead.model_validate(fu),
-            phrase=IntentPhraseRead.model_validate(phrase),
-        )
-    return result

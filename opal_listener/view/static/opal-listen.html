@@ -117,12 +117,12 @@
 const ROUTES = [
   ["list_wakewords", "GET", "/api/v1/wakeword/", "wakeword list", "wakewords"],
   ["create_wakeword", "POST", "/api/v1/wakeword/", "wakeword add", "wakewords"],
-  ["show_wakeword", "GET", "/api/v1/wakeword/{wakeword_id}", "wakeword get", "wakewords"],
+  ["show_wakeword", "GET", "/api/v1/wakeword/{wakeword_id}", "wakeword show", "wakewords"],
   ["update_wakeword", "PATCH", "/api/v1/wakeword/{wakeword_id}", "wakeword update", "wakewords"],
   ["remove_wakeword", "DELETE", "/api/v1/wakeword/{wakeword_id}", "wakeword remove", "wakewords"],
   ["list_intents", "GET", "/api/v1/intent/", "intent list", "intents"],
   ["create_intent", "POST", "/api/v1/intent/", "intent add", "intents"],
-  ["show_intent", "GET", "/api/v1/intent/{intent_id}", "intent get", "intents"],
+  ["show_intent", "GET", "/api/v1/intent/{intent_id}", "intent show", "intents"],
   ["update_intent", "PATCH", "/api/v1/intent/{intent_id}", "intent update", "intents"],
   ["remove_intent", "DELETE", "/api/v1/intent/{intent_id}", "intent remove", "intents"],
   ["list_phrases", "GET", "/api/v1/intent/{intent_id}/phrase", "intent phrases", "intents"],
@@ -130,7 +130,7 @@ const ROUTES = [
   ["remove_phrase", "DELETE", "/api/v1/intent/{intent_id}/phrase/{phrase_id}", "intent remove-phrase", "intents"],
   ["list_slots", "GET", "/api/v1/slot/", "slot list", "slots"],
   ["create_slot", "POST", "/api/v1/slot/", "slot add", "slots"],
-  ["show_slot", "GET", "/api/v1/slot/{slot_id}", "slot get", "slots"],
+  ["show_slot", "GET", "/api/v1/slot/{slot_id}", "slot show", "slots"],
   ["update_slot", "PATCH", "/api/v1/slot/{slot_id}", "slot update", "slots"],
   ["remove_slot", "DELETE", "/api/v1/slot/{slot_id}", "slot remove", "slots"],
   ["list_slot_values", "GET", "/api/v1/slot/{slot_id}/value", "slot values", "slots"],
@@ -141,7 +141,7 @@ const ROUTES = [
   ["remove_alias", "DELETE", "/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}", "slot remove-alias", "slots"],
   ["opal_profile_list", "GET", "/api/v1/profile/", "profile list", "profiles"],
   ["opal_profile_create", "POST", "/api/v1/profile/", "profile add", "profiles"],
-  ["opal_profile_get", "GET", "/api/v1/profile/{profile_id}", "profile get", "profiles"],
+  ["opal_profile_get", "GET", "/api/v1/profile/{profile_id}", "profile show", "profiles"],
   ["opal_profile_patch", "PATCH", "/api/v1/profile/{profile_id}", "profile update", "profiles"],
   ["opal_profile_delete", "DELETE", "/api/v1/profile/{profile_id}", "profile remove", "profiles"],
   ["opal_profile_activate", "POST", "/api/v1/profile/{profile_id}/activate", "profile activate", "profiles"],
@@ -154,25 +154,24 @@ const ROUTES = [
   ["start_recognition", "POST", "/api/v1/recognition/start", "pipeline start", "pipeline"],
   ["stop_recognition", "POST", "/api/v1/recognition/stop", "pipeline stop", "pipeline"],
   ["show_recognition_status", "GET", "/api/v1/recognition/status", "pipeline status", "pipeline"],
-  ["stream_recognition", "GET", "/api/v1/recognition/stream", "test listen [--debug]", "test"],
+  ["stream_recognition", "GET", "/api/v1/recognition/stream", "test listen", "test"],
   ["list_failed_utterances", "GET", "/api/v1/failed_utterance/", "failed list", "failed"],
   ["create_failed_utterance", "POST", "/api/v1/failed_utterance/", "failed add", "failed"],
-  ["show_failed_utterance", "GET", "/api/v1/failed_utterance/{failed_utterance_id}", "failed get", "failed"],
+  ["show_failed_utterance", "GET", "/api/v1/failed_utterance/{failed_utterance_id}", "failed show", "failed"],
   ["update_failed_utterance", "PATCH", "/api/v1/failed_utterance/{failed_utterance_id}", "failed update", "failed"],
   ["remove_failed_utterance", "DELETE", "/api/v1/failed_utterance/{failed_utterance_id}", "failed remove", "failed"],
-  ["promote_failed_utterance", "POST", "/api/v1/failed_utterance/{failed_utterance_id}/promote", "failed promote", "failed"],
   ["get_performance_last", "GET", "/api/v1/performance/last", "service perf last", "perf"],
   ["get_performance_summary", "GET", "/api/v1/performance/summary", "service perf summary", "perf"],
   ["get_performance_history", "GET", "/api/v1/performance/history", "service perf history", "perf"],
   ["opal_health_get", "GET", "/api/v1/health/", "info health", "system"],
-  ["opal_health_live_get", "GET", "/api/v1/health/live", "service live", "system"],
-  ["opal_health_ready_get", "GET", "/api/v1/health/ready", "service ready", "system"],
+  ["opal_health_live_get", "GET", "/api/v1/health/live", "—", "system"],
+  ["opal_health_ready_get", "GET", "/api/v1/health/ready", "—", "system"],
   ["opal_config_save", "POST", "/api/v1/config/save", "config save", "config"],
   ["opal_config_load", "POST", "/api/v1/config/load", "config load", "config"],
   ["opal_config_validate", "POST", "/api/v1/config/validate", "config validate", "config"],
   ["opal_persona_list", "GET", "/api/v1/persona/", "persona list", "personas"],
   ["opal_persona_create", "POST", "/api/v1/persona/", "persona add", "personas"],
-  ["opal_persona_get", "GET", "/api/v1/persona/{persona_id}", "persona get", "personas"],
+  ["opal_persona_get", "GET", "/api/v1/persona/{persona_id}", "persona show", "personas"],
   ["opal_persona_patch", "PATCH", "/api/v1/persona/{persona_id}", "persona update", "personas"],
   ["opal_persona_delete", "DELETE", "/api/v1/persona/{persona_id}", "persona remove", "personas"],
   ["opal_persona_validate", "POST", "/api/v1/persona/{persona_id}/validate", "persona validate", "personas"],
@@ -198,7 +197,7 @@ const S = {
   base: localStorage.getItem("opal_api") || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000"),
   token: localStorage.getItem("opal_token") || "",
   timers: [], es: null, startedHere: false, lastResult: null,
-  failed: { limit: 25, reviewed: "", promoted: "" },
+  failed: { limit: 25, reviewed: "" },
   history: { limit: 50 },
 };
 
@@ -288,6 +287,7 @@ function kv(obj) {
 
 function op(name) {
   const r = ROUTE[name];
+  if (!r) return "";
   return `<span class="op" title="opal listen ${esc(r.cli)}"><b class="m-${r.method}">${r.method}</b> ${esc(r.path)}</span>`;
 }
 function opsLine(names) {
@@ -413,9 +413,9 @@ VIEWS.pipeline = async () => {
     try { el.innerHTML = kv(await api("GET", "/api/v1/recognition/status")); } catch (e) { el.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   }), 0);
   return `<h2>Pipeline</h2><div class="sub">Live microphone pipeline: wakeword → VAD → STT → intent. Status refreshes every 2 s.</div>
-    ${card("Control", ["start_recognition", "stop_pipeline"], `<div class="row">${btn("Start", "pipeStart")} ${btn("Stop", "pipeStop", {}, "danger")}
+    ${card("Control", ["start_recognition", "stop_recognition"], `<div class="row">${btn("Start", "pipeStart")} ${btn("Stop", "pipeStop", {}, "danger")}
       <a href="#/test">Watch live results on the Test page →</a></div>`)}
-    ${card("Status", ["get_status"], `<div id="pipeStatus"><p class="muted">Loading…</p></div>`)}`;
+    ${card("Status", ["show_recognition_status"], `<div id="pipeStatus"><p class="muted">Loading…</p></div>`)}`;
 };
 
 VIEWS.wakewords = async () => {
@@ -428,7 +428,7 @@ VIEWS.wakewords = async () => {
     ["updated_at", "updated"],
   ], { actions: r => btn("Save", "wwSave", { id: r.id }, "small") + btn("Get", "wwGet", { id: r.id }, "ghost small") + btn("Delete", "wwDelete", { id: r.id, name: r.name }, "danger small") });
   return `<h2>Wakewords</h2><div class="sub">Words that open a command session. Names are normalized (lowercase words).</div>
-    ${opsLine(["list_wakewords", "create_wakeword", "get_wakeword", "update_wakeword", "delete_wakeword"])}
+    ${opsLine(["list_wakewords", "create_wakeword", "show_wakeword", "update_wakeword", "remove_wakeword"])}
     ${card("Wakewords", ["list_wakewords"], rows)}
     ${card("Add wakeword", ["create_wakeword"], `<form data-form="wwAdd" class="row">
       <input name="name" placeholder="name, e.g. hey opal" required>
@@ -441,7 +441,7 @@ VIEWS.intents = async ([id]) => {
   if (id) return intentDetail(id);
   const items = await api("GET", "/api/v1/intent/");
   return `<h2>Intents</h2><div class="sub">Intents with training phrases. Click an intent to edit its phrases.</div>
-    ${opsLine(["list_intents", "create_intent", "get_intent", "update_intent", "delete_intent", "list_phrases", "add_phrase", "delete_phrase"])}
+    ${opsLine(["list_intents", "create_intent", "show_intent", "update_intent", "remove_intent", "list_phrases", "add_phrase", "remove_phrase"])}
     ${card("Intents", ["list_intents"], table(items, [["id", "id"], ["name", "name"], ["enabled", "enabled"], ["confidence_threshold", "threshold"],
       ["phrases", "phrases", r => String(r.phrases.length)], ["description", "description"]], { rowAct: r => `data-act="go" data-to="#/intents/${r.id}"` }))}
     ${card("Add intent", ["create_intent"], `<form data-form="intentAdd">
@@ -465,10 +465,10 @@ async function intentDetail(id) {
       <label><input type="checkbox" name="enabled" ${intent.enabled ? "checked" : ""}> enabled</label></div>
       <p class="row"><button type="submit">Save</button> ${btn("Delete intent", "intentDelete", { id: intent.id, name: intent.name }, "danger")}</p></form>
       <p class="hint">Created ${cell(intent.created_at)} · updated ${cell(intent.updated_at)}</p>`)}
-    ${card("Quick test", ["test_text"], `<form data-form="quickTest" class="row"><input name="text" style="flex:1" placeholder="say something…" required>
+    ${card("Quick test", ["test_recognition_text"], `<form data-form="quickTest" class="row"><input name="text" style="flex:1" placeholder="say something…" required>
       <button type="submit">Test</button></form><div id="quickResult"></div>`)}
     </div>
-    ${card("Phrases", ["list_phrases", "delete_phrase"], table(phrases, [["id", "id"], ["phrase", "phrase", r => `<code>${esc(r.phrase)}</code>`], ["created_at", "created"]],
+    ${card("Phrases", ["list_phrases", "remove_phrase"], table(phrases, [["id", "id"], ["phrase", "phrase", r => `<code>${esc(r.phrase)}</code>`], ["created_at", "created"]],
       { actions: r => btn("Delete", "phraseDelete", { intent: intent.id, id: r.id }, "danger small"), empty: "No phrases: this intent can never match." }))}
     ${card("Add phrase", ["add_phrase"], `<form data-form="phraseAdd" data-id="${intent.id}" class="row">
       <input name="phrase" style="flex:1" class="mono" placeholder="switch on [the] {room_name} (light | lights)" required>
@@ -480,7 +480,7 @@ VIEWS.slots = async ([id]) => {
   const items = await api("GET", "/api/v1/slot/");
   const values = r => r.values.map(v => esc(v.value) + (v.aliases.length ? ` <span class="muted">(${v.aliases.map(a => esc(a.alias)).join(", ")})</span>` : "")).join(", ");
   return `<h2>Slots</h2><div class="sub">Slot types: <code>list</code> (values + aliases), <code>number</code> (spoken numbers), <code>text</code> (free text, needs open STT).</div>
-    ${opsLine(["list_slots", "create_slot", "get_slot", "update_slot", "delete_slot", "list_slot_values", "add_slot_value", "delete_slot_value", "list_aliases", "add_alias", "delete_alias"])}
+    ${opsLine(["list_slots", "create_slot", "show_slot", "update_slot", "remove_slot", "list_slot_values", "add_slot_value", "remove_slot_value", "list_aliases", "add_alias", "remove_alias"])}
     ${card("Slots", ["list_slots"], table(items, [["id", "id"], ["name", "name"], ["slot_type", "type"], ["values", "values", values], ["description", "description"]],
       { rowAct: r => `data-act="go" data-to="#/slots/${r.id}"` }))}
     ${card("Add slot", ["create_slot", "add_slot_value", "add_alias"], `<form data-form="slotAdd">
@@ -497,13 +497,13 @@ async function slotDetail(id) {
   const aliasCell = v => v.aliases.map(a => `<span class="chip">${esc(a.alias)}${btn("×", "aliasDelete", { slot: slot.id, value: v.id, id: a.id }, "")}</span>`).join("") +
     `<form data-form="aliasAdd" data-slot="${slot.id}" data-value="${v.id}" class="row" style="display:inline-flex"><input name="alias" placeholder="new alias" size="12" required><button class="small" type="submit">+</button></form>`;
   return `<p><a href="#/slots">← Slots</a></p><h2>${esc(slot.name)}</h2><div class="sub">${esc(slot.slot_type)} slot · ${esc(slot.description || "")}</div>
-    ${card("Settings", ["show_slot", "update_slot", "delete_slot"], `<form data-form="slotUpdate" data-id="${slot.id}" class="row">
+    ${card("Settings", ["show_slot", "update_slot", "remove_slot"], `<form data-form="slotUpdate" data-id="${slot.id}" class="row">
       <input name="name" value="${esc(slot.name)}">
       <select name="slot_type">${["list", "number", "text"].map(t => `<option ${t === slot.slot_type ? "selected" : ""}>${t}</option>`).join("")}</select>
       <input name="description" value="${esc(slot.description || "")}" placeholder="description" style="flex:1">
       <button type="submit">Save</button> ${btn("Delete slot", "slotDelete", { id: slot.id, name: slot.name }, "danger")}</form>
       <p class="hint">A slot used by a phrase cannot be deleted (the change is validated first).</p>`)}
-    ${card("Values & aliases", ["list_slot_values", "list_aliases", "add_alias", "delete_alias", "delete_slot_value"],
+    ${card("Values & aliases", ["list_slot_values", "list_aliases", "add_alias", "remove_alias", "remove_slot_value"],
       table(values, [["id", "id"], ["value", "value", r => `<b>${esc(r.value)}</b>`], ["aliases", "aliases (normalize to the value)", aliasCell]],
         { actions: r => btn("Aliases", "aliasList", { slot: slot.id, value: r.id }, "ghost small") + btn("Delete", "valueDelete", { slot: slot.id, id: r.id, name: r.value }, "danger small"), empty: "No values." }))}
     ${card("Add value", ["add_slot_value", "add_alias"], `<form data-form="valueAdd" data-id="${slot.id}" class="row">
@@ -560,8 +560,8 @@ VIEWS.settings = async () => {
   const settings = await api("GET", "/api/v1/setting/");
   const rows = Object.entries(settings).map(([key, value]) => ({ key, value }));
   return `<h2>Settings</h2><div class="sub">Values are validated by type and range on save; changes are applied atomically via PATCH with the current ETag.</div>
-    ${opsLine(["opal_setting_list", "opal_setting_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
-    ${card("Settings", ["opal_setting_list", "opal_setting_patch", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
+    ${opsLine(["opal_setting_list", "opal_setting_get", "opal_setting_put", "opal_setting_delete"])}
+    ${card("Settings", ["opal_setting_list", "opal_setting_get", "opal_setting_put", "opal_setting_delete"], table(rows, [["key", "key", r => `<code>${esc(r.key)}</code>`],
       ["value", "value", r => `<input data-setting="${esc(r.key)}" value="${esc(r.value)}" style="width:100%">`]],
       { actions: r => btn("Info", "settingGet", { key: r.key }, "ghost small") + btn("Save", "settingSave", { key: r.key }, "small") + btn("Reset", "settingReset", { key: r.key }, "small ghost") }))}`;
 };
@@ -569,17 +569,17 @@ VIEWS.settings = async () => {
 VIEWS.test = async () => {
   return `<h2>Test</h2><div class="sub">Text, audio files and the live microphone go through the same normalization, intent and slot pipeline.</div>
     <div class="cols">
-    ${card("Text", ["test_text"], `<form data-form="testText">
+    ${card("Text", ["test_recognition_text"], `<form data-form="testText">
       <input name="text" style="width:100%" placeholder="computer, turn on the kitchen light" required>
       <p class="row"><label><input type="checkbox" name="save_log" checked> save to logs</label> <button type="submit">Test text</button></p></form>`)}
-    ${card("Audio file", ["test_audio"], `<form data-form="testAudio">
+    ${card("Audio file", ["test_recognition_audio"], `<form data-form="testAudio">
       <input type="file" name="file" accept=".wav,audio/wav" required>
       <p class="row"><label><input type="checkbox" name="require_wakeword"> require wakeword</label>
         <label><input type="checkbox" name="save_log" checked> save to logs</label> <button type="submit">Test audio</button></p></form>
       <p class="hint">16-bit PCM WAV, mono or stereo, any rate (resampled to 16 kHz).</p>`)}
     </div>
     <div id="testResult"></div>
-    ${card("Live listen", ["stream_recognition", "start_pipeline", "stop_pipeline"], `<div class="row">
+    ${card("Live listen", ["stream_recognition", "start_pipeline", "stop_recognition"], `<div class="row">
       ${btn("Listen", "listenStart", { debug: 0 })} ${btn("Listen (debug)", "listenStart", { debug: 1 })} ${btn("Stop", "listenStop", {}, "danger")}
       <label><input type="checkbox" id="autoStart" checked> start the pipeline if it is not running (and stop it afterwards)</label></div>
       <div class="row" style="margin-top:10px"><span id="liveState" class="badge">idle</span><div class="meter"><div id="meterBar"></div></div><span id="meterText" class="op">– dBFS</span></div>
@@ -589,15 +589,15 @@ VIEWS.test = async () => {
 
 VIEWS.failed = async () => {
   const f = S.failed;
-  const items = await api("GET", "/api/v1/failed_utterance/", { query: { limit: f.limit, reviewed: f.reviewed, promoted: f.promoted } });
+  const items = await api("GET", "/api/v1/failed_utterance/", { query: { limit: f.limit, reviewed: f.reviewed } });
   const sel = (name, value) => `<select data-filter="failed.${name}"><option value="" ${value === "" ? "selected" : ""}>any</option>
     <option value="true" ${value === "true" ? "selected" : ""}>yes</option><option value="false" ${value === "false" ? "selected" : ""}>no</option></select>`;
-  return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here. Promote them to training phrases (slot values become placeholders).</div>
-    ${opsLine(["list_failed_utterances", "create_failed_utterance", "get_failed_utterance", "update_failed_utterance", "delete_failed_utterance", "promote_to_phrase"])}
-    ${card("Failed utterances", ["list_failed_utterances"], `<div class="row">reviewed ${sel("reviewed", f.reviewed)} promoted ${sel("promoted", f.promoted)}</div>` +
-      table(items, [["id", "id"], ["transcript", "transcript"], ["expected_intent", "expected"], ["reviewed", "reviewed"], ["promoted_to_phrase", "promoted"],
+  return `<h2>Failed utterances</h2><div class="sub">no_match results from the microphone and audio tests are captured here for review.</div>
+    ${opsLine(["list_failed_utterances", "create_failed_utterance", "show_failed_utterance", "update_failed_utterance", "remove_failed_utterance"])}
+    ${card("Failed utterances", ["list_failed_utterances"], `<div class="row">reviewed ${sel("reviewed", f.reviewed)}</div>` +
+      table(items, [["id", "id"], ["transcript", "transcript"], ["expected_intent", "expected"], ["reviewed", "reviewed"], 
         ["notes", "notes"], ["recognition_log_id", "log"], ["created_at", "created"]],
-        { actions: r => btn("Promote", "failedPromote", { id: r.id }, "small") + btn("Edit", "failedEdit", { id: r.id }, "ghost small") + btn("Delete", "failedDelete", { id: r.id }, "danger small") }) +
+        { actions: r => btn("Edit", "failedEdit", { id: r.id }, "ghost small") + btn("Delete", "failedDelete", { id: r.id }, "danger small") }) +
       pager("failed", items.length))}
     ${card("Add failed utterance", ["create_failed_utterance"], `<form data-form="failedAdd" class="row">
       <input name="transcript" placeholder="what was said" style="flex:2" required><input name="expected_intent" placeholder="expected intent">
@@ -623,7 +623,7 @@ VIEWS.perf = async () => {
   return `<h2>Performance</h2><div class="sub">Latency (ms), confidence and match rate. Summary covers the last 100 recognitions.</div>
     ${opsLine(["get_performance_last", "get_performance_summary", "get_performance_history"])}
     <div class="cols">
-      ${card("Last recognition", ["get_last_performance"], last ? kv(last) : '<p class="muted">No recognitions yet.</p>')}
+      ${card("Last recognition", ["get_performance_last"], last ? kv(last) : '<p class="muted">No recognitions yet.</p>')}
       ${card("Summary", ["get_performance_summary"], kv(flat) + table(latency, [["metric", "latency"], ["avg", "avg"], ["p50", "p50"], ["p95", "p95"], ["max", "max"]]))}
     </div>
     ${card("History", ["get_performance_history"], chart(history) + table(history, [["id", "id"], ["created_at", "time"], ["recognition_log_id", "log"],
@@ -783,16 +783,8 @@ const ACT = {
       <label class="block"><span>expected intent</span><input name="expected_intent" value="${esc(f.expected_intent || "")}"></label>
       <label class="block"><span>notes</span><input name="notes" value="${esc(f.notes || "")}"></label>
       <p class="row"><label><input type="checkbox" name="reviewed" ${f.reviewed ? "checked" : ""}> reviewed</label>
-        <label><input type="checkbox" name="promoted_to_phrase" ${f.promoted_to_phrase ? "checked" : ""}> promoted to phrase</label></p>
+</p>
       <p class="row"><button type="submit">Save</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
-  },
-  failedPromote: async d => {
-    const [f, intents] = await Promise.all([api("GET", `/api/v1/failed_utterance/${d.id}`), api("GET", "/api/v1/intent/")]);
-    modal(`<h3>Promote to training phrase</h3>${op("promote_failed_utterance")}<p><code>${esc(f.transcript)}</code></p>
-      <form data-form="failedPromote" data-id="${f.id}">
-      <label class="block"><span>intent</span><select name="intent_name">${intents.map(i => `<option ${i.name === f.expected_intent ? "selected" : ""}>${esc(i.name)}</option>`).join("")}</select></label>
-      <p class="hint">Known slot values in the utterance are replaced by <code>{slot}</code> placeholders.</p>
-      <p class="row"><button type="submit">Promote</button> ${btn("Cancel", "closeModal", {}, "ghost")}</p></form>`);
   },
   failedDelete: async d => { confirmOr(`Delete failed utterance ${d.id}?`); await api("DELETE", `/api/v1/failed_utterance/${d.id}`); toast("deleted"); render(); },
   failedFromResult: async d => {
@@ -945,15 +937,8 @@ const FORM = {
     toast("failed utterance added"); render();
   },
   failedUpdate: async (v, f) => {
-    await api("PATCH", `/api/v1/failed_utterance/${f.dataset.id}`, { body: { expected_intent: v.expected_intent || null, notes: v.notes || null, reviewed: v.reviewed, promoted_to_phrase: v.promoted_to_phrase } });
+    await api("PATCH", `/api/v1/failed_utterance/${f.dataset.id}`, { body: { expected_intent: v.expected_intent || null, notes: v.notes || null, reviewed: v.reviewed } });
     closeModal(); toast("saved"); render();
-  },
-  failedPromote: async (v, f) => {
-    const intents = await api("GET", "/api/v1/intent/");
-    const target = intents.find(i => i.name === v.intent_name);
-    if (!target) throw new Error(`intent '${v.intent_name}' not found`);
-    const r = await apiWithEtag("POST", `/api/v1/failed_utterance/${f.dataset.id}/promote`, { etagPath: `/api/v1/intent/${target.id}/phrase`, body: { intent_id: target.id } });
-    closeModal(); toast(`added phrase '${r.phrase.phrase}'`); render();
   },
 
   rawRequest: async v => {
