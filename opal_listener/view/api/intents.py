@@ -146,7 +146,9 @@ def add_phrase(
         intent = catalog.get_by_ref(session, Intent, intent_id, "intent")
         current_phrases = [IntentPhraseRead.model_validate(p) for p in intent.phrases]
         require_matching_etag(if_match, collection_etag(current_phrases), "phrases")
-        result = IntentPhraseRead.model_validate(catalog.add_phrase(session, catalog.parse_id(intent_id, "intent"), data))
+        result = IntentPhraseRead.model_validate(
+            catalog.add_phrase(session, catalog.parse_id(intent_id, "intent"), data)
+        )
     response.headers["Location"] = f"/api/v1/intent/{intent_id}/phrase/{result.id}"
     return result
 

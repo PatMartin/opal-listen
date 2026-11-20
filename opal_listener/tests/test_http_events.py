@@ -119,14 +119,10 @@ def test_http_event_publisher_handles_network_failure_gracefully() -> None:
         publisher.close()
 
 
-def _mock_publisher(
-    handler: Callable[[httpx.Request], httpx.Response], **kwargs: Any
-) -> HttpEventPublisher:
+def _mock_publisher(handler: Callable[[httpx.Request], httpx.Response], **kwargs: Any) -> HttpEventPublisher:
     """Publisher whose HTTP client talks to a MockTransport (injected before the worker starts)."""
     publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080", **kwargs)
-    publisher._client = httpx.Client(
-        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
-    )
+    publisher._client = httpx.Client(base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler))
     return publisher
 
 

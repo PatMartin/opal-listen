@@ -13,10 +13,10 @@ from opal_listener.cli.output import console, done, print_json, render_kv, state
 
 RECOGNITION = "/api/v1/recognition"
 
-test_app = typer.Typer(
-    help="Test recognition with text, audio files or the microphone.", no_args_is_help=True
-)
+test_app = typer.Typer(help="Test recognition with text, audio files or the microphone.", no_args_is_help=True)
 pipeline_app = typer.Typer(help="Control the live microphone pipeline.", no_args_is_help=True)
+
+
 def _show_result(ctx: typer.Context, result: dict[str, Any], verbose: bool) -> None:
     if state(ctx).json_output or verbose:
         print_json(result if verbose else summarize_result(result))
@@ -76,9 +76,7 @@ def _stream(ctx: typer.Context, count: int, duration: float, start: bool, verbos
     results = 0
     deadline = time.monotonic() + duration if duration > 0 else None
     try:
-        for event, data in api.stream_events(
-            f"{RECOGNITION}/stream", idle_timeout=duration if duration > 0 else None
-        ):
+        for event, data in api.stream_events(f"{RECOGNITION}/stream", idle_timeout=duration if duration > 0 else None):
             if deadline and time.monotonic() > deadline:
                 break
             if event != "result":

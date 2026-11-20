@@ -117,11 +117,14 @@ def test_persona_crud(client: TestClient) -> None:
     persona = created.json()
     assert persona["persona_id"] == "alice" and persona["enabled"] is True
 
-    assert client.post(
-        "/api/v1/persona/",
-        headers={"If-Match": _etag(client, "/api/v1/persona/")},
-        json={"persona_id": "alice", "name": "Alice again"},
-    ).status_code == 409
+    assert (
+        client.post(
+            "/api/v1/persona/",
+            headers={"If-Match": _etag(client, "/api/v1/persona/")},
+            json={"persona_id": "alice", "name": "Alice again"},
+        ).status_code
+        == 409
+    )
 
     path = "/api/v1/persona/alice"
     assert client.get(path).json()["voice_id"] == "opal-female-1"
@@ -333,12 +336,22 @@ def test_profile_envelope_compartments(client: TestClient) -> None:
     assert again["modules"]["opal-say"] == {"voice_id": "en-us-lessac-medium", "speed": 1.2}
 
     # shared is a closed empty object: members rejected; unknown top-level fields rejected.
-    assert client.patch(
-        f"/api/v1/profile/{body['id']}", json={"shared": {"bogus": 1}}, headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")}
-    ).status_code == 422
-    assert client.patch(
-        f"/api/v1/profile/{body['id']}", json={"wakeword_names": []}, headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")}
-    ).status_code == 422
+    assert (
+        client.patch(
+            f"/api/v1/profile/{body['id']}",
+            json={"shared": {"bogus": 1}},
+            headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.patch(
+            f"/api/v1/profile/{body['id']}",
+            json={"wakeword_names": []},
+            headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")},
+        ).status_code
+        == 422
+    )
 
 
 def test_profiles_activate_and_filters(client: TestClient) -> None:
@@ -385,51 +398,39 @@ def test_profiles_activate_and_filters(client: TestClient) -> None:
 def test_setting_put_validation(client: TestClient) -> None:
     """Per-key PUT validation (v2: the atomic collection PATCH is retired)."""
     etag = _etag(client, "/api/v1/setting/")
-    updated = client.put(
-        "/api/v1/setting/cooldown_ms", json={"value": "2500"}, headers={"If-Match": etag}
-    ).json()
+    updated = client.put("/api/v1/setting/cooldown_ms", json={"value": "2500"}, headers={"If-Match": etag}).json()
     assert updated["value"] == 2500 and updated["configured_value"] == 2500
     etag = _etag(client, "/api/v1/setting/")
     assert (
-        client.put("/api/v1/setting/cooldown_ms", json={"value": "soon"}, headers={"If-Match": etag}).status_code
-        == 422
+        client.put("/api/v1/setting/cooldown_ms", json={"value": "soon"}, headers={"If-Match": etag}).status_code == 422
     )
     assert (
-        client.put("/api/v1/setting/not_a_setting", json={"value": "1"}, headers={"If-Match": etag}).status_code
-        == 404
+        client.put("/api/v1/setting/not_a_setting", json={"value": "1"}, headers={"If-Match": etag}).status_code == 404
     )
     updated = client.put(
         "/api/v1/setting/auto_capture_failures", json={"value": "no"}, headers={"If-Match": etag}
     ).json()
     assert updated["value"] is False
     assert client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}).status_code == 428  # no If-Match
-    stale = client.put(
-        "/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": '"stale-etag"'}
-    )
+    stale = client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": '"stale-etag"'})
     assert stale.status_code == 412
-    assert (
-        client.put("/api/v1/setting/cooldown_ms", json={}, headers={"If-Match": etag}).status_code == 422
-    )
+    assert client.put("/api/v1/setting/cooldown_ms", json={}, headers={"If-Match": etag}).status_code == 422
     # an invalid write is rejected: the value on record is unchanged
     etag = _etag(client, "/api/v1/setting/")
-    bad = client.put(
-        "/api/v1/setting/event_publication_enabled", json={"value": "maybe"}, headers={"If-Match": etag}
-    )
+    bad = client.put("/api/v1/setting/event_publication_enabled", json={"value": "maybe"}, headers={"If-Match": etag})
     assert bad.status_code == 422
     settings = client.get("/api/v1/setting/").json()
     assert settings["event_publication_enabled"] == "false" and settings["cooldown_ms"] == "2500"
     etag = _etag(client, "/api/v1/setting/")
-    restored = client.put(
-        "/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": etag}
-    ).json()
+    restored = client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": etag}).json()
     assert restored["value"] == 1500
 
 
 def test_settings_collection_patch_is_retired(client: TestClient) -> None:
     etag = _etag(client, "/api/v1/setting/")
-    assert (
-        client.patch("/api/v1/setting/", json={"cooldown_ms": "2500"}, headers={"If-Match": etag}).status_code
-        in (404, 405)
+    assert client.patch("/api/v1/setting/", json={"cooldown_ms": "2500"}, headers={"If-Match": etag}).status_code in (
+        404,
+        405,
     )
 
 

@@ -247,9 +247,7 @@ class IntentEngine:
                         break
                     bucket = seen_variants.setdefault(len(variant), [])
                     for other, owner in bucket:
-                        if owner != intent.name and owner not in clashes and _overlaps(
-                            variant, other, compiled_slots
-                        ):
+                        if owner != intent.name and owner not in clashes and _overlaps(variant, other, compiled_slots):
                             clashes.append(owner)
                     bucket.append((variant, intent.name))
                     has_text = any(compiled_slots[n].slot_type == "text" for n in names)

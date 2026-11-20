@@ -90,9 +90,7 @@ def patch_settings(client: TestClient, **changes: Any) -> Any:
     response = None
     for key, value in changes.items():
         etag = client.get("/api/v1/setting/").headers["etag"]
-        response = client.put(
-            f"/api/v1/setting/{key}", json={"value": value}, headers={"If-Match": etag}
-        )
+        response = client.put(f"/api/v1/setting/{key}", json={"value": value}, headers={"If-Match": etag})
         assert response.status_code == 200, response.text
     return client.get("/api/v1/setting/")
 
@@ -104,17 +102,17 @@ def etag_of(client: TestClient, path: str) -> str:
 def log_counts(client: TestClient) -> dict[str, int]:
     """Recognition-log totals read straight from the DB (v1.7.1 dropped the /api/v1/log routes)."""
     from opal_listener.service import recognition_store
-    from opal_listener.service.listener_service import ListenerService
 
     svc: ListenerService = client.app.state.listener  # type: ignore[attr-defined]
     with svc.db.session() as session:
         return recognition_store.count_logs(session)
 
 
-def list_logs(client: TestClient, limit: int = 100, intent_name: str | None = None, matched: bool | None = None) -> list[Any]:
+def list_logs(
+    client: TestClient, limit: int = 100, intent_name: str | None = None, matched: bool | None = None
+) -> list[Any]:
     """Recognition-log rows (newest first) read straight from the DB."""
     from opal_listener.service import recognition_store
-    from opal_listener.service.listener_service import ListenerService
 
     svc: ListenerService = client.app.state.listener  # type: ignore[attr-defined]
     with svc.db.session() as session:
@@ -124,7 +122,6 @@ def list_logs(client: TestClient, limit: int = 100, intent_name: str | None = No
 def get_log_row(client: TestClient, log_id: int) -> Any:
     """One recognition-log row by id, straight from the DB."""
     from opal_listener.models.tables import RecognitionLog
-    from opal_listener.service.listener_service import ListenerService
 
     svc: ListenerService = client.app.state.listener  # type: ignore[attr-defined]
     with svc.db.session() as session:

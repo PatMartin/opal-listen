@@ -249,7 +249,9 @@ class OpalThinkProfileNamespacePatch(BaseModel):
 
 
 _RateFloat = Annotated[
-    float, Field(ge=0.25, le=4.0), WithJsonSchema({"type": "number", "format": "float", "minimum": 0.25, "maximum": 4.0})
+    float,
+    Field(ge=0.25, le=4.0),
+    WithJsonSchema({"type": "number", "format": "float", "minimum": 0.25, "maximum": 4.0}),
 ]
 _VolumeFloat = Annotated[
     float, Field(ge=0.0, le=2.0), WithJsonSchema({"type": "number", "format": "float", "minimum": 0.0, "maximum": 2.0})
@@ -286,7 +288,9 @@ class OpalProfileModules(BaseModel):
     """Compartment catalog: declared keys use their strict namespace schemas; any other
     well-formed object is accepted and preserved verbatim (unverified)."""
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}}
+    )
 
     opal_event: OpalEventProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-event")
     opal_listen: OpalListenProfileNamespace | None = Field(default=None, alias="opal-listen")
@@ -314,7 +318,9 @@ class OpalProfileModulesPatch(BaseModel):
     """Patch catalog: compartment values merge field-wise. Only the receiving service's own
     compartment key may be supplied; foreign keys are validated at the route and return 422."""
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}}
+    )
 
     opal_event: OpalEventProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-event")
     opal_listen: OpalListenProfileNamespacePatch | None = Field(default=None, alias="opal-listen")

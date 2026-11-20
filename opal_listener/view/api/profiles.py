@@ -20,7 +20,13 @@ router = APIRouter(prefix="/api/v1/profile", tags=["profiles"])
 _ITEM_ERRORS = {**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_422_RESPONSE, **OPAL_PRECONDITION_RESPONSES}
 
 
-@router.get("/", response_model=list[OpalProfile], response_model_exclude_unset=True, responses=OPAL_422_RESPONSE, operation_id="opal_profile_list")
+@router.get(
+    "/",
+    response_model=list[OpalProfile],
+    response_model_exclude_unset=True,
+    responses=OPAL_422_RESPONSE,
+    operation_id="opal_profile_list",
+)
 def opal_profile_list(response: Response, svc: ListenerService = Depends(get_service)) -> list[OpalProfile]:
     with svc.db.session() as session:
         items = [catalog.profile_read(p) for p in catalog.list_profiles(session)]

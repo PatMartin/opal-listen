@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from opal_listener.models.opal_standard import OPAL_404_RESPONSE
 from opal_listener.models.schemas import (
-    IdPath,
     FailedUtteranceCreate,
     FailedUtteranceRead,
     FailedUtteranceUpdate,
+    IdPath,
 )
 from opal_listener.models.tables import FailedUtterance
 from opal_listener.service import recognition_store
@@ -73,9 +73,7 @@ def update_failed_utterance(
     failed_utterance_id: IdPath, data: FailedUtteranceUpdate, svc: ListenerService = Depends(get_service)
 ) -> FailedUtteranceRead:
     with svc.db.session() as session:
-        obj = recognition_store.update_failed(
-            session, parse_id(failed_utterance_id, "failed utterance"), data
-        )
+        obj = recognition_store.update_failed(session, parse_id(failed_utterance_id, "failed utterance"), data)
         session.commit()
         return FailedUtteranceRead.model_validate(obj)
 
@@ -86,9 +84,7 @@ def update_failed_utterance(
     responses=OPAL_404_RESPONSE,
     operation_id="remove_failed_utterance",
 )
-def remove_failed_utterance(
-    failed_utterance_id: IdPath, svc: ListenerService = Depends(get_service)
-) -> Response:
+def remove_failed_utterance(failed_utterance_id: IdPath, svc: ListenerService = Depends(get_service)) -> Response:
     with svc.db.session() as session:
         session.delete(get_by_ref(session, FailedUtterance, failed_utterance_id, "failed utterance"))
         session.commit()

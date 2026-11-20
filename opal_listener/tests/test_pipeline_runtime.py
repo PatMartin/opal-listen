@@ -866,9 +866,10 @@ def test_refiner_hang_is_bounded(client: TestClient, fake_provider: type) -> Non
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
     finalized = _spy_finalize(service)
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0").status_code
+        == 200
+    )
     fake_provider.script.extend(["turn on the kitchen light"] * 4)
     service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
     client.post("/api/v1/recognition/start")
@@ -890,9 +891,10 @@ def test_refinement_recovers_when_stuck_calls_return(client: TestClient, fake_pr
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
     finalized = _spy_finalize(service)
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0").status_code
+        == 200
+    )
     feed: deque[bytes] = deque()
     fake_provider.script.extend(["turn on the kitchen light"] * 2)
     service._source_factory = lambda settings: _FeedSource(feed)
@@ -920,9 +922,12 @@ def test_late_result_from_old_generation_cannot_dispatch(client: TestClient, fak
     publisher = service.event_publisher
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
     feed: deque[bytes] = deque()
     service._source_factory = lambda settings: _FeedSource(feed)
     client.post("/api/v1/recognition/start")
@@ -953,9 +958,12 @@ def test_pending_result_still_dispatches_after_stop(client: TestClient, fake_pro
     publisher = service.event_publisher
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
     feed: deque[bytes] = deque()
     service._source_factory = lambda settings: _FeedSource(feed)
     client.post("/api/v1/recognition/start")
@@ -997,9 +1005,10 @@ def test_bounded_shutdown_with_stuck_refiner(client: TestClient, fake_provider: 
     service = client.app.state.listener  # type: ignore[attr-defined]
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0").status_code
+        == 200
+    )
     fake_provider.script.extend(["turn on the kitchen light"] * 4)
     service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
     client.post("/api/v1/recognition/start")

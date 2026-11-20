@@ -1,5 +1,4 @@
-"""`opal listen ...` CLI. Most commands call the REST API (see OPERATION_COMMANDS for the mapping);
-"""
+"""`opal listen ...` CLI. Most commands call the REST API (see OPERATION_COMMANDS for the mapping);"""
 
 from __future__ import annotations
 

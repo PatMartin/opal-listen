@@ -37,7 +37,6 @@ def _failed(session: Any, days_old: float, reviewed: bool = False) -> FailedUtte
     row = FailedUtterance(
         transcript="miss",
         reviewed=reviewed,
-
         created_at=utc_now() - timedelta(days=days_old),
     )
     session.add(row)

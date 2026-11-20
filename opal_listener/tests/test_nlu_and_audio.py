@@ -156,8 +156,9 @@ def _ambiguity(intents: list[IntentDef], slots: list[SlotDef]) -> list[str]:
 def test_ambiguity_warned_once_per_phrase_not_per_variant() -> None:
     """Regression: '[the]' expands to two variants, each used to emit its own copy."""
     warnings = _ambiguity(INTENTS + [IntentDef("lights_on", ["turn on [the] {room_name} light"])], SLOTS)
-    assert warnings == ["intent 'lights_on' phrase 'turn on [the] {room_name} light' is ambiguous with intent "
-                        "'light_turn_on'"]
+    assert warnings == [
+        "intent 'lights_on' phrase 'turn on [the] {room_name} light' is ambiguous with intent 'light_turn_on'"
+    ]
 
 
 def test_ambiguity_detected_across_list_slots_with_shared_values() -> None:
@@ -179,7 +180,6 @@ def test_seeded_catalog_compiles_without_warnings() -> None:
 
     report, _ = compile_bundle(load_config_dir(PACKAGE_DIR / "config"))
     assert (report.errors, report.warnings) == ([], [])
-
 
 
 def test_grammar_keeps_literal_runs_together(engine: IntentEngine) -> None:

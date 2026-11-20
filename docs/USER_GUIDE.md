@@ -2565,6 +2565,7 @@ opal listen test text "order a pizza" --expect-intent no_match --no-save
 
 ```python
 """Minimal intent dispatcher: pip install httpx"""
+
 import json
 
 import httpx
@@ -2611,7 +2612,7 @@ r = httpx.post(
     params={"save_log": False},
     json={"text": "set a timer for twenty minutes"},
 ).json()
-print(r["intent_name"], r["slot_values"])   # timer_set {'duration_minutes': 20}
+print(r["intent_name"], r["slot_values"])  # timer_set {'duration_minutes': 20}
 ```
 
 ### 10.3 Python: send audio from another device

@@ -19,9 +19,7 @@ from opal_listener.service.lifecycle import ServiceProcessManager, stop_pid
 CONFIG = "/api/v1/config"
 HEALTH = "/api/v1/health"
 
-config_app = typer.Typer(
-    help="Save, load and validate persistent configuration snapshots.", no_args_is_help=True
-)
+config_app = typer.Typer(help="Save, load and validate persistent configuration snapshots.", no_args_is_help=True)
 service_app = typer.Typer(help="Run, probe and inspect the server process.", no_args_is_help=True)
 
 
@@ -53,9 +51,7 @@ def _config_revision(api: Any) -> str:
 @config_app.command("save")
 def config_save(
     ctx: typer.Context,
-    out: Path | None = typer.Option(
-        None, "--out", "-o", dir_okay=False, help="Write the snapshot envelope to FILE"
-    ),
+    out: Path | None = typer.Option(None, "--out", "-o", dir_okay=False, help="Write the snapshot envelope to FILE"),
 ) -> None:
     """Capture a configuration snapshot.
 
@@ -91,9 +87,7 @@ def config_load(
     if in_file is not None:
         body = {"snapshot": _read_snapshot(in_file)}
     _confirm(ctx, yes, "Replace wakewords, intents, slots, profiles, personas and settings?")
-    result = api.post(
-        f"{CONFIG}/load", json=body, headers={"If-Match": _config_revision(api)}
-    )
+    result = api.post(f"{CONFIG}/load", json=body, headers={"If-Match": _config_revision(api)})
     if state(ctx).json_output:
         print_json(result)
         return
@@ -125,15 +119,18 @@ def config_validate(
         for issue in report["warnings"]:
             console.print(f"[yellow]warning[/yellow] {escape(issue['path'])}: {escape(issue['message'])}")
         console.print(
-            "[green]configuration is valid[/green]"
-            if report["valid"]
-            else "[red]configuration is invalid[/red]"
+            "[green]configuration is valid[/green]" if report["valid"] else "[red]configuration is invalid[/red]"
         )
     if not report["valid"]:
         raise CliError("validation failed")
 
 
-STATUS_ICON = {"ok": "[green]✓[/green]", "warning": "[yellow]![/yellow]", "degraded": "[yellow]![/yellow]", "error": "[red]✗[/red]"}
+STATUS_ICON = {
+    "ok": "[green]✓[/green]",
+    "warning": "[yellow]![/yellow]",
+    "degraded": "[yellow]![/yellow]",
+    "error": "[red]✗[/red]",
+}
 
 
 @service_app.command("health")
@@ -148,9 +145,17 @@ def service_health(ctx: typer.Context) -> None:
             console.print(f"{STATUS_ICON[check['status']]} {escape(check['name']):<16} {escape(str(check['detail']))}")
         devices = details.get("audio_devices") or []
         if devices:
-            render(ctx, devices, ("index", "name", "max_input_channels", "default_sample_rate", "is_default"), "Input devices")
+            render(
+                ctx,
+                devices,
+                ("index", "name", "max_input_channels", "default_sample_rate", "is_default"),
+                "Input devices",
+            )
         console.print(f"overall: {STATUS_ICON.get(report['status'], report['status'])} {report['status']}")
-        console.print(f"{report['name']} {report['version']} (api {report['api_version']}) live={report['live']} ready={report['ready']}")
+        console.print(
+            f"{report['name']} {report['version']} (api {report['api_version']}) "
+            f"live={report['live']} ready={report['ready']}"
+        )
     if report["status"] == "error":
         raise CliError("health check failed")
 

@@ -33,7 +33,13 @@ def test_auth_disabled_without_token(client: TestClient) -> None:
 
 
 def test_auth_enforced_on_every_route(authed_client: TestClient) -> None:
-    for path in ("/api/v1/health/", "/api/v1/health/live", "/api/v1/health/ready", "/api/v1/setting/", "/api/v1/wakeword/"):
+    for path in (
+        "/api/v1/health/",
+        "/api/v1/health/live",
+        "/api/v1/health/ready",
+        "/api/v1/setting/",
+        "/api/v1/wakeword/",
+    ):
         response = authed_client.get(path)
         assert response.status_code == 401, path
         assert response.json()["error"]["code"] == "unauthorized", path

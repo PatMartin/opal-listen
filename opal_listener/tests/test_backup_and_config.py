@@ -239,8 +239,7 @@ def test_setting_item_preconditions(client: TestClient) -> None:
     assert client.put("/api/v1/setting/cooldown_ms", json={"value": 1}).status_code == 428
     etag = client.get("/api/v1/setting/").headers["etag"]
     assert (
-        client.put("/api/v1/setting/cooldown_ms", json={"value": 1}, headers={"If-Match": '"stale"'}).status_code
-        == 412
+        client.put("/api/v1/setting/cooldown_ms", json={"value": 1}, headers={"If-Match": '"stale"'}).status_code == 412
     )
     assert client.delete("/api/v1/setting/cooldown_ms", headers={"If-Match": etag}).status_code == 204
 
@@ -248,9 +247,7 @@ def test_setting_item_preconditions(client: TestClient) -> None:
 def test_setting_unknown_key(client: TestClient) -> None:
     assert client.get("/api/v1/setting/not_a_key").status_code == 404
     etag = client.get("/api/v1/setting/").headers["etag"]
-    assert (
-        client.put("/api/v1/setting/not_a_key", json={"value": 1}, headers={"If-Match": etag}).status_code == 404
-    )
+    assert client.put("/api/v1/setting/not_a_key", json={"value": 1}, headers={"If-Match": etag}).status_code == 404
     assert client.delete("/api/v1/setting/not_a_key", headers={"If-Match": etag}).status_code == 404
 
 

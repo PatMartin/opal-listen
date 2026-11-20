@@ -182,7 +182,9 @@ def list_aliases(
     slot_id: IdPath, value_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[SlotAliasRead]:
     with svc.db.session() as session:
-        value = catalog.get_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
+        value = catalog.get_slot_value(
+            session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value")
+        )
         items = [SlotAliasRead.model_validate(a) for a in value.aliases]
     response.headers["ETag"] = collection_etag(items)
     return items
@@ -204,10 +206,16 @@ def add_alias(
     svc: ListenerService = Depends(get_service),
 ) -> SlotAliasRead:
     with svc.config_change() as session:
-        value = catalog.get_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
+        value = catalog.get_slot_value(
+            session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value")
+        )
         current_aliases = [SlotAliasRead.model_validate(a) for a in value.aliases]
         require_matching_etag(if_match, collection_etag(current_aliases), "aliases")
-        result = SlotAliasRead.model_validate(catalog.add_alias(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"), data))
+        result = SlotAliasRead.model_validate(
+            catalog.add_alias(
+                session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"), data
+            )
+        )
     response.headers["Location"] = f"/api/v1/slot/{slot_id}/value/{value_id}/alias/{result.id}"
     return result
 
@@ -226,8 +234,15 @@ def remove_alias(
     svc: ListenerService = Depends(get_service),
 ) -> Response:
     with svc.config_change() as session:
-        value = catalog.get_slot_value(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"))
+        value = catalog.get_slot_value(
+            session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value")
+        )
         current_aliases = [SlotAliasRead.model_validate(a) for a in value.aliases]
         require_matching_etag(if_match, collection_etag(current_aliases), "aliases")
-        catalog.delete_alias(session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value"), catalog.parse_id(alias_id, "alias"))
+        catalog.delete_alias(
+            session,
+            catalog.parse_id(slot_id, "slot"),
+            catalog.parse_id(value_id, "slot value"),
+            catalog.parse_id(alias_id, "alias"),
+        )
     return Response(status_code=204)

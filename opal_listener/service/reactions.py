@@ -312,4 +312,3 @@ def run_action(
     _append_journal(log_path, json.dumps(record, default=str) + "\n", max_bytes)
     record["failed"] = failed
     return record
-

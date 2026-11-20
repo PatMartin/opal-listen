@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Query
 from opal_listener.models.opal_standard import OPAL_422_RESPONSE
 from opal_listener.models.schemas import PerformanceHistory, PerformanceResultRead, PerformanceSummary
 from opal_listener.service import recognition_store
-from opal_listener.service.errors import InvalidRequestError
 from opal_listener.service.listener_service import ListenerService
 from opal_listener.view.api.deps import get_service
 
@@ -14,7 +13,12 @@ router = APIRouter(prefix="/api/v1/performance", tags=["performance"])
 _SCOPE = "performance_history"
 
 
-@router.get("/last", response_model=PerformanceResultRead | None, responses=OPAL_422_RESPONSE, operation_id="get_performance_last")
+@router.get(
+    "/last",
+    response_model=PerformanceResultRead | None,
+    responses=OPAL_422_RESPONSE,
+    operation_id="get_performance_last",
+)
 def get_performance_last(svc: ListenerService = Depends(get_service)) -> PerformanceResultRead | None:
     """Return the most recent performance result."""
     with svc.db.session() as session:

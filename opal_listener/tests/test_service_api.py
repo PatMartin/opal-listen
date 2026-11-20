@@ -37,7 +37,9 @@ def test_service_start_launches_managed_server(
 ) -> None:
     launched: dict[str, Any] = {}
     monkeypatch.setattr(
-        ServiceProcessManager, "launch", lambda self, append=False, wait_for_pids=(): launched.update(append=append) or _FakeProc()
+        ServiceProcessManager,
+        "launch",
+        lambda self, append=False, wait_for_pids=(): launched.update(append=append) or _FakeProc(),
     )
     resp = client.post("/api/v1/service/start", json={"append": True})
     assert resp.status_code == 200, resp.text

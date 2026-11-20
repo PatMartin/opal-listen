@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, Header, Response
 from sqlmodel import select
 
@@ -113,14 +111,10 @@ def opal_config_load(
         applied = apply_snapshot(session, snapshot)
     after_revision = svc.config_etag()
     pending = [
-        key
-        for key in snapshot.settings
-        if key in SETTINGS and svc.setting_pending_restart(key, snapshot.settings[key])
+        key for key in snapshot.settings if key in SETTINGS and svc.setting_pending_restart(key, snapshot.settings[key])
     ]
     if pending:
-        warnings.append(
-            _issue("restart_required", "settings", "settings changes take effect after service restart")
-        )
+        warnings.append(_issue("restart_required", "settings", "settings changes take effect after service restart"))
     response.headers["ETag"] = after_revision
     return OpalConfigLoadResult(
         applied=True,
@@ -135,9 +129,7 @@ def _check_snapshot_semantics(snapshot: OpalConfigSnapshot) -> None:
     """Reject envelopes the loose model admits but the contract forbids (wrong module/version)."""
     errors, _ = validate_snapshot(snapshot.model_dump(mode="json"))
     if errors:
-        raise InvalidRequestError(
-            "snapshot is invalid: " + "; ".join(f"{i.path}: {i.message}" for i in errors)
-        )
+        raise InvalidRequestError("snapshot is invalid: " + "; ".join(f"{i.path}: {i.message}" for i in errors))
 
 
 @router.post(

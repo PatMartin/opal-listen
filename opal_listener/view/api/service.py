@@ -52,9 +52,7 @@ def opal_service_start(
     responses={**OPAL_422_RESPONSE, **OPAL_500_RESPONSE},
     operation_id="opal_service_stop",
 )
-def opal_service_stop(
-    background_tasks: BackgroundTasks, svc: ListenerService = Depends(get_service)
-) -> dict:
+def opal_service_stop(background_tasks: BackgroundTasks, svc: ListenerService = Depends(get_service)) -> dict:
     manager = _manager(svc)
     status, terminate_self = manager.stop()
     if terminate_self:

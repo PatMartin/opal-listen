@@ -101,9 +101,7 @@ def prune_failed_utterances(session: Session, ttl_days: int) -> int:
         return 0
     cutoff = datetime.now(UTC) - timedelta(days=ttl_days)
     result = session.exec(
-        delete(FailedUtterance)
-        .where(col(FailedUtterance.created_at) < cutoff)
-        .where(FailedUtterance.reviewed == False)  # noqa: E712
+        delete(FailedUtterance).where(col(FailedUtterance.created_at) < cutoff).where(FailedUtterance.reviewed == False)  # noqa: E712
     )
     return result.rowcount or 0
 
@@ -135,9 +133,7 @@ def count_logs(session: Session) -> dict[str, int]:
 # --- failed utterances -----------------------------------------------------------------------
 
 
-def list_failed(
-    session: Session, reviewed: bool | None, limit: int, offset: int = 0
-) -> list[FailedUtterance]:
+def list_failed(session: Session, reviewed: bool | None, limit: int, offset: int = 0) -> list[FailedUtterance]:
     query = select(FailedUtterance)
     if reviewed is not None:
         query = query.where(FailedUtterance.reviewed == reviewed)

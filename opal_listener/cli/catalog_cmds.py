@@ -453,7 +453,9 @@ def profiles_show(ctx: typer.Context, profile: str = typer.Argument(..., help="N
 def profiles_add(
     ctx: typer.Context,
     name: str | None = typer.Argument(None),
-    doc: Path | None = typer.Option(None, "--in", help="Whole portable profile document (JSON/YAML); exclusive with --name/--shared/--module"),
+    doc: Path | None = typer.Option(
+        None, "--in", help="Whole portable profile document (JSON/YAML); exclusive with --name/--shared/--module"
+    ),
     shared: Path | None = typer.Option(None, "--shared", help="Shared-values object file merged into the document"),
     module: Path | None = typer.Option(None, "--module", help="opal-listen compartment file"),
     opt_name: str | None = typer.Option(None, "--name"),
@@ -495,7 +497,9 @@ def profiles_add(
 def profiles_update(
     ctx: typer.Context,
     profile: str = typer.Argument(..., help="Name or id"),
-    doc: Path | None = typer.Option(None, "--in", help="Patch document (JSON/YAML); exclusive with --name/--shared/--module"),
+    doc: Path | None = typer.Option(
+        None, "--in", help="Patch document (JSON/YAML); exclusive with --name/--shared/--module"
+    ),
     shared: Path | None = typer.Option(None, "--shared", help="Shared-values object file"),
     module: Path | None = typer.Option(None, "--module", help="opal-listen compartment patch file"),
     name: str | None = typer.Option(None, "--name"),

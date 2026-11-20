@@ -199,5 +199,3 @@ class ApiClient:
 
 def api_url_from_env() -> str:
     return os.environ.get(API_URL_ENV, DEFAULT_API_URL)
-
-

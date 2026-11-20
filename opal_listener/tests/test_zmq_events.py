@@ -71,9 +71,7 @@ def test_zmq_event_publisher_delivers_through_an_xpub_xsub_broker() -> None:
             # that calling connect() early (instead of lazily on first publish) is meant to avoid.
             publisher.connect()
             time.sleep(0.3)
-            publisher.publish(
-                "opal.listen.intent.match", {"intent_name": "light_turn_on", "matched": True}
-            )
+            publisher.publish("opal.listen.intent.match", {"intent_name": "light_turn_on", "matched": True})
             assert sub.poll(3000), "no message received through the XPUB/XSUB broker"
             topic, message = sub.recv_multipart()
         finally:

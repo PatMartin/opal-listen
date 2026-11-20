@@ -89,8 +89,6 @@ class LivenessRead(BaseModel):
     status: Literal["ok"]
 
 
-
-
 # Reusable OpenAPI response overrides.
 OPAL_400_RESPONSE: dict[int | str, dict[str, Any]] = {
     400: {"model": OpalError, "description": "OPAL standard error"},

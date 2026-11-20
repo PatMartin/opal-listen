@@ -506,10 +506,7 @@ class ListenerService:
                     self._prune_storage(session, snapshot.settings)
                 session.commit()
         actionable = (
-            result.matched
-            and not result.deduplicated
-            and result.source not in DIAGNOSTIC_SOURCES
-            and allow_dispatch
+            result.matched and not result.deduplicated and result.source not in DIAGNOSTIC_SOURCES and allow_dispatch
         )
         targets = dispatch_targets(snapshot.settings) if actionable else frozenset()
         # the resolved path is recorded on the result before dispatch so the local stream,
