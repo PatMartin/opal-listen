@@ -733,6 +733,7 @@ The commands live under `config setting`.
 | `audio_device` | str | `""` (system default) | device index or name substring |
 | `audio_capture_rate` | int | `0` (auto) | 0 to 192000 |
 | `audio_block_ms` | int | `100` | 20 to 500 |
+| `recovery_max_attempts` | int | `8` | 0+ (0 = retry forever) |
 | `auto_start_listener` | bool | `false` | |
 | `cooldown_ms` | int | `1500` | 0 to 60000 |
 | `dedup_window_ms` | int | `2000` | 0 to 60000 |

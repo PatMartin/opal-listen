@@ -2308,6 +2308,32 @@ components:
           - type: string
           - type: 'null'
           title: Last Error
+        recovery_attempts:
+          type: integer
+          title: Recovery Attempts
+          description: >-
+            Consecutive failed start attempts in the current recovery episode
+            (0 while capture is healthy).
+          default: 0
+        recovery_retry_delay_s:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Recovery Retry Delay S
+          description: Backoff delay currently in effect while `recovering`.
+        last_recovery_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Recovery Reason
+          description: Reason for the most recent recovery attempt.
+        last_capture_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Capture At
+          description: Timestamp of the last audio frame captured.
         metrics:
           additionalProperties:
             type: number

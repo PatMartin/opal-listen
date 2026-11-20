@@ -195,6 +195,11 @@ class _RuntimeStats:
     last_result_at: datetime | None = None
     last_error: str | None = None
     last_recovery_reason: str | None = None
+    # recovery episode accounting: consecutive failed start attempts (reset on a successful
+    # listen), the backoff delay currently in effect, and the last frame timestamp
+    recovery_attempts: int = 0
+    recovery_retry_delay_s: float | None = None
+    last_capture_at: datetime | None = None
     audio_device: str | None = None
     capture_sample_rate: int | None = None
     # capture signature (device, rate, block_ms) the running source was opened with; differs
@@ -776,6 +781,10 @@ class ListenerService:
             last_audio_level=st.last_audio_level,
             last_result_at=st.last_result_at,
             last_error=st.last_error,
+            recovery_attempts=st.recovery_attempts,
+            recovery_retry_delay_s=st.recovery_retry_delay_s,
+            last_recovery_reason=st.last_recovery_reason,
+            last_capture_at=st.last_capture_at,
             metrics=self._metrics(),
         )
 
@@ -839,6 +848,7 @@ class ListenerService:
         backoff = 1.0
         while not self._stop.is_set():
             source: AudioSource | None = None
+            snapshot: RuntimeSnapshot | None = None
             try:
                 snapshot = self.snapshot
                 pipeline = self._make_pipeline(snapshot, debug=self.bus.subscriber_count > 0, cooldown=True, live=True)
@@ -849,6 +859,8 @@ class ListenerService:
                 self._stats.capture_sample_rate = source.capture_rate
                 self._stats.capture_signature = _capture_signature(snapshot.settings)
                 self._stats.last_error = None
+                self._stats.recovery_attempts = 0
+                self._stats.recovery_retry_delay_s = None
                 self._set_state("listening")
                 backoff = 1.0
                 self._listen(source, pipeline, snapshot)
@@ -865,6 +877,15 @@ class ListenerService:
                     if self._active_source is source:
                         self._active_source = None
             if not self._stop.is_set() and self._stats.state == "recovering":
+                # bounded recovery: after recovery_max_attempts consecutive failures the worker
+                # gives up — status() then reports `error` (worker dead without a stop request)
+                # instead of hiding a persistent problem behind an endless restart loop.
+                max_attempts = int((snapshot.settings if snapshot else {}).get("recovery_max_attempts", 0))
+                if max_attempts > 0 and self._stats.recovery_attempts >= max_attempts:
+                    log.error("listener runtime giving up after %d recovery attempts", self._stats.recovery_attempts)
+                    self._stats.recovery_retry_delay_s = None
+                    return
+                self._stats.recovery_retry_delay_s = backoff
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)
 
@@ -873,6 +894,7 @@ class ListenerService:
         self._stats.last_error = message
         self._stats.last_recovery_reason = message
         self._stats.audio_restarts += 1
+        self._stats.recovery_attempts += 1
         self._set_state("recovering")
 
     def _reopen_source(self, source: AudioSource, snapshot: RuntimeSnapshot) -> AudioSource:
@@ -940,6 +962,11 @@ class ListenerService:
                     continue
                 last_frame = time.monotonic()
                 self._stats.frames_processed += 1
+                self._stats.last_capture_at = utc_now()
+                # frames are flowing: any recovery episode (e.g. a rejected capture-setting
+                # reopen recorded by _recover) is over — the attempt counter is *consecutive*
+                self._stats.recovery_attempts = 0
+                self._stats.recovery_retry_delay_s = None
                 events = pipeline.feed(frame.pcm, frame.captured_at)
                 self._stats.last_audio_level = pipeline.last_level
                 for event in events:

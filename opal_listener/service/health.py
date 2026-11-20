@@ -35,6 +35,15 @@ def _report(service: ListenerService, status: s.HealthStatus, checks: list[s.Hea
         details["audio_devices"] = list_input_devices()
     except Exception:  # noqa: BLE001 - diagnostics never break the report
         details["audio_devices"] = []
+    runtime = service.status()
+    details["listener"] = {
+        "state": runtime.state,
+        "recovery_attempts": runtime.recovery_attempts,
+        "recovery_retry_delay_s": runtime.recovery_retry_delay_s,
+        "last_recovery_reason": runtime.last_recovery_reason,
+        "last_capture_at": runtime.last_capture_at.isoformat() if runtime.last_capture_at else None,
+        "audio_restarts": runtime.audio_restarts,
+    }
     active_id: str | None = None
     try:
         with service.db.session() as session:
@@ -150,7 +159,12 @@ def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
             checks.append(_check("microphone", missing_status, str(exc)))
 
     runtime = service.status()
-    if runtime.running and runtime.last_error:
+    if runtime.state == "error":
+        checks.append(_check("listener", "error", runtime.last_error or "listener in error state"))
+    elif runtime.state == "recovering":
+        reason = runtime.last_recovery_reason or "unknown failure"
+        checks.append(_check("listener", "warning", f"recovering (attempt {runtime.recovery_attempts}): {reason}"))
+    elif runtime.running and runtime.last_error:
         checks.append(_check("listener", "warning", f"{runtime.state}: {runtime.last_error}"))
     else:
         checks.append(_check("listener", "ok", runtime.state))

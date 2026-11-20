@@ -80,6 +80,9 @@ SETTINGS: dict[str, SettingDef] = {
         SettingDef("audio_device", str, "", "stt", "Input device index or name substring ('' = default)"),
         SettingDef("audio_capture_rate", int, 0, "stt", "Capture sample rate (0 = auto)", minimum=0, maximum=192000),
         SettingDef("audio_block_ms", int, 100, "stt", "Audio frame size in ms", minimum=20, maximum=500),
+        SettingDef("recovery_max_attempts", int, 8, "stt",
+                   "Consecutive recovery attempts before the listener gives up and reports error "
+                   "(0 = retry forever)", minimum=0),
         SettingDef("auto_start_listener", bool, False, "settings", "Start the microphone pipeline on startup",
                    restart_required=True),
         SettingDef("cooldown_ms", int, 1500, "settings", "Ignore wakewords for this long after a session",

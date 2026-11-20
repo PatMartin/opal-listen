@@ -1369,3 +1369,113 @@ def test_provider_kwarg_remains_combined_shorthand(fake_provider: type) -> None:
         cooldown_ms=0,
     )
     assert pipeline.wakeword_engine is provider and pipeline.transcription_engine is provider
+
+
+# --- recovery diagnostics and bounded recovery ----------------------------------------------------
+
+
+def test_recovery_diagnostics_reported_while_recovering(client: TestClient, fake_provider: type) -> None:
+    """While backing off, status reports attempt count, retry delay, and the failure reason."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert patch_settings(client, recovery_max_attempts=0).status_code == 200
+
+    def failing_factory(settings):
+        raise AudioCaptureError("no input device")
+
+    service._source_factory = failing_factory
+    try:
+        assert service.start()["status"] == "started"
+        wait_for(lambda: service.status().recovery_attempts >= 1, timeout=10)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["state"] == "recovering"
+        assert status["recovery_attempts"] >= 1
+        assert status["recovery_retry_delay_s"] is None or status["recovery_retry_delay_s"] >= 1.0
+        assert "no input device" in (status["last_recovery_reason"] or "")
+        assert "no input device" in status["last_error"]
+    finally:
+        service.stop()
+        patch_settings(client, recovery_max_attempts=8)
+
+
+def test_bounded_recovery_gives_up_with_error_state(client: TestClient, fake_provider: type) -> None:
+    """After recovery_max_attempts consecutive failures the worker stops retrying and status
+    reports `error` with the episode diagnostics intact."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert patch_settings(client, recovery_max_attempts=2).status_code == 200
+
+    def failing_factory(settings):
+        raise AudioCaptureError("mic still gone")
+
+    service._source_factory = failing_factory
+    try:
+        assert service.start()["status"] == "started"
+        wait_for(lambda: service.status().state == "error", timeout=20)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["state"] == "error"
+        assert status["running"] is False  # worker gave up — not a silent restart loop
+        assert status["recovery_attempts"] == 2
+        assert status["audio_restarts"] == 2
+        assert "mic still gone" in status["last_error"]
+    finally:
+        patch_settings(client, recovery_max_attempts=8)
+
+
+def test_recovery_episode_resets_after_successful_capture(client: TestClient, fake_provider: type) -> None:
+    """A transient failure followed by a healthy stream reports attempts=0, no retry delay,
+    and a fresh last_capture_at."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    attempts: list[int] = []
+
+    def factory(settings):
+        attempts.append(1)
+        return ScriptedSource([], fail_start=len(attempts) == 1)
+
+    service._source_factory = factory
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(
+            lambda: len(attempts) >= 2 and client.get("/api/v1/recognition/status").json()["state"] == "running",
+            timeout=10,
+        )
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["last_capture_at"] is not None)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["audio_restarts"] == 1  # lifetime counter survives the episode
+        assert status["recovery_attempts"] == 0
+        assert status["recovery_retry_delay_s"] is None
+        assert status["last_capture_at"] is not None
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_health_report_carries_recovery_diagnostics(
+    client: TestClient, fake_provider: type, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kernel health report surfaces the listener episode: warning while recovering,
+    error after give-up, diagnostics under details.listener."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    base = service.status()
+
+    recovering = base.model_copy(
+        update={
+            "state": "recovering",
+            "running": True,
+            "recovery_attempts": 3,
+            "last_recovery_reason": "device unplugged",
+        }
+    )
+    monkeypatch.setattr(service, "status", lambda: recovering)
+    report = client.get("/api/v1/health/").json()
+    listener_detail = report["details"]["listener"]
+    assert listener_detail["state"] == "recovering"
+    assert listener_detail["recovery_attempts"] == 3
+    assert listener_detail["last_recovery_reason"] == "device unplugged"
+    listener_check = next(c for c in report["details"]["checks"] if c["name"] == "listener")
+    assert listener_check["status"] == "warning"
+    assert "attempt 3" in listener_check["detail"]
+
+    monkeypatch.setattr(
+        service, "status", lambda: recovering.model_copy(update={"state": "error", "last_error": "gave up"})
+    )
+    report = client.get("/api/v1/health/").json()
+    listener_check = next(c for c in report["details"]["checks"] if c["name"] == "listener")
+    assert listener_check["status"] == "error"

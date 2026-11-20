@@ -304,9 +304,7 @@ def test_delivery_accounting_counters() -> None:
         return httpx.Response(202, json={"status": "accepted"})
 
     publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080")
-    publisher._client = httpx.Client(
-        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
-    )
+    publisher._client = httpx.Client(base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler))
     try:
         publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
         assert _wait_until(lambda: publisher.delivered == 1)
@@ -327,9 +325,7 @@ def test_delivery_accounting_on_failure() -> None:
         return httpx.Response(500, json={"error": "boom"})
 
     publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080")
-    publisher._client = httpx.Client(
-        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
-    )
+    publisher._client = httpx.Client(base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler))
     try:
         publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
         assert _wait_until(lambda: publisher.delivery_failures == 1)

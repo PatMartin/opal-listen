@@ -488,6 +488,13 @@ class PipelineStatus(BaseModel):
     last_audio_level: float | None
     last_result_at: datetime | None
     last_error: str | None
+    # recovery diagnostics: consecutive failed start attempts in the current episode (0 when
+    # healthy), the backoff delay currently in effect, the last failure's reason, and when a
+    # frame was last captured
+    recovery_attempts: int = 0
+    recovery_retry_delay_s: float | None = None
+    last_recovery_reason: str | None = None
+    last_capture_at: datetime | None = None
     # lightweight reliability counters, reset per run: mic_overflows, dropped_audio_blocks,
     # audio_queue_depth/utilization, refine_queue_depth, refinement_completed/failed,
     # recoveries, and last-result stt/refine/intent/publish latencies (ms)

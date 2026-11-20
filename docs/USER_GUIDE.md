@@ -520,6 +520,7 @@ The managed configuration snapshot is a single JSON envelope in the data dir, re
 | Feature | Behavior |
 |---|---|
 | Watchdog | Capture is restarted if no audio arrives within `audio_watchdog_timeout_ms` or the device fails. Backoff grows from 1 to 30 s. `audio_restarts` and `last_error` are shown in status. |
+| Bounded recovery | After `recovery_max_attempts` consecutive failures (default 8, `0` = retry forever) the worker gives up and status reports `error` — persistent problems surface instead of looping forever. `recovery_attempts`, `recovery_retry_delay_s` and `last_recovery_reason` report the episode. |
 | Rejected reconfiguration | An invalid `audio_device`/`audio_capture_rate`/`audio_block_ms` change fails without touching the live stream — capture keeps reading the last-good source and status reports requested vs active settings. |
 | Cooldown | After a mic session, wakewords are ignored for `cooldown_ms`. |
 | Dedup | Identical mic results (same intent and slots) within `dedup_window_ms` are flagged `deduplicated: true`. They are still logged. |
@@ -660,6 +661,7 @@ Invalid values are rejected with `422`.
 | `audio_device` | str | `""` | index or name substring | Input device (`""` = system default) |
 | `audio_capture_rate` | int | `0` | 0–192000 | Capture rate (`0` = auto-detect) |
 | `audio_block_ms` | int | `100` | 20–500 | Audio frame size in ms |
+| `recovery_max_attempts` | int | `8` | 0+ | Consecutive recovery attempts before the worker gives up and reports `error` (`0` = retry forever) |
 
 **Runtime settings (`settings.yaml`):**
 
@@ -1526,7 +1528,8 @@ curl -s $API/api/v1/recognition/status
   "started_at": "2026-09-30T09:12:01", "uptime_s": 842.3,
   "frames_processed": 8423, "wakeword_detections": 12, "sessions": 14, "results": 12,
   "audio_restarts": 0, "last_audio_level": -61.4, "last_result_at": "2026-09-30T09:25:40",
-  "last_error": null
+  "last_error": null, "recovery_attempts": 0, "recovery_retry_delay_s": null,
+  "last_recovery_reason": null, "last_capture_at": "2026-09-30T09:25:39"
 }
 ```
 
@@ -1536,6 +1539,10 @@ curl -s $API/api/v1/recognition/status
 | `capture_sample_rate` | Device rate before resampling to 16 kHz |
 | `sessions` vs `wakeword_detections` | Candidates opened vs confirmed wakewords. A large gap means many rejected false triggers. |
 | `audio_restarts`, `last_error` | Watchdog/recovery activity |
+| `recovery_attempts` | Consecutive failed start attempts in the current episode (0 while capture is healthy). The worker gives up after `recovery_max_attempts` and the state becomes `error`. |
+| `recovery_retry_delay_s` | Backoff delay currently in effect while `recovering` (1→30 s exponential). |
+| `last_recovery_reason` | Reason for the most recent recovery attempt. |
+| `last_capture_at` | When an audio frame was last captured. |
 
 #### `GET /api/v1/recognition/stream` — live results (SSE)
 
