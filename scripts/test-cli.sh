@@ -181,8 +181,8 @@ opal listen test text "this matches nothing" --no-save
 opal listen test audio "resources/cmds/cmd-kitchen-lights-off.wav"
 #opal listen test listen --help (SSE stream; --no-start so the mic is not required)
 opal listen test listen --no-start --duration 2
-#opal listen test listen-debug --help (debug events: audio level, partials, status)
-opal listen test listen-debug --no-start --duration 2
+#debug events (audio level, partials, status) via --debug
+opal listen test listen --debug --no-start --duration 2
 
 echo "Testing RECOGNITION..."
 #opal listen recognition --help
