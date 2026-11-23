@@ -103,14 +103,14 @@ echo "Testing PROFILES..."
 #opal listen profile list
 
 echo "Testing SETTINGS..."
-#opal listen setting --help
-#opal listen setting list
-#opal listen setting get --help
-#opal listen setting get whisper_model
-#opal listen setting set whisper_model medium.en
-#opal listen setting set whisper_model tiny.en
-#opal listen setting reset whisper_model
-#opal listen setting list
+#opal listen config setting --help
+#opal listen config setting list
+#opal listen config setting show --help
+#opal listen config setting show --name whisper_model
+#opal listen config setting set --name whisper_model --value medium.en
+#opal listen config setting set --name whisper_model --value tiny.en
+#opal listen config setting remove --name whisper_model
+#opal listen config setting list
 
 echo "Testing TEST..."
 #opal listen test --help
@@ -119,8 +119,6 @@ echo "Testing TEST..."
 #opal listen test listen --help
 #opal listen test listen-debug --help
 #opal listen test listen-debug --count 10 --duration 10 --start
-#opal listen test regression --help
-#opal listen test regression
 
 echo "Testing PIPELINE..."
 #opal listen pipeline --help
@@ -136,42 +134,22 @@ echo "Testing FAILED..."
 #opal listen failed get --help 
 #opal listen failed add --help 
 #opal listen failed update --help 
-#opal listen failed remove --help 
-#opal listen failed promote --help 
-
-echo "Testing REGRESSION..."
-#opal listen regression --help
-#opal listen regression list --help
-#opal listen regression get --help
-#opal listen regression add --help
-#opal listen regression update --help
-#opal listen regression remove --help
-
-echo "Testing LOGS..."
-#opal listen log --help
-#opal listen log list --help
-#opal listen log get --help
-#opal listen log count --help
+#opal listen failed remove --help
 
 echo "Testing PERF..."
 #opal listen service perf --help
-#opal listen service service perf last --help
-#opal listen service service perf summary --help
-#opal listen service service perf history --help
+#opal listen service perf last --help
+#opal listen service perf summary --help
+#opal listen service perf history --help
 
 echo "Testing CONFIG..."
 #opal listen config --help
 #opal listen config validate --help
-#opal listen config backup --help
-#opal listen config restore --help
-#opal listen config download --help
-#opal listen config delete-backup --help
-#opal listen config export --help
-#opal listen config import --help
+#opal listen config save --help
+#opal listen config load --help
 
-echo "Testing SYSTEM..."
+echo "Testing SERVICE..."
 opal listen service --help
-opal listen service doctor
-opal listen service devices
-opal listen service info
-opal listen service ping
+opal listen service health
+opal listen service live
+opal listen service ready

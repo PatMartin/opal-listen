@@ -9,9 +9,9 @@ cd "$(dirname "$0")/.."
 source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate
 
 # --- Health and identity ---
-opal listen service ping
-opal listen service info
-opal listen service doctor
+opal listen service live
+opal listen service ready
+opal listen service health
 
 # --- Catalog reads ---
 opal listen wakeword list
@@ -72,9 +72,9 @@ opal listen reaction enable lights_kitchen
 
 # Turn firing on for the running service (a mic match would now run the command),
 # confirm, then switch it back off
-opal listen config setting set reactions_enabled true
-opal listen config setting show reactions_enabled
-opal listen config setting set reactions_enabled false
+opal listen config setting set --name reactions_enabled --value true
+opal listen config setting show --name reactions_enabled
+opal listen config setting set --name reactions_enabled --value false
 
 # Disarm the reaction so the smoke run leaves no state behind
 opal listen reaction remove lights_kitchen
@@ -82,7 +82,7 @@ opal listen reaction remove lights_kitchen
 # Execution journal (may not exist yet — only live-mic matches write it)
 opal listen reaction log --limit 5 || true
 
-# --- Config bundle validation (the six YAML files; reactions.yaml is intentionally outside it) ---
+# --- Live configuration validation (reactions.yaml is intentionally outside it) ---
 opal listen config validate
 
 # --- The live command tree ---

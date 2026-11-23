@@ -47,8 +47,8 @@ This is **the ears of [OPAL](https://github.com/PatMartin/opal)**. Pair it with 
 - **Wakeword-first live listening.** Commands are captured after a configured wakeword; multiple wakewords, confidence thresholds, and sound-alike distractors are supported.
 - **Teach it plain-English phrases.** Map utterances to *intents*, then extract typed *slots*: `room_name=kitchen`, `temperature=21`, or `duration_minutes=5`.
 - **Environment-aware.** Profiles can tune confidence, voice activity detection (VAD), vocabulary, and which commands are active in a kitchen, noisy room, or car.
-- **Test before you trust.** Text tests, WAV fixtures, live microphone diagnostics, regression cases, and recognition performance measurements are built in.
-- **Improve from its mistakes.** Review failed utterances, turn a useful failure into a training phrase, and optionally create a regression test at the same time.
+- **Test before you trust.** Text tests, WAV fixtures, live microphone diagnostics, and recognition performance measurements are built in.
+- **Improve from its mistakes.** Review failed utterances and turn a useful failure into a training phrase.
 - **API first.** FastAPI serves the REST interface, Typer is its command-line client, and a single-page browser console talks to the same API.
 - **Controlled event integration.** Real live-microphone matches can publish `opal.listen.intent.match` to OPAL Event. Event publication starts **disabled**, deliberately.
 
@@ -118,8 +118,8 @@ Keep it running. In another terminal, from the repository directory:
 source .venv/bin/activate
 
 opal listen service live
-opal listen info health
-opal listen info health
+opal listen service health
+opal listen service health
 ~~~
 
 On first start, the service migrates its SQLite database (by default `var/opal_listener.db`) and seeds the supplied YAML catalogs. You'll have a `computer` wakeword, lights/timer/temperature/time/cancel intents, room and numeric slots, and four sample profiles.
@@ -252,7 +252,8 @@ opal
     │   │                            [--start/--no-start] [--verbose]
     │   ├── listen-debug             [--count N] [--duration SECONDS]
     │   │                            [--start/--no-start]
-    │   └── regression               [--all]
+    │   └── recognition
+    │       └── test                 [--text TEXT | --audio WAV]
     │
     ├── pipeline
     │   ├── start
@@ -261,49 +262,49 @@ opal
     │
     ├── failed
     │   ├── list                     [--reviewed/--unreviewed]
-    │   │                            [--promoted/--not-promoted]
     │   │                            [--limit N] [--offset N]
     │   ├── get ID
     │   ├── add TRANSCRIPT           [--expected-intent NAME] [--notes TEXT]
     │   │                            [--log-id ID]
     │   ├── update ID                [--expected-intent NAME] [--notes TEXT]
     │   │                            [--reviewed/--unreviewed]
-    │   ├── remove ID
-    │   └── promote ID               --intent NAME [--regression/--no-regression]
-    │
-    ├── regression
-    │   ├── list
-    │   ├── get ID
-    │   ├── add NAME PHRASE          --expect-intent NAME [--slot KEY=VALUE]...
-    │   │                            [--enabled/--disabled]
-    │   ├── update ID                [--name NAME] [--phrase PHRASE]
-    │   │                            [--expect-intent NAME] [--slot KEY=VALUE]...
-    │   │                            [--enabled/--disabled]
     │   └── remove ID
     │
-    ├── log
-    │   ├── list                     [--limit N] [--cursor TOKEN] [--intent NAME]
-    │   │                            [--matched/--no-match]
-    │   ├── get ID
-    │   └── count
-    │
-    ├── perf
-    │   ├── last
-    │   ├── summary                  [--limit N]
-    │   └── history                  [--limit N] [--cursor TOKEN]
+    ├── service
+    │   ├── live
+    │   ├── ready
+    │   ├── health
+    │   ├── start                    [--host HOST] [--port PORT]
+    │   │                            [--data-dir DIR] [--append]
+    │   ├── stop
+    │   ├── log                      [--lines N]
+    │   └── perf
+    │       ├── last
+    │       ├── summary              [--limit N]
+    │       └── history              [--limit N] [--cursor TOKEN]
     │
     ├── config
     │   ├── validate                 [--in FILE]
     │   ├── save                     [--out FILE]
-    │   └── load                     [--in FILE] [--yes]
+    │   ├── load                     [--in FILE] [--yes]
+    │   └── setting
+    │       ├── list
+    │       ├── show                 --name KEY
+    │       ├── set                  --name KEY --value VALUE
+    │       └── remove               --name KEY
     │
-    ├── system
-    │   ├── doctor
-    │   ├── devices
-    │   ├── live
-    │   ├── ready
-    │   ├── info
-    │   └── ping
+    ├── reaction
+    │   ├── path
+    │   ├── list
+    │   ├── get NAME
+    │   ├── add NAME                 [--cond EXPR]... [--run CMD]
+    │   │                            [--timeout SEC] [--cwd DIR] [--env K=V]...
+    │   ├── update NAME              [...]
+    │   ├── remove NAME
+    │   ├── enable NAME
+    │   ├── disable NAME
+    │   ├── test                     [--text TEXT | --payload JSON] [--execute]
+    │   └── log                      [--limit N]
     │
     └── event
         └── publish TOPIC MESSAGE     (direct ZeroMQ PUB; not REST)
@@ -324,7 +325,6 @@ Try `opal listen --help`, `opal listen intent --help`, or `opal listen profile u
 | **Intent** | "Here's what the person wants." | `light_turn_on` |
 | **Slot** | "Here's the detail that makes it actionable." | `room_name=kitchen` |
 | **Profile** | "Here's how to listen in this environment." | `noisy_room` |
-| **Regression test** | "Never forget how to understand this phrase." | `lounge_on` |
 | **Failed utterance** | "I didn't understand. Want to teach me?" | `switch the kitchen lamp on` |
 
 Most commands talk to the REST server; **`opal listen event publish` is the exception**, sending directly over ZeroMQ. That keeps the server, web UI, and CLI working with one shared configuration.
@@ -344,8 +344,8 @@ opal listen wakeword add "hey opal" --threshold 0.85 --disabled
 opal listen wakeword update "hey opal" --enabled --threshold 0.9
 
 # See or adjust the sound-alike words that should NOT wake you.
-opal listen setting list
-opal listen setting set wakeword_distractors "commuter,compute,computing,commute"
+opal listen config setting list
+opal listen config setting set --name wakeword_distractors --value "commuter,compute,computing,commute"
 ~~~
 
 **Why it matters:** The Vosk wakeword path uses a fast candidate detector and confirmation stage with distractor words. `test listen-debug` displays candidates, confirmations, rejections, and sound levels. A higher threshold can lower false triggers at the cost of missed commands.
@@ -402,20 +402,15 @@ opal listen test text "computer, set the kitchen lights to cozy" \
 
 The intended interpretation is `light_color` with `room_name=kitchen` and `color=warm_white`.
 
-Put a lock on that behavior with a regression test:
+Put a lock on that behavior with a scripted check (exit 1 if the match ever breaks):
 
 ~~~bash
-opal listen regression add cozy_kitchen \
-  "set the kitchen lights to cozy" \
-  --expect-intent light_color \
-  --slot room_name=kitchen \
-  --slot color=warm_white
-
-opal listen test regression
-opal listen info health
+opal listen test text "computer, set the kitchen lights to cozy" \
+  --expect-intent light_color
+opal listen service health
 ~~~
 
-The doctor checks that the loaded speech model knows the new vocabulary. **A text test can pass even when audio recognition struggles with an unknown word.** A larger Vosk model or different phrasing may help.
+The health report's `vocabulary` check warns if the loaded speech model doesn't know the new words. **A text test can pass even when audio recognition struggles with an unknown word.** A larger Vosk model or different phrasing may help.
 
 #### The tiny phrase language
 
@@ -464,12 +459,12 @@ opal listen slot add brightness_percent \
   --type number --description "Brightness percentage"
 
 # Text slots are for open recognition, not the bounded grammar mode.
-opal listen setting set stt_mode open
+opal listen config setting set --name stt_mode --value open
 # Restore grammar-focused recognition after exploring:
-opal listen setting set stt_mode grammar
+opal listen config setting set --name stt_mode --value grammar
 ~~~
 
-**Tip:** List slots constrain words to known values; numeric slots parse numbers; text slots require `stt_mode=open`. Changing modes can affect accuracy and vocabulary behavior—compare audio tests and run regressions afterwards.
+**Tip:** List slots constrain words to known values; numeric slots parse numbers; text slots require `stt_mode=open`. Changing modes can affect accuracy and vocabulary behavior—compare audio tests afterwards.
 
 ### Use case 5: Listen in a noisy room, then switch back
 
@@ -522,11 +517,11 @@ Useful VAD settings include `energy_threshold_dbfs` (minimum speech energy), `no
 When recognition fails, it's easy to blame the AI. Usually the first question is simpler: **Did the microphone hear you?**
 
 ~~~bash
-opal listen info health
-opal listen setting list
+opal listen service health
+opal listen config setting list
 
 # Select an input device by index or a substring of its name.
-opal listen setting set audio_device "USB"
+opal listen config setting set --name audio_device --value "USB"
 
 opal listen pipeline status
 opal listen pipeline start
@@ -557,7 +552,7 @@ opal listen test listen --no-start  # watch an already-running pipeline
 Want the service to start listening on every boot?
 
 ~~~bash
-opal listen setting set auto_start_listener true
+opal listen config setting set --name auto_start_listener --value true
 opal listen pipeline status
 ~~~
 
@@ -595,23 +590,20 @@ opal listen test audio ./my-command.wav \
 Real humans say things you didn't anticipate. Instead of guessing which phrases to add, **look at what failed**.
 
 ~~~bash
-opal listen log count
-opal listen log list --no-match --limit 20
 opal listen failed list --unreviewed
-opal listen failed list --not-promoted --limit 20
+opal listen failed list --unreviewed --limit 20
 
 # Inspect a specific saved failure from the list.
 opal listen failed get 3
 ~~~
 
-If failure `3` is genuinely another way to ask for lights on:
+If failure `3` is genuinely another way to ask for lights on, add the transcript as a training phrase yourself:
 
 ~~~bash
-# Promotes its transcript to a phrase; creates a regression case by default.
-opal listen failed promote 3 --intent light_turn_on
+opal listen intent add-phrase light_turn_on "switch [the] {room_name} lamp on"
 
 opal listen intent phrases light_turn_on
-opal listen test regression
+opal listen test text "computer, switch the kitchen lamp on" --expect-intent light_turn_on
 ~~~
 
 If the phrase was background TV or noise, mark it reviewed instead of training on it:
@@ -628,31 +620,22 @@ opal listen failed add "switch the kitchen lamp on" \
   --notes "Try this phrasing in an audio test"
 ~~~
 
-When failure capture is enabled (`auto_capture_failures=true` by default), unmatched microphone or uploaded-audio commands are stored for review. A **promotion** may replace detected slot values in the new phrase with placeholders, making one correction useful in multiple rooms.
+When failure capture is enabled (`auto_capture_failures=true` by default), unmatched microphone or uploaded-audio commands are stored for review. When you add a phrase from a failure, replace concrete slot values with `{placeholders}` — one correction then works in multiple rooms.
 
 ### Use case 9: Treat recognition like tested software
 
-Your voice commands are an interface. Changes to phrases and thresholds can break it just as surely as changes to code.
+Your voice commands are an interface. Changes to phrases and thresholds can break it just as surely as changes to code. Keep a small shell check of golden phrases — `--expect-intent` makes each call exit nonzero on a wrong match, so the check can guard configuration edits or CI:
 
 ~~~bash
-# Positive: intent and canonical slot
-opal listen regression add lounge_lights \
-  "switch on the lounge lights" \
-  --expect-intent light_turn_on \
-  --slot room_name=living_room
+# Positive: intent must match
+opal listen test text "computer, switch on the lounge lights" \
+  --expect-intent light_turn_on --no-save
 
 # Negative: a random sentence must not be a command
-opal listen regression add not_a_command \
-  "order a pizza" --expect-intent no_match
-
-# Keep the contract of speech intact
-opal listen test regression
-opal listen regression list
+opal listen test text "order a pizza" --expect-intent no_match --no-save
 ~~~
 
-Add `--all` to include disabled tests. A failing regression command exits nonzero, so it can guard future configuration changes or continuous integration.
-
-For faster experimentation, test a single utterance without saving a log:
+For faster experimentation, run the same one-off check interactively:
 
 ~~~bash
 opal listen test text "computer, turn on the kitchen light" \
@@ -666,9 +649,6 @@ opal listen service perf last
 opal listen service perf summary
 opal listen service perf summary --limit 500
 opal listen service perf history --limit 30
-
-opal listen log count
-opal listen log list --intent light_turn_on --limit 20
 ~~~
 
 The performance summary includes match rate, average confidence, and stage timing (wakeword, STT, intent, total) with averages and percentiles. If the end-to-end experience is slow, identify the slow stage before adjusting settings.
@@ -677,16 +657,16 @@ Want to experiment with an optional second-pass STT model?
 
 ~~~bash
 # Requires having installed pip install -e ".[dev,whisper]".
-opal listen setting set stt_refiner faster_whisper
-opal listen setting set whisper_model tiny.en
-opal listen setting set whisper_compute_type int8
+opal listen config setting set --name stt_refiner --value faster_whisper
+opal listen config setting set --name whisper_model --value tiny.en
+opal listen config setting set --name whisper_compute_type --value int8
 
 # Compare your saved audio examples and performance.
 opal listen service perf summary
-opal listen test regression
+opal listen test audio resources/cmds/cmd-kitchen-lights-off.wav --require-wakeword --no-save
 
 # Go back to the default Vosk-only path:
-opal listen setting set stt_refiner none
+opal listen config setting set --name stt_refiner --value none
 ~~~
 
 The optional refiner runs **after** the first recognition pass; it is not the default wakeword detector. Model loading and inference consume resources, so benchmark it on the actual machine.
@@ -731,7 +711,7 @@ opal-listen-svc
 In another shell, enable external publication:
 
 ~~~bash
-opal listen setting set event_publication_enabled true
+opal listen config setting set --name event_publication_enabled --value true
 opal listen pipeline start
 opal listen test listen-debug --no-start
 ~~~
@@ -786,7 +766,7 @@ opal listen config validate --in ./listener-snapshot.json
 ~~~
 
 The snapshot envelope holds wakewords, intents, slots, profiles, personas,
-regression tests and settings in one versioned JSON document.
+and settings in one versioned JSON document.
 
 When you're ready to apply it:
 
@@ -803,16 +783,16 @@ snapshot with `opal listen config load` after reading the prompt.
 
 | What you want | Command |
 | --- | --- |
-| "Is it running?" | `opal listen info health` |
-| "Which microphone?" | `opal listen info health` |
+| "Is it running?" | `opal listen service health` |
+| "Which microphone?" | `opal listen service health` |
 | "Why didn't that wake me?" | `opal listen test listen-debug` |
 | "Understand this sentence?" | `opal listen test text "..."` |
 | "Re-run recorded speech?" | `opal listen test audio recording.wav --require-wakeword` |
 | "What can I say?" | `opal listen intent list` |
-| "What did it hear?" | `opal listen log list` |
+| "What did it hear?" | `opal listen service perf history` |
 | "What failed?" | `opal listen failed list --unreviewed` |
-| "Train on a useful mistake?" | `opal listen failed promote ID --intent NAME` |
-| "Did I break anything?" | `opal listen test regression` |
+| "Train on a useful mistake?" | `opal listen intent add-phrase INTENT "..."` |
+| "Did I break anything?" | `opal listen test text "..." --expect-intent INTENT` |
 | "How fast?" | `opal listen service perf summary` |
 | "Change one setting?" | `opal listen config setting set --name KEY --value VALUE` |
 | "Switch environments?" | `opal listen profile activate noisy_room` |
@@ -847,7 +827,7 @@ The browser console at `/ui/opal-listen.html` is bundled with the service, not a
 
 ### Environment and settings
 
-Process-level settings come from environment variables or a local `.env` file. Mutable recognition settings live in SQLite and can be changed with `opal listen setting set`. Exportable YAML catalogs seed the database on a fresh install and can be imported later.
+Process-level settings come from environment variables or a local `.env` file. Mutable recognition settings live in SQLite and can be changed with `opal listen config setting set --name KEY --value VALUE`. Exportable YAML catalogs seed the database on a fresh install and can be imported later.
 
 | Setting | Default / notes |
 | --- | --- |
@@ -872,7 +852,7 @@ The CLI's `setting set` updates a **single key**, reading the current strong ETa
 - **Audio capture + VAD:** PortAudio through `sounddevice`, framing/resampling, adaptive noise handling, endpoint decisions, and watchdog recovery.
 - **NLU engine:** normalize text, expand phrase templates, match intents, parse numbers, and canonicalize slot aliases.
 - **Profiles + catalogs:** reusable YAML-backed wakewords, intents, slots, and environment-specific thresholds.
-- **SQLite:** persisted catalogs, recognition logs, failed utterances, regression cases, and metrics.
+- **SQLite:** persisted catalogs, recognition logs, failed utterances, and metrics.
 - **SSE + event publication:** local live observation plus optional external OPAL Event integration.
 - **Optional Whisper refinement:** a second transcription pass; not required for the local-first starter experience.
 
@@ -897,7 +877,7 @@ python scripts/cli_rest_test.py
 pytest opal_listener/tests/test_zmq_events.py -q
 ~~~
 
-The project includes audio fixtures, negative phrases, golden regression tests, CLI/API parity checks, and pipeline tests. The CI workflow also exercises Python 3.11–3.13. See [the full user guide](docs/USER_GUIDE.md) and [testing notes in the quickstart](docs/QUICKSTART.md).
+The project includes audio fixtures, negative phrases, golden phrase tests, CLI/API parity checks, and pipeline tests. The CI workflow also exercises Python 3.11–3.13. See [the full user guide](docs/USER_GUIDE.md) and [testing notes in the quickstart](docs/QUICKSTART.md).
 
 ## Repository map
 
@@ -906,7 +886,7 @@ opal-listen/
 ├── opal-listen.png                   project artwork
 ├── README.md                         this guide
 ├── pyproject.toml                    package / CLI entry points
-├── openapi/                          OpenAPI reference (opal_listen_v0.1.0.yaml + shared kernel)
+├── openapi/                          OpenAPI reference (opal_listen_v0.5.0.yaml + shared kernel)
 ├── docs/
 │   ├── QUICKSTART.md                 setup walkthrough
 │   ├── CLI.md                        exhaustive CLI reference
@@ -927,7 +907,7 @@ opal-listen/
 │   ├── view/static/                  bundled web console
 │   └── tests/                        unit, integration, regression, audio
 ├── resources/cmds/                  WAV examples
-├── scripts/                         CLI / regression tooling
+├── scripts/                         CLI / smoke tooling
 └── Dockerfile                        container packaging
 ~~~
 
@@ -938,7 +918,7 @@ opal-listen/
 - [CLI reference](docs/CLI.md) — all flags, resource commands, outputs, and scripts.
 - [User guide](docs/USER_GUIDE.md) — extensive guidance for running and tuning the listener.
 - [Design](docs/design.md) — internal architecture and tradeoffs.
-- [OpenAPI](openapi/opal_listen_v0.1.0.yaml) — REST interface description.
+- [OpenAPI](openapi/opal_listen_v0.5.0.yaml) — REST interface description.
 - [OPAL Event](https://github.com/PatMartin/opal-event) — turn recognized intents into guarded actions.
 
 ---

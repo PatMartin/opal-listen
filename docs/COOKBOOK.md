@@ -132,27 +132,25 @@ suppressed as well.
 
 ### 8. Put a regression gate in front of catalog edits
 
-Pin the phrases that matter as named regression tests (with expected slots),
-then make `test regression` a hard gate — it exits 1 on any failure, before and
-after every vocabulary change.
+Pin the phrases that matter as a checklist of `test text --expect-intent`
+assertions — it exits 1 on any mismatch, before and after every vocabulary
+change.
 
 ```bash
-opal listen regression add lights_kitchen "turn on the kitchen light" \
-  --expect-intent light_turn_on --slot room_name=kitchen
-opal listen regression add lights_den "turn on the den light" \
-  --expect-intent light_turn_on --slot room_name=office
-opal listen test regression
+opal listen test text "turn on the kitchen light" --expect-intent light_turn_on --no-save
+opal listen test text "turn on the den light" --expect-intent light_turn_on --no-save
+opal listen test text "order a pizza" --expect-intent no_match --no-save
 ```
 
 ### 9. Wire the service into CI, systemd and Kubernetes
 
-Four probe shapes for four depths of "is it healthy": `ping` (TCP/HTTP up),
-`live` (process + DB), `ready` (config compiles, provider loads), `doctor`
-(every startup check, human-readable). All exit non-zero on failure.
+Three probes for three depths of "is it healthy": `live` (process + DB),
+`ready` (config compiles, provider loads), `health` (every startup check,
+human-readable). All exit non-zero on failure.
 
 ```bash
-opal listen service live && opal listen service live && opal listen service ready
-opal listen info health   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
+opal listen service live && opal listen service ready
+opal listen service health   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
 ```
 
 ### 10. Retune several settings
@@ -185,7 +183,7 @@ opal listen config load --in ./before-surgery.json --yes
 ### 12. Keep your whole voice model in git
 
 `config save --out` writes one JSON snapshot envelope (wakewords, intents, slots,
-profiles, personas, regression tests, settings) as reviewable source. Validate
+profiles, personas, settings) as reviewable source. Validate
 offline, then load — which validates again and applies atomically.
 
 ```bash
@@ -228,17 +226,17 @@ opal listen profile activate default
 
 ### 15. Turn "it didn't understand me" into training data
 
-Users report misses; you log them, review, and `failed promote` writes the
-corrected transcript into the right intent *and* creates a regression test —
-so it can never silently break again.
+Users report misses; you log them, review, and write the corrected transcript
+into the right intent yourself — `intent add-phrase`, generalizing slot values
+to `{placeholders}` — then mark the failure reviewed.
 
 ```bash
 opal listen failed add "light on in the kitchen" --expected-intent light_turn_on \
   --notes "field report: quiet voice at distance"
 opal listen failed list --unreviewed
-opal listen failed promote 7 --intent light_turn_on --regression
-# -> promoted as 'light on in the {room_name}' (slot values are generalized)
-opal listen test regression
+opal listen intent add-phrase light_turn_on --phrase "light on in the {room_name}"
+opal listen failed update 7 --reviewed --expected-intent light_turn_on
+opal listen test text "light on in the kitchen" --expect-intent light_turn_on --no-save
 ```
 
 ### 16. Mine the recognition history for what people really say
@@ -309,7 +307,7 @@ Pick the right mic by name, let the watchdog recover dead captures, and bound th
 log table — all without editing a file or restarting.
 
 ```bash
-opal listen info health
+opal listen service health
 opal listen config setting set --name audio_device --value "USB"
 opal listen config setting set --name audio_watchdog_timeout_ms --value 5000
 opal listen config setting set --name max_recognition_logs --value 5000
@@ -545,7 +543,7 @@ map live, so discovery never goes stale.
 opal listen tree
 opal talk tree
 opal think tree
-opal listen --json system info
+opal listen --json service health
 ```
 
 ### 33. Contract-of-record auditing
@@ -558,7 +556,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint openapi/opal_listen_v0.1.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
+spectral lint openapi/opal_listen_v0.5.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs
@@ -670,10 +668,10 @@ to a bug report.
 
 ```bash
 day=$(date +%s); mkdir -p incident-$day
-opal listen --json system info           > incident-$day/listen-info.json
-opal listen --json system doctor         > incident-$day/listen-doctor.json
+opal listen --json service health        > incident-$day/listen-health.json
+opal listen --json service ready         > incident-$day/listen-ready.json
 opal listen --json pipeline status       > incident-$day/pipeline.json
-opal listen --json perf summary          > incident-$day/perf.json
+opal listen --json service perf summary  > incident-$day/perf.json
 opal event stats                         > incident-$day/event-stats.txt
 opal event executions list --limit 50    > incident-$day/executions.txt
 opal talk info                           > incident-$day/talk-info.txt

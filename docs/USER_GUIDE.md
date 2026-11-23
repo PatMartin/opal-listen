@@ -59,8 +59,7 @@ There are three ways to use it, and all three can do the same things:
 | **Profile** | Environment preset: wakewords, thresholds, VAD tuning, model paths, enabled intents/slots. Exactly one is active. | `default`, `noisy_room`, `car`, `kitchen` |
 | **Setting** | A typed global key/value, for example `cooldown_ms` or `stt_mode`. | `cooldown_ms = 1500` |
 | **Recognition log** | Every recognition result (mic, audio file or text), stored in SQLite. | |
-| **Failed utterance** | A `no_match` result saved for review. It can be *promoted* to a training phrase. | |
-| **Regression test** | A phrase that must keep resolving to an expected intent and slots. | |
+| **Failed utterance** | A `no_match` result saved for review. | |
 | **Pipeline** | The live microphone loop: wakeword → VAD → STT → intent. | |
 
 ### Phrase syntax
@@ -191,13 +190,13 @@ Useful URLs:
 
 ```bash
 opal listen service live
-opal listen info health
+opal listen service health
 opal listen test text "computer, turn on the kitchen light"
 opal listen test audio opal_listener/tests/audio/fixtures/golden_kitchen_light_on.wav
 opal listen test listen-debug        # live microphone, Ctrl-C to stop
 ```
 
-`info health` should show `✓` on every line. Microphone problems show as warnings, because text and
+`service health` should show `✓` on every line. Microphone problems show as warnings, because text and
 audio-file tests still work without a microphone. A missing model shows as an error.
 
 ### 2.7 Access from other machines
@@ -207,7 +206,7 @@ The server listens on all interfaces by default. Find the Pi's address, then con
 ```bash
 hostname -I                                      # on the Pi
 export OPAL_LISTEN_API_URL=http://192.168.1.50:8000   # on your laptop
-opal listen info health
+opal listen service health
 # browser: http://192.168.1.50:8000/ui/opal-listen.html
 ```
 
@@ -249,7 +248,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable --now opal-listen-svc
 journalctl -u opal-listen-svc -f
-opal listen config setting set auto_start_listener true   # start the microphone on every boot
+opal listen config setting set --name auto_start_listener --value true   # start the microphone on every boot
 ```
 
 ### 2.9 Docker
@@ -257,7 +256,7 @@ opal listen config setting set auto_start_listener true   # start the microphone
 ```bash
 cd opal_listener
 VOSK_MODELS_DIR=/path/to/models docker compose up -d --build
-opal listen info health
+opal listen service health
 ```
 
 | Compose variable | Default | Purpose |
@@ -278,7 +277,7 @@ The container:
 
 ```bash
 docker compose logs -f listener
-docker compose exec listener opal listen info health
+docker compose exec listener opal listen service health
 ```
 
 ### 2.10 Upgrading
@@ -288,7 +287,7 @@ git pull
 pip install -e ".[dev]"
 opal listen config save              # optional safety snapshot
 sudo systemctl restart opal-listen-svc # migrations run automatically on startup
-opal listen info health            # the "migrations" check shows the current revision
+opal listen service health            # the "migrations" check shows the current revision
 ```
 
 ---
@@ -474,7 +473,7 @@ The best candidate wins. Up to a few runners-up are returned in `alternatives`.
 | Reason | Meaning | What to try |
 |---|---|---|
 | `empty_transcript` | Nothing left after normalization and wakeword stripping | Speak after the wakeword; check levels |
-| `no_candidate` | No phrase is similar enough | Add a phrase or promote the failure |
+| `no_candidate` | No phrase is similar enough | Add a phrase and mark the failure reviewed |
 | `missing_slot` | A phrase matched but a required slot could not be extracted | Add values/alias |
 | `below_threshold` | Best score is below the effective threshold | Add phrases, or lower the threshold |
 | `low_stt_confidence` | STT confidence is below the profile's `stt` floor | Improve the mic/room, or lower the floor |
@@ -872,7 +871,7 @@ Kernel `OpalHealthReport`: service identity, canonical `status` (`ok` | `degrade
 curl -s $API/api/v1/health/
 ```
 ```json
-{"name": "opal-listen-svc", "version": "0.1.0", "api_version": "v1",
+{"name": "opal-listen-svc", "version": "0.5.0", "api_version": "v1",
  "status": "ok", "live": true, "ready": true,
  "details": {"checks": [{"name": "sqlite", "status": "ok", "detail": "var/opal_listener.db"}],
              "audio_devices": [{"index": 0, "name": "...", "max_input_channels": 2,
@@ -889,7 +888,7 @@ Cheap check that the process is up and the database is reachable (`OpalHealthPro
 curl -s $API/api/v1/health/live
 ```
 ```json
-{"status": "ok", "ready": true, "version": "0.1.0"}
+{"status": "ok", "ready": true, "version": "0.5.0"}
 ```
 
 #### `GET /api/v1/health/ready` — readiness probe
@@ -901,7 +900,7 @@ Full readiness: configuration compiles, the listener provider loads, etc. Return
 curl -s $API/api/v1/health/ready
 ```
 ```json
-{"status": "ok", "ready": true, "version": "0.1.0"}
+{"status": "ok", "ready": true, "version": "0.5.0"}
 ```
 
 ### 5.4 Wakewords — `/api/v1/wakeword`
@@ -941,7 +940,7 @@ curl -s -X POST $API/api/v1/wakeword/ \
 {"name": "hey opal", "enabled": true, "confidence_threshold": 0.85, "id": 2, "created_at": "...", "updated_at": "..."}
 ```
 
-> Choose wakewords that are in the model vocabulary. `info health` warns about unknown words.
+> Choose wakewords that are in the model vocabulary. `service health` warns about unknown words.
 > Two or three syllables work best.
 
 #### `GET /api/v1/wakeword/{wakeword_id}` — get one wakeword
@@ -1350,35 +1349,23 @@ Fetch it first, then send it back as `If-Match` on `PATCH`:
 ETAG=$(curl -si $API/api/v1/setting/ | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
 ```
 
-#### `PATCH /api/v1/setting/` — atomically set one or more settings
-
-The body is `{"<key>": <value>, ...}` with at least one entry (any JSON scalar — the value is parsed and
-validated server-side per key). All keys are applied in a single transaction: if any value is invalid,
-none of them are changed. `If-Match` is required: missing/empty → `428`, stale (someone else changed
-settings since you fetched the ETag) → `412`.
+Settings are mutated per key (`PUT`/`DELETE` below); there is no collection-level `PATCH`. Every
+mutation requires the settings-map `If-Match` (fetch it with `GET /api/v1/setting/`): missing/empty →
+`428`, stale → `412`. All 422 responses use the standard `OpalError` envelope — `{"error": {"code":
+"invalid_request", "message": "...", "details": "...", "request_id": ..., ...}}`.
 
 ```bash
-curl -s -X PATCH $API/api/v1/setting/ -H "If-Match: $ETAG" \
-  -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000, "stt_mode": "open"}'
-```
+curl -s -X PUT $API/api/v1/setting/stt_mode -H "If-Match: $ETAG" \
+  -H 'Content-Type: application/json' -d '{"value": "fast"}'
+# 422: {"error": {"code": "invalid_request", "message": "setting 'stt_mode' must be one of grammar, open", ...}}
 
-Examples of rejected requests:
-
-```bash
-curl -s -X PATCH $API/api/v1/setting/ -H "If-Match: $ETAG" \
-  -H 'Content-Type: application/json' -d '{"stt_mode": "fast"}'
-# 422: {"detail": [{"loc": ["body"], "msg": "setting 'stt_mode' must be one of grammar, open", ...}]}
-
-curl -s -X PATCH $API/api/v1/setting/ -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
+curl -s -X PUT $API/api/v1/setting/cooldown_ms -H 'Content-Type: application/json' -d '{"value": 1000}'
 # 428: {"error": {"code": "precondition_required", "message": "missing or empty If-Match header", ...}}
 
-curl -s -X PATCH $API/api/v1/setting/ -H 'If-Match: "stale"' \
-  -H 'Content-Type: application/json' -d '{"cooldown_ms": 1000}'
+curl -s -X PUT $API/api/v1/setting/cooldown_ms -H 'If-Match: "stale"' \
+  -H 'Content-Type: application/json' -d '{"value": 1000}'
 # 412: {"error": {"code": "precondition_failed", "message": "settings has changed ... (stale If-Match)", ...}}
 ```
-
-All 422 responses use the standard `OpalError` envelope — `{"error": {"code": "invalid_request",
-"message": "...", "details": "...", "request_id": ..., ...}}`.
 
 #### `GET /api/v1/setting/{key}` — one setting with lifecycle metadata
 
@@ -1390,7 +1377,8 @@ curl -s $API/api/v1/setting/cooldown_ms
 ```
 
 `value` is returned in the setting's native JSON type. `default`/`is_default` come from the settings
-registry; `pending_restart` is always `false` — every setting hot-applies. Unknown key → `404`.
+registry; `pending_restart` is `true` when a restart-only setting was changed after the pipeline
+started. Unknown key → `404`.
 
 #### `PUT /api/v1/setting/{key}` — replace one setting
 
@@ -1412,8 +1400,9 @@ settings-map `If-Match`.
 curl -s -X DELETE $API/api/v1/setting/cooldown_ms -H "If-Match: $ETAG" -w '%{http_code}\n'
 ```
 
-CLI equivalents: `opal listen config setting show <key>`, `opal listen config setting set <key> <value>` (per-key PUT),
-`opal listen config setting remove <key>` (DELETE → default).
+CLI equivalents: `opal listen config setting show --name <key>`,
+`opal listen config setting set --name <key> --value <value>` (per-key PUT),
+`opal listen config setting remove --name <key>` (DELETE → default).
 
 ---
 
@@ -1617,14 +1606,13 @@ Returns `404` when no managed log file exists.
 ### 5.12 Failed utterances — `/api/v1/failed_utterance`
 
 Failed utterance object: `{id, transcript, expected_intent, notes, recognition_log_id, reviewed,
-promoted_to_phrase, created_at}`.
+created_at}`.
 
 #### `GET /api/v1/failed_utterance/` — list (newest first)
 
 | Query | Default | Meaning |
 |---|---|---|
 | `reviewed` | | `true` / `false` |
-| `promoted` | | `true` / `false` |
 | `limit` | `50` (max 500) | |
 | `offset` | `0` | |
 
@@ -1651,7 +1639,7 @@ curl -s $API/api/v1/failed_utterance/3
 
 #### `PATCH /api/v1/failed_utterance/{fu_id}` — annotate
 
-Fields: `expected_intent`, `notes`, `reviewed`, `promoted_to_phrase`.
+Fields: `expected_intent`, `notes`, `reviewed` (at least one required).
 
 ```bash
 curl -s -X PATCH $API/api/v1/failed_utterance/3 -H 'Content-Type: application/json' \
@@ -1664,114 +1652,14 @@ curl -s -X PATCH $API/api/v1/failed_utterance/3 -H 'Content-Type: application/js
 curl -s -X DELETE $API/api/v1/failed_utterance/3
 ```
 
-#### `POST /api/v1/failed_utterance/{fu_id}/promote` — turn a failure into a training phrase
-
-This is the core of the tuning loop. It:
-
-1. Strips the wakeword and fillers from the transcript.
-2. Replaces known slot values and aliases with `{slot}` placeholders ("kitchen" → `{room_name}`).
-3. Adds the result as a phrase of the intent, unless an identical phrase already exists.
-4. Marks the failure as `reviewed` and `promoted_to_phrase`, and sets `expected_intent`.
-5. Optionally creates a regression test named `promoted_failure_<id>` with the extracted slots.
-
-The change is validated like any other configuration change.
-
-| Query | Required | Meaning |
-|---|---|---|
-| `intent_name` | yes | Intent that should have matched |
-| `create_regression` | no (default `true`) | Also create a regression test |
-
-```bash
-curl -s -X POST "$API/api/v1/failed_utterance/3/promote?intent_name=light_turn_on"
-```
-```json
-{
-  "failed_utterance": {"id": 3, "transcript": "computer lights up in the kitchen", "expected_intent": "light_turn_on",
-                       "reviewed": true, "promoted_to_phrase": true, "...": "..."},
-  "phrase": {"id": 40, "intent_id": 1, "phrase": "lights up in the {room_name}", "created_at": "..."},
-  "regression_test": {"id": 12, "name": "promoted_failure_3", "phrase": "lights up in the kitchen",
-                      "expected_intent": "light_turn_on", "expected_slots": {"room_name": "kitchen"},
-                      "enabled": true, "last_result": null, "last_run_at": null, "created_at": "..."}
-}
-```
+When a failure is a real command that should have matched, add the transcript as a training phrase
+of the right intent yourself — `POST /api/v1/intent/{id}/phrase` — generalizing slot values to
+`{placeholders}` (e.g. *"switch the kitchen lamp on"* → `switch the {room_name} lamp on`), then mark
+the failure `reviewed`. The v0.5.0 contract has no `promote` operation.
 
 ---
 
-### 5.13 Regression tests — `/api/v1/regression`
-
-Regression test object: `{id, name, phrase, expected_intent, expected_slots, enabled, last_result,
-last_run_at, created_at}`. Use `expected_intent: "no_match"` for negative tests.
-
-#### `GET /api/v1/regression/` — list
-
-```bash
-curl -s $API/api/v1/regression/ | jq '.[] | {id, name, expected_intent, last_result}'
-```
-
-#### `POST /api/v1/regression/` — create
-
-```bash
-curl -s -X POST $API/api/v1/regression/ -H 'Content-Type: application/json' -d '{
-  "name": "lounge_on",
-  "phrase": "switch on the lounge lights",
-  "expected_intent": "light_turn_on",
-  "expected_slots": {"room_name": "living_room"}
-}'
-
-# negative test
-curl -s -X POST $API/api/v1/regression/ -H 'Content-Type: application/json' \
-  -d '{"name": "pizza_is_not_a_command", "phrase": "order a pizza", "expected_intent": "no_match"}'
-```
-
-#### `POST /api/v1/regression/run` — run tests against the current configuration
-
-| Query | Default | Meaning |
-|---|---|---|
-| `enabled_only` | `true` | Skip disabled tests |
-
-Each test updates `last_result` and `last_run_at`. Slot comparison is by string value, and only the
-expected keys are checked.
-
-```bash
-curl -s -X POST $API/api/v1/regression/run | jq '{total, passed, failed, pass_rate}'
-```
-```json
-{"total": 24, "passed": 23, "failed": 1, "pass_rate": 0.9583}
-```
-```bash
-curl -s -X POST $API/api/v1/regression/run | jq '.results[] | select(.passed | not)'
-```
-```json
-{"test_id": 7, "name": "lounge_on", "phrase": "switch on the lounge lights",
- "expected_intent": "light_turn_on", "actual_intent": "no_match",
- "expected_slots": {"room_name": "living_room"}, "actual_slots": {},
- "intent_confidence": 0.41, "passed": false,
- "failure_reason": "expected intent 'light_turn_on', got 'no_match'"}
-```
-
-#### `GET /api/v1/regression/{test_id}` — get one
-
-```bash
-curl -s $API/api/v1/regression/7
-```
-
-#### `PATCH /api/v1/regression/{test_id}` — update
-
-Fields: `name`, `phrase`, `expected_intent`, `expected_slots`, `enabled`.
-
-```bash
-curl -s -X PATCH $API/api/v1/regression/7 -H 'Content-Type: application/json' -d '{"enabled": false}'
-```
-
-#### `DELETE /api/v1/regression/{test_id}` — delete
-
-```bash
-curl -s -X DELETE $API/api/v1/regression/7
-```
-
----
-
-### 5.14 Performance — `/api/v1/performance`
+### 5.13 Performance — `/api/v1/performance`
 
 #### `GET /api/v1/performance/last` — the most recent recognition
 
@@ -1821,77 +1709,7 @@ curl -s "$API/api/v1/performance/history?limit=10" | jq -r '.[] | "\(.id)\t\(.to
 
 ---
 
-### 5.15 Health — `/api/v1/health`
-
-#### `GET /api/v1/health/` — run all health checks
-
-The overall `status` is the worst check status (`ok` < `warning` < `error`).
-
-```bash
-curl -s $API/api/v1/health/
-```
-```json
-{
-  "status": "ok",
-  "checks": [
-    {"name": "sqlite", "status": "ok", "detail": "var/opal_listener.db"},
-    {"name": "migrations", "status": "ok", "detail": "revision 0001 (head 0001)"},
-    {"name": "slots", "status": "ok", "detail": "slots compile"},
-    {"name": "intents", "status": "ok", "detail": "6 intents, 52 phrase variants"},
-    {"name": "provider", "status": "ok", "detail": "vosk loaded"},
-    {"name": "vocabulary", "status": "ok", "detail": "all wakeword/phrase words are in the model vocabulary"},
-    {"name": "microphone", "status": "ok", "detail": "2 input device(s); using 'USB PnP Sound Device'"},
-    {"name": "listener", "status": "ok", "detail": "stopped"},
-    {"name": "disk", "status": "ok", "detail": "48213 MiB free"}
-  ],
-  "checked_at": "2026-09-30T09:30:00"
-}
-```
-
-| Check | Warns / errors when |
-|---|---|
-| `sqlite` | The database is unavailable |
-| `migrations` | The database revision is not the head revision |
-| `slot`, `intent` | The stored configuration does not compile (`intent` warns if there are no phrase variants) |
-| `config_warnings` | The compiler reported warnings |
-| `provider` | The provider or model cannot be loaded |
-| `vocabulary` | A wakeword, phrase or alias word is unknown to the model |
-| `microphone` | No input devices, or the configured device is not found |
-| `listener` | The pipeline is recovering or reports an error |
-| `disk` | Little free space in the data dir |
-
-#### `GET /api/v1/health/audio_devices` — input devices visible to the server
-
-```bash
-curl -s $API/api/v1/health/audio_devices
-```
-```json
-[
-  {"index": 0, "name": "bcm2835 Headphones", "max_input_channels": 0, "default_sample_rate": 44100.0, "is_default": false},
-  {"index": 2, "name": "USB PnP Sound Device: Audio (hw:2,0)", "max_input_channels": 1, "default_sample_rate": 48000.0, "is_default": true}
-]
-```
-
-Use `index` or a name substring as the `audio_device` setting.
-
-#### `GET /api/v1/health/live` / `GET /api/v1/health/ready` — OPAL v1.2 probes
-
-Standard liveness/readiness probes (`OpalHealthProbe`: `status`, `ready`, optional `details`), suitable
-for container/orchestrator health checks. `live` is a cheap check (process + database reachability);
-`ready` runs the same checks as the doctor report above. Both return `200` with `status: ok` or
-`degraded` while serviceable, and `503` with `status: unavailable`, `ready: false` otherwise.
-
-```bash
-curl -s $API/api/v1/health/live
-curl -si $API/api/v1/health/ready   # -i to see the 503 on failure
-```
-```json
-{"status": "ok", "ready": true}
-```
-
----
-
-### 5.16 Configuration snapshots — `/api/v1/config`
+### 5.14 Configuration snapshots — `/api/v1/config`
 
 The v2 contract replaces the old `/api/v1/backup/*` routes with OPAL configuration
 snapshots. A snapshot is one portable envelope:
@@ -1900,7 +1718,7 @@ snapshots. A snapshot is one portable envelope:
 {"format_version": "1.0.0", "module": "opal-listen", "created_at": "2026-09-30T09:30:00Z",
  "settings": {"cooldown_ms": 1500, "...": "..."},
  "resources": {"wakewords": [], "intents": [], "slots": [], "profiles": [],
-               "personas": [], "regression_tests": []}}
+               "personas": []}}
 ```
 
 It covers **persistent desired configuration only** — no logs, failed utterances,
@@ -2095,12 +1913,12 @@ Exit codes:
 | Code | When |
 |---|---|
 | `0` | Success |
-| `1` | API error (4xx/5xx), server unreachable, failed regression run, invalid config, doctor errors, `--expect-intent` mismatch, declined confirmation |
+| `1` | API error (4xx/5xx), server unreachable, invalid config, health-check errors, `--expect-intent` mismatch, declined confirmation |
 | `2` | Invalid CLI usage (bad option or missing argument) |
 
 ```bash
 opal listen --json intent list | jq '.[].name'
-opal listen --api-url http://pi5.local:8000 system doctor
+opal listen --api-url http://pi5.local:8000 service health
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
 ```
 
@@ -2252,21 +2070,19 @@ opal listen persona validate amy
 | Command | Description |
 |---|---|
 | `list` | All settings |
-| `show KEY` | One setting's value, default and `pending_restart` |
-| `set KEY VALUE` | Atomically set one setting (fetches the ETag and sends `If-Match` automatically) |
-| `update K=V ...` | Atomically set several settings in one PATCH (`patch` is a hidden alias) |
-| `remove KEY` | Revert a key to its default |
-
-Flat aliases: `setting get` = `config setting show`, `setting unset` = `config setting remove`.
+| `show --name KEY` | One setting's value, default and `pending_restart` |
+| `set --name KEY --value VALUE` | Atomically set one setting (fetches the ETag and sends `If-Match` automatically) |
+| `remove --name KEY` | Revert a key to its default |
 
 ```bash
 opal listen config setting list
-opal listen config setting set cooldown_ms 1000
-opal listen config setting set audio_device 2                 # device index
-opal listen config setting set audio_device "USB"             # or name substring
-opal listen config setting set wakeword_distractors "commuter,compute,computing,commute,commuting"
-opal listen config setting set auto_start_listener true
-opal listen config setting set stt_refiner faster_whisper     # requires the [whisper] extra
+opal listen config setting show --name cooldown_ms
+opal listen config setting set --name cooldown_ms --value 1000
+opal listen config setting set --name audio_device --value 2                 # device index
+opal listen config setting set --name audio_device --value "USB"             # or name substring
+opal listen config setting set --name wakeword_distractors --value "commuter,compute,computing"
+opal listen config setting set --name auto_start_listener --value true
+opal listen config setting set --name stt_refiner --value faster_whisper     # requires the [whisper] extra
 ```
 
 ### 7.8 `test`
@@ -2277,7 +2093,6 @@ opal listen config setting set stt_refiner faster_whisper     # requires the [wh
 | `audio WAV [--save/--no-save] [--require-wakeword] [--expect-intent I] [-v]` | Recognize a WAV file |
 | `listen [-n COUNT] [--duration S] [--start/--no-start] [-v]` | Live microphone results |
 | `listen-debug [-n COUNT] [--duration S] [--start/--no-start]` | Also shows levels, partials, wakeword and VAD events |
-| `regression [--all]` | Run regression tests (exit 1 on failure). `--all` includes disabled tests. |
 
 ```bash
 opal listen test text "computer, turn on the kitchen light"
@@ -2309,8 +2124,6 @@ opal listen test listen -n 3              # stop after 3 results
 opal listen test listen --duration 30     # stop after 30 s
 opal listen test listen --no-start        # only watch an already-running pipeline
 opal listen test listen-debug
-opal listen test regression
-opal listen test regression --all
 ```
 
 Example `listen-debug` output:
@@ -2341,59 +2154,41 @@ opal listen pipeline stop
 
 | Command | Description |
 |---|---|
-| `list [--reviewed/--unreviewed] [--promoted/--not-promoted] [--limit N] [--offset N]` | List failures |
+| `list [--reviewed/--unreviewed] [--limit N] [--offset N]` | List failures |
 | `get ID` | Show one |
 | `add TRANSCRIPT [--expected-intent I] [--notes N] [--log-id ID]` | Record manually |
 | `update ID [--expected-intent] [--notes] [--reviewed/--unreviewed]` | Annotate |
 | `remove ID` | Delete |
-| `promote ID --intent I [--regression/--no-regression]` | Add as a training phrase (+ regression test) |
 
 ```bash
 opal listen failed list --unreviewed
 opal listen failed get 3
-opal listen failed promote 3 --intent light_turn_on
-opal listen failed promote 4 --intent get_time --no-regression
 opal listen failed update 5 --reviewed --notes "TV in background"
 opal listen failed add "dim the lounge" --expected-intent light_dim --notes "intent does not exist yet"
 opal listen failed remove 5
 ```
 
-### 7.11 `regression`
+### 7.11 `service` lifecycle and health
 
-| Command | Description |
-|---|---|
-| `list` | List tests |
-| `get ID` | Show one |
-| `add NAME PHRASE --expect-intent I [--slot k=v]... [--enabled/--disabled]` | Add a test |
-| `update ID [--name] [--phrase] [--expect-intent] [--slot k=v]... [--enabled/--disabled]` | Update (`--slot` replaces all expected slots) |
-| `remove ID` | Delete |
-
-Run the tests with `opal listen test regression`.
+Process lifecycle commands are **local** — they manage a server started on this machine, not the
+remote API. `start` launches `python -m opal_listener` in the background, truncates
+`logs/opal_listen.log` (also records the pid in `logs/opal_listen.pid`), and returns immediately;
+running it again kills the previously started server first. `stop` terminates that managed server,
+`log` tails the log file.
 
 ```bash
-opal listen regression add lounge_on "switch on the lounge lights" \
-  --expect-intent light_turn_on --slot room_name=living_room
-opal listen regression add timer_ten "set a timer for ten minutes" \
-  --expect-intent timer_set --slot duration_minutes=10
-opal listen regression add not_a_command "order a pizza" --expect-intent no_match
-opal listen regression list
-opal listen regression update 3 --disabled
-opal listen test regression
-```
-
-### 7.12 `service` lifecycle
-
-REST-first (acts on the managed server via `/api/v1/service/*`), with a local fallback when the
-API is unreachable.
-
-```bash
-opal listen service start                # detached; logs to logs/opal_listen.log
-opal listen service start --append       # keep the existing log instead of truncating
-opal listen service log --lines 20
+opal listen service start         # background server -> logs/opal_listen.log
+opal listen service start --port 8001 --data-dir /var/lib/opal
+opal listen service start --append  # keep the existing log instead of truncating
+opal listen service log           # last 10 lines (--lines N for more)
 opal listen service stop
+
+opal listen service health        # GET /api/v1/health/      (aggregate report)
+opal listen service live          # GET /api/v1/health/live  (OPAL liveness probe)
+opal listen service ready         # GET /api/v1/health/ready (OPAL readiness probe)
 ```
 
-### 7.13 `service perf`
+### 7.12 `service perf`
 
 ```bash
 opal listen service perf last
@@ -2402,7 +2197,7 @@ opal listen service perf summary --limit 1000
 opal listen service perf history --limit 50
 ```
 
-### 7.14 `config`
+### 7.13 `config`
 
 | Command | Description |
 |---|---|
@@ -2423,44 +2218,7 @@ opal listen config load --yes                 # restore the managed snapshot
 > `--in` reads the snapshot file on the **client** machine. Without it, `load` uses the
 > managed snapshot stored on the **server**.
 
-### 7.15 `service`
-
-Process lifecycle commands are **local** — they manage a server started on this machine, not the
-remote API. `start` launches `python -m opal_listener` in the background, truncates
-`logs/opal_listen.log` (also records the pid in `logs/opal_listen.pid`), and returns immediately;
-running it again kills the previously started server first. `stop` terminates that managed server,
-`log` tails the log file.
-
-```bash
-opal listen service start         # background server -> logs/opal_listen.log
-opal listen service start --port 8001 --data-dir /var/lib/opal
-opal listen service log           # last 10 lines (--lines N for more)
-opal listen service stop
-
-opal listen service live          # GET /api/v1/health/live
-opal listen info health          # GET /api/v1/health/
-opal listen info health        # GET /api/v1/health/ (exit 1 on errors)
-opal listen info health       # GET /api/v1/health/audio_devices
-opal listen service live          # GET /api/v1/health/live  (OPAL v1.2 liveness probe)
-opal listen service ready         # GET /api/v1/health/ready (OPAL v1.2 readiness probe)
-```
-
-Example `doctor` output:
-
-```
-✓ sqlite           var/opal_listener.db
-✓ migrations       revision 0001 (head 0001)
-✓ slot            slots compile
-✓ intent          6 intents, 52 phrase variants
-✓ provider         vosk loaded
-✓ vocabulary       all wakeword/phrase words are in the model vocabulary
-! microphone       no audio input devices found
-✓ listener         stopped
-✓ disk             48213 MiB free
-overall: ! warning
-```
-
-### 7.16 `event`
+### 7.14 `event`
 
 `event publish` is the one command that does **not** call the REST API. It opens a ZeroMQ `PUB` socket,
 connects to `--xpub` (the opal event bus broker's ingest endpoint), and sends a two-frame
@@ -2501,7 +2259,7 @@ no build step. Every action calls exactly one REST operation, which is shown on 
 
 | Page | What you can do |
 |---|---|
-| **System** | Service info, ping, the **Doctor** health checks (with **Re-run**), and audio input devices. Start here after installation. |
+| **System** | Health report (identity, liveness/readiness, checks with **Re-run**), audio input devices, and the managed server process controls. Start here after installation. |
 | **Pipeline** | **Start**/**Stop** the microphone pipeline. Status and counters refresh every 2 s. |
 | **Wakewords** | Edit name, threshold and enabled inline, then **Save**. **Get** shows the raw record. **Delete**. The **Add wakeword** form. |
 | **Intents** | Table of intents with phrase counts. Click a row to open it. The **Add intent** form takes one phrase per line. |
@@ -2510,10 +2268,8 @@ no build step. Every action calls exactly one REST operation, which is shown on 
 | **Slot detail** | Edit name, type and description. Values table with alias chips (× removes one, + adds one), and the **Add value** form with comma-separated aliases. |
 | **Profiles** | List, **Activate**, **Delete**. Click a row to edit. The form has threshold floors, `vad_settings` JSON, model paths, and checkboxes for wakewords, intents and slots (none checked = all). |
 | **Settings** | Every setting as an editable field with **Save**, **Details** and **Reset**. |
-| **Test** | **Text** test, **Audio file** upload (with *require wakeword* and *save to logs*), **Live listen** (normal or debug) with a level meter, partial transcripts, live result cards and an event log, plus a **Regression run** card. |
-| **Failed utterances** | Filter by reviewed/promoted, page through results, **Promote** (choose the intent, optional regression test), **Edit**, **Delete**, and add failures manually. |
-| **Regression** | Run all tests (optionally including disabled ones), see PASS/FAIL per test, add tests with an expected intent dropdown (including `no_match`) and `expected_slots` JSON, edit or delete tests. |
-| **Logs** | Totals (total / matched / no_match), filter by intent and match status, page through results, click a row for full details. |
+| **Test** | **Text** test, **Audio file** upload (with *require wakeword* and *save to logs*), and **Live listen** (normal or debug) with a level meter, partial transcripts, live result cards and an event log. |
+| **Failed utterances** | Filter by reviewed state, page through results, **Edit** (expected intent, notes, reviewed), **Delete**, and add failures manually. |
 | **Performance** | Last recognition, a summary over the last 100 (match rate, confidence, latency avg/p50/p95/max), and a history table with a latency bar chart (green = matched, amber = no_match). |
 | **Config** | **Validate** the live configuration or a candidate snapshot. **Save** to the managed snapshot or **Download JSON**, load a snapshot file or paste JSON, then **Validate** / **Load**. |
 | **API & parity** | Every operation in `/openapi.json` with its CLI command and GUI page, plus a **Request console** to send any method, path and JSON body and see the raw response. |
@@ -2530,13 +2286,13 @@ Every test (text, audio or live) renders a result card:
 
 ### 8.4 Typical GUI session
 
-1. **System**: check that Doctor is all green and pick a device index from *Audio input devices*.
+1. **System**: check that every health check is green and pick a device index from *Audio input devices*.
 2. **Settings**: set `audio_device` to that index and click **Save**.
 3. **Test** → **Listen (debug)**: watch the meter. Speech should reach about -30 to -20 dBFS and silence
    should stay well below that. Say *"computer, turn on the kitchen light"*.
-4. If a result says **NO MATCH**, click **Record as failed utterance**. Then go to **Failed utterances**,
-   click **Promote**, pick the intended intent, and confirm.
-5. **Regression** → **Run regression tests** to make sure nothing else broke.
+4. If a result says **NO MATCH**, click **Record as failed utterance**. Then go to **Intents**,
+   add the generalized transcript as a phrase of the right intent, and mark the failure reviewed.
+5. **Test** → re-run the phrase and a few neighbours to make sure nothing else broke.
 6. **Config** → **Save snapshot**.
 
 ---
@@ -2564,13 +2320,12 @@ opal listen test text "computer make the kitchen lights crimson"
 opal listen test text "set the lounge lights to soft white"
 #   -> light_color {"room_name": "living_room", "color": "warm_white"}
 
-# 4. lock the behavior in
-opal listen regression add color_kitchen_red "make the kitchen lights crimson" \
-  --expect-intent light_color --slot room_name=kitchen --slot color=red
-opal listen test regression
+# 4. lock the behavior in — re-check the phrase and its neighbours
+opal listen test text "computer make the kitchen lights crimson" --expect-intent light_color
+opal listen test text "computer order a pizza" --expect-intent no_match
 
 # 5. check the new words are known to the model
-opal listen info health
+opal listen service health
 ```
 
 The same steps with the REST API:
@@ -2632,18 +2387,20 @@ flowchart LR
     A[Use it normally] --> B[no_match captured<br/>as failed utterance]
     B --> C[failed list --unreviewed]
     C --> D{Should it match?}
-    D -- yes --> E[failed promote ID --intent X]
+    D -- yes --> E[intent add-phrase X<br/>--phrase "..."]
     D -- no --> F[failed update ID --reviewed]
-    E --> G[test regression]
-    G --> A
+    E --> G[failed update ID --reviewed]
+    G --> H[test text "..."]
+    H --> A
 ```
 
 ```bash
 opal listen failed list --unreviewed
-opal listen failed promote 12 --intent timer_set
-opal listen failed promote 13 --intent light_turn_off
+opal listen failed get 12                                   # -> transcript: "set a timer for ten minutes"
+opal listen intent add-phrase timer_set --phrase "set a timer for {duration_minutes} minutes"
+opal listen failed update 12 --reviewed --expected-intent timer_set
 opal listen failed update 14 --reviewed --notes "background conversation"
-opal listen test regression
+opal listen test text "set a timer for five minutes" --expect-intent timer_set
 opal listen service perf summary
 ```
 
@@ -2693,12 +2450,12 @@ curl -s -X POST $API/api/v1/profile/$(curl -s $API/api/v1/profile/ | jq '.[] | s
 ```bash
 # larger Vosk model for one profile only
 opal listen profile update default --model vosk_model=/models/vosk-model-en-us-0.22-lgraph
-opal listen info health                 # the provider check loads the model
+opal listen service health                 # the provider check loads the model
 
 # faster-whisper second pass (pip install -e ".[whisper]")
-opal listen config setting set stt_refiner faster_whisper
-opal listen config setting set whisper_model tiny.en
-opal listen config setting set whisper_compute_type int8
+opal listen config setting set --name stt_refiner --value faster_whisper
+opal listen config setting set --name whisper_model --value tiny.en
+opal listen config setting set --name whisper_compute_type --value int8
 opal listen service perf summary                  # stt_latency_ms goes up, accuracy should too
 ```
 
@@ -2709,7 +2466,7 @@ Model changes are checked before they are applied. A non-existent path is reject
 ```bash
 opal listen slot add message --type text
 opal listen intent add send_note --phrase "(note | remember) that {message}"
-opal listen config setting set stt_mode open
+opal listen config setting set --name stt_mode --value open
 opal listen test text "remember that the milk is in the fridge"
 #   -> send_note {"message": "the milk is in the fridge"}
 ```
@@ -2726,7 +2483,6 @@ opal listen config validate --in ./config/snapshot.json
 opal listen config load --in ./config/snapshot.json --yes
 opal listen test text "computer turn on the kitchen light" --expect-intent light_turn_on --no-save
 opal listen test text "order a pizza" --expect-intent no_match --no-save
-opal listen test regression
 ```
 
 ---
@@ -2836,7 +2592,7 @@ myengine = "my_package.provider:MyListenerProvider"
 ```
 
 ```bash
-opal listen config setting set listener_provider myengine
+opal listen config setting set --name listener_provider --value myengine
 ```
 
 ---
@@ -2848,8 +2604,8 @@ pytest                               # full suite (Vosk tests are skipped if the
 pytest -m "not slow and not vosk"    # fast loop without the model
 pytest opal_listener/tests/test_api.py -k intents
 python scripts/cli_rest_test.py      # every REST operation through the real CLI (PASS/FAIL per step)
-./test-cli.sh                        # same idea in bash, against an isolated temporary server
-./test-cli.sh http://pi5.local:8000  # against a running server (its state is backed up and restored)
+./scripts/test-cli.sh                        # same idea in bash, against an isolated temporary server
+./scripts/test-cli.sh http://pi5.local:8000  # against a running server (its state is backed up and restored)
 python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixtures (needs espeak + sox)
 ```
 
@@ -2859,7 +2615,7 @@ python -m opal_listener.tests.audio.generate_fixtures   # regenerate WAV fixture
 | Negative phrases | `tests/negative/negative_phrases.yaml` | Must be `no_match` with a reason |
 | Audio fixtures | `tests/audio/manifest.yaml`, `fixtures/*.wav` | Full pipeline via REST, wakeword false positives and negatives |
 | Noise | `tests/noise/test_noise.py` (`slow`) | Golden WAVs with white/pink noise at 20/10 dB SNR |
-| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v2.0.0.yaml` |
+| API / contract | `test_api.py`, `test_contract.py` | CRUD, errors, OpenAPI superset of `openapi/opal_listen_v0.5.0.yaml` |
 | CLI | `test_cli.py`, `test_e2e_server.py` | Every command, parity map, real server + SSE |
 | Config / snapshots | `test_config_schema.py`, `test_backup_and_config.py` | YAML schemas, snapshot roundtrip, validate-before-apply, rollback |
 | Migrations | `test_migrations.py` | Upgrade/downgrade, drift, foreign keys |
@@ -2879,7 +2635,7 @@ Markers: `vosk` (needs the model on disk) and `slow` (noise tests).
 | `provider` or `vosk_model` check fails | Point `OPAL_LISTENER_VOSK_MODEL_PATH`, the `vosk_model_path` setting or a profile's `model_paths.vosk_model` at a directory that contains `am/` and `conf/`. |
 | `503 listener provider unavailable` | Same as above. The model cannot be loaded. |
 | `microphone` warning | Install `libportaudio2`. Check `arecord -l`. Add the user to the `audio` group. In Docker, check `/dev/snd` and `AUDIO_GID`. |
-| Wakeword never triggers | Run `test listen-debug`. If levels stay near -90 dBFS, choose another device with `info health` and `setting set audio_device <index>`. Lower the wakeword threshold. |
+| Wakeword never triggers | Run `test listen-debug`. If levels stay near -90 dBFS, choose another device from `service health` and `config setting set --name audio_device --value <index>`. Lower the wakeword threshold. |
 | Triggers on similar words | Add them to `wakeword_distractors`. Raise the wakeword threshold or the profile's `wakeword` floor. |
 | Command cut off, or ends too late | Tune the active profile's `vad_settings`, e.g. `profile update default --vad silence_end_ms=900`. |
 | `vocabulary` warning | A phrase or alias uses a word that the model does not know. Rephrase it, or use a larger model. |
@@ -2929,8 +2685,6 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 
 | Method | Path | Operation | `opal listen ...` | GUI page |
 |---|---|---|---|---|
-| GET | `/api/v1/health/` | `opal_info_get` | `info health` | System |
-| GET | `/api/v1/health/live` | `opal_info_ping` | `service live` | System |
 | GET | `/api/v1/wakeword/` | `list_wakewords` | `wakeword list` | Wakewords |
 | POST | `/api/v1/wakeword/` | `create_wakeword` | `wakeword add` | Wakewords |
 | GET | `/api/v1/wakeword/{wakeword_id}` | `get_wakeword` | `wakeword get` | Wakewords |
@@ -2985,18 +2739,10 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | GET | `/api/v1/failed_utterance/{fu_id}` | `get_failed_utterance` | `failed get` | Failed utterances |
 | PATCH | `/api/v1/failed_utterance/{fu_id}` | `update_failed_utterance` | `failed update` | Failed utterances |
 | DELETE | `/api/v1/failed_utterance/{fu_id}` | `delete_failed_utterance` | `failed remove` | Failed utterances |
-| POST | `/api/v1/failed_utterance/{fu_id}/promote` | `promote_to_phrase` | `failed promote` | Failed utterances |
-| GET | `/api/v1/regression/` | `list_regression_tests` | `regression list` | Regression |
-| POST | `/api/v1/regression/` | `create_regression_test` | `regression add` | Regression |
-| POST | `/api/v1/regression/run` | `run_regression_tests` | `test regression` | Regression / Test |
-| GET | `/api/v1/regression/{test_id}` | `get_regression_test` | `regression get` | Regression |
-| PATCH | `/api/v1/regression/{test_id}` | `update_regression_test` | `regression update` | Regression |
-| DELETE | `/api/v1/regression/{test_id}` | `delete_regression_test` | `regression remove` | Regression |
 | GET | `/api/v1/performance/last` | `get_last_performance` | `service perf last` | Performance |
 | GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |
 | GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |
-| GET | `/api/v1/health/` | `opal_health_get` | `info health` | System |
-| GET | `/api/v1/health/audio_devices` | `get_audio_devices` | `info health` | System |
+| GET | `/api/v1/health/` | `opal_health_get` | `service health` | System |
 | GET | `/api/v1/health/live` | `opal_health_live_get` | `service live` | System |
 | GET | `/api/v1/health/ready` | `opal_health_ready_get` | `service ready` | System |
 | POST | `/api/v1/config/save` | `opal_config_save` | `config save` | Config |
@@ -3004,4 +2750,4 @@ Every REST operation has exactly one CLI command and one GUI page. The mapping i
 | POST | `/api/v1/config/validate` | `opal_config_validate` | `config validate` | Config |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v0.1.0.yaml](../openapi/opal_listen_v0.1.0.yaml).
+REST contract [opal_listen_v0.5.0.yaml](../openapi/opal_listen_v0.5.0.yaml).

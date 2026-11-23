@@ -2,7 +2,7 @@
 
 The `opal` command is the terminal interface to the opal listener. All recognition features live under
 `opal listen`. You can use it to manage wakewords, intents, slots, profiles and settings, test recognition
-with text, audio files or the microphone, review failures, run regression tests, and back up or restore
+with text, audio files or the microphone, review failures, and back up or restore
 the configuration.
 
 The CLI is a thin REST client. **Every command except `event publish` calls the opal listener REST API**
@@ -22,21 +22,20 @@ The server must therefore be running, either locally or on another machine.
 7. [`slot`: slots, values and aliases](#7-slot--slots-values-and-aliases)
 8. [`profile`: recognition profiles](#8-profile--recognition-profiles)
 9. [`persona`: OPAL personas](#9-persona--opal-personas)
-10. [`setting`: global settings](#10-setting--global-settings)
+10. [`config setting`: global settings](#10-config-setting--global-settings)
 11. [`test`: recognition testing](#11-test--recognition-testing)
 12. [`pipeline`: microphone pipeline control](#12-pipeline--microphone-pipeline-control)
 13. [`failed`: failed utterance review](#13-failed--failed-utterance-review)
-14. [`regression`: regression test management](#14-regression--regression-test-management)
-15. [`log`: recognition logs](#15-log--recognition-logs)
-16. [`service perf`: performance metrics](#16-service-perf--performance-metrics)
-17. [`config`: snapshots — save, load and validate](#17-config-snapshots--save-load-and-validate)
-18. [`service`: health and diagnostics](#18-service--health-and-diagnostics)
-19. [`event`: publish ZeroMQ events](#19-event--publish-zeromq-events)
-20. [`reaction`: intent-triggered shell commands](#20-reaction--intent-triggered-shell-commands)
-21. [Walkthroughs](#21-walkthroughs)
-22. [Scripting and automation](#22-scripting-and-automation)
-23. [Troubleshooting](#23-troubleshooting)
-24. [Appendix: CLI ↔ REST mapping](#24-appendix-cli--rest-mapping)
+14. [Recognition history](#14-recognition-history)
+15. [`service perf`: performance metrics](#15-service-perf--performance-metrics)
+16. [`config`: snapshots — save, load and validate](#16-config-snapshots--save-load-and-validate)
+17. [`service`: process lifecycle, health and diagnostics](#17-service--process-lifecycle-health-and-diagnostics)
+18. [`event`: publish ZeroMQ events](#18-event--publish-zeromq-events)
+19. [`reaction`: intent-triggered shell commands](#19-reaction--intent-triggered-shell-commands)
+20. [Walkthroughs](#20-walkthroughs)
+21. [Scripting and automation](#21-scripting-and-automation)
+22. [Troubleshooting](#22-troubleshooting)
+23. [Appendix: CLI ↔ REST mapping](#23-appendix-cli--rest-mapping)
 
 ---
 
@@ -113,7 +112,7 @@ opal listen [--api-url URL] [--xpub URL] [--xsub URL] [--json] [--timeout SECOND
 ```bash
 # Correct: global options come right after 'listen'
 opal listen --json intent list
-opal listen --api-url http://pi5.local:8000 --timeout 10 system doctor
+opal listen --api-url http://pi5.local:8000 --timeout 10 service health
 
 # Wrong: --json after the group is rejected as an unknown option (exit code 2)
 opal listen intent list --json
@@ -133,14 +132,14 @@ opal listen service live            # talks to 192.168.1.50
 OPAL_LISTEN_API_URL=http://pi5.local:8000 opal listen pipeline status
 
 # --api-url takes precedence over the environment variable
-opal listen --api-url http://localhost:8000 system info
+opal listen --api-url http://localhost:8000 service health
 ```
 
 ### Checking the connection
 
 ```bash
 opal listen service live            # ✓ http://localhost:8000 is up
-opal listen info health            # service name and version
+opal listen service health            # service name and version
 ```
 
 If the server cannot be reached, the CLI prints a hint and exits with code `1`:
@@ -179,7 +178,7 @@ opal listen intent remove-phrase test_intent 57                  # by phrase id
 opal listen slot remove-alias room_name living_room lounge       # value and alias by text
 ```
 
-Failed utterances, regression tests and log entries have no name. You always reference them by **id**.
+Failed utterances and log entries have no name. You always reference them by **id**.
 
 ### Output formats
 
@@ -211,7 +210,7 @@ opal listen --json wakeword add nabu      # JSON of the created wakeword
 - **Boolean flag pairs.** Booleans use paired flags such as `--enabled/--disabled`,
   `--save/--no-save` and `--reviewed/--unreviewed`. In `update` commands, leaving out both flags keeps
   the current value.
-- **`key=value` options.** `--threshold`, `--vad`, `--model` (profiles) and `--slot` (regression tests)
+- **`key=value` options.** `--threshold`, `--vad`, `--model` (profiles) and `--env` (reactions)
   take `key=value` pairs. The value is parsed as a YAML scalar: `900` becomes an integer, `0.85` a float,
   `true`/`false` a boolean, and anything else a string.
 - **`update` needs at least one change.** Running `update` without any option fails with
@@ -233,7 +232,7 @@ Destructive configuration commands (`config load`) ask for
 confirmation. Pass `--yes` / `-y` to skip the prompt in scripts. If you answer "no", the command prints
 `Aborted!` and exits with code `1`.
 
-> `remove` commands for wakewords, intents, slots, profiles, failed utterances and regression tests do
+> `remove` commands for wakewords, intents, slots, profiles and failed utterances do
 > **not** ask for confirmation. Take a snapshot first (`opal listen config save`) if you're unsure.
 
 ### Errors and exit codes
@@ -258,7 +257,7 @@ server logs.
 | Exit code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | API error (4xx/5xx), server unreachable, resource not found, failed regression run, invalid configuration, `info health` errors, `--expect-intent` mismatch, or declined confirmation |
+| `1` | API error (4xx/5xx), server unreachable, resource not found, invalid configuration, `service health` errors, `--expect-intent` mismatch, or declined confirmation |
 | `2` | Invalid CLI usage: unknown option, missing argument, or an out-of-range value such as `--threshold 1.5` |
 
 ---
@@ -285,12 +284,11 @@ opal
     │               values | add-value | remove-value | aliases | add-alias | remove-alias
     ├── profile     list | get | add | update | activate | remove
     ├── persona     list | get | add | update | remove | validate
-    ├── setting     get | unset        (aliases for `config setting show` / `config setting remove`)
-    ├── test        text | audio | listen | listen-debug | regression
+    ├── test        text | audio | listen | listen-debug
+    ├── recognition test
     ├── pipeline    start | stop | status
-    ├── failed      list | get | add | update | remove | promote
-    ├── regression  list | get | add | update | remove
-    ├── service     start | stop | log | doctor | devices | live | ready | info | ping
+    ├── failed      list | get | add | update | remove
+    ├── service     start | stop | log | live | ready | health
     │               └── perf  last | summary | history
     ├── config      save | load | validate
     │               └── setting   list | show | set | remove
@@ -546,7 +544,7 @@ opal listen slot add-alias room_name living_room martin_hall
 opal listen slot remove-alias room_name living_room martin_hall
 ```
 
-> After you add a value or alias, run `opal listen info health`. The `vocabulary` check warns if a
+> After you add a value or alias, run `opal listen service health`. The `vocabulary` check warns if a
 > word is unknown to the speech model and therefore can't be recognized from audio.
 
 ---
@@ -707,8 +705,7 @@ current strong `ETag` and send it back as `If-Match` automatically, so updates a
 another client changed settings concurrently (a stale `If-Match` is rejected with `412`, a missing one
 with `428`).
 
-The canonical commands live under `config setting`; the contract also declares two flat aliases,
-`opal listen setting get` (= `show`) and `opal listen setting unset` (= `remove`).
+All setting commands live under `config setting` and take the key via `--name`.
 
 | Command | Description |
 |---|---|
@@ -762,7 +759,7 @@ opal listen config setting set --name whisper_model --value tiny.en
 # Enable the optional second-pass refiner (requires the [whisper] extra)
 opal listen config setting set --name stt_refiner --value faster_whisper
 
-# Choose the microphone by index or by name substring (see 'system devices')
+# Choose the microphone by index or by name substring (see 'service health' -> audio_devices)
 opal listen config setting set --name audio_device --value 2
 opal listen config setting set --name audio_device --value "USB"
 
@@ -803,7 +800,6 @@ opal listen config setting set --name whisper_model --value tiny.en
 | `audio WAV` | Run a WAV file through the full wakeword → VAD → STT → intent pipeline |
 | `listen` | Stream live microphone results |
 | `listen-debug` | Like `listen`, plus audio levels, partial transcripts, and wakeword and VAD events |
-| `regression` | Run the saved regression tests |
 
 ### `test text`
 
@@ -965,29 +961,6 @@ How to read it:
 With `--json`, each debug event is printed as `{"event": "...", "data": {...}}`. This is handy for piping
 into `jq`.
 
-### `test regression`
-
-```
-opal listen test regression [--all]
-```
-
-Runs the saved regression tests against the current intent model and prints a table (`test_id`, `name`,
-`phrase`, `expected_intent`, `actual_intent`, `passed`, `failure_reason`). The title shows the totals,
-e.g. `Regression: 12/12 passed`. The command exits with `1` if any test fails.
-
-```bash
-# Run the enabled tests
-opal listen test regression
-
-# Include disabled tests
-opal listen test regression --all
-
-# Use in a script
-opal listen test regression || echo "regressions detected"
-```
-
-Manage the tests themselves with [`opal listen regression`](#13-regression--regression-test-management).
-
 ---
 
 ## 12. `pipeline`: microphone pipeline control
@@ -1009,7 +982,7 @@ Important `status` fields:
 
 | Field | Meaning |
 |---|---|
-| `state` | `stopped`, `starting`, `listening`, `capturing` or `recovering` |
+| `state` | `stopped`, `starting`, `running`, `stopping`, `recovering` or `error` |
 | `audio_device`, `capture_sample_rate` | The device in use and its native rate (audio is resampled to 16 kHz) |
 | `sessions` vs `wakeword_detections` | Candidates opened vs wakewords confirmed. A large gap means many rejected false triggers. |
 | `results` | Recognition results produced |
@@ -1024,27 +997,23 @@ Important `status` fields:
 ## 13. `failed`: failed utterance review
 
 When `auto_capture_failures` is `true` (the default), every `no_match` from the microphone or an audio
-file is stored as a **failed utterance**. You review these, annotate them, and *promote* useful ones to
-training phrases.
+file is stored as a **failed utterance**. You review these, annotate them, and add the corrected
+transcript to the right intent yourself with `intent add-phrase` (generalize slot values to
+`{placeholders}` as needed — e.g. *"switch the kitchen lamp on"* becomes `switch the {room_name} lamp on`).
 
 | Command | Description |
 |---|---|
-| `list [--reviewed/--unreviewed] [--promoted/--not-promoted] [--limit N] [--offset N]` | List failures, newest first |
+| `list [--reviewed/--unreviewed] [--limit N] [--offset N]` | List failures, newest first |
 | `get ID` | Show one failure |
 | `add TRANSCRIPT [--expected-intent I] [--notes N] [--log-id ID]` | Record a failure manually |
 | `update ID [--expected-intent I] [--notes N] [--reviewed/--unreviewed]` | Annotate a failure |
 | `remove ID` | Delete a failure |
-| `promote ID --intent I [--regression/--no-regression]` | Add the transcript as a training phrase of intent `I` |
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--limit N` | `50` | Page size (max 500) |
 | `--offset N` | `0` | Skip N rows |
 | `--log-id ID` | | Link to a recognition log entry |
-| `--regression/--no-regression` | `--regression` | When promoting, also create a regression test |
-
-When a failure is promoted, recognized slot values in the transcript are replaced with `{placeholders}`.
-For example, *"switch the kitchen lamp on"* becomes `switch the {room_name} lamp on`.
 
 ### Examples
 
@@ -1052,18 +1021,15 @@ For example, *"switch the kitchen lamp on"* becomes `switch the {room_name} lamp
 # Unreviewed failures only
 opal listen failed list --unreviewed
 
-# Failures that have not been promoted yet, in pages of 20
-opal listen failed list --not-promoted --limit 20
-opal listen failed list --not-promoted --limit 20 --offset 20
+# Page through them, 20 at a time
+opal listen failed list --unreviewed --limit 20
+opal listen failed list --unreviewed --limit 20 --offset 20
 
 # Inspect one failure
 opal listen failed get 3
 
-# Promote it to a phrase of light_turn_on and add a regression test
-opal listen failed promote 3 --intent light_turn_on
-
-# Promote without creating a regression test
-opal listen failed promote 4 --intent get_time --no-regression
+# A real command that should have matched? Add it as a training phrase yourself
+opal listen intent add-phrase light_turn_on "switch the {room_name} lamp on"
 
 # Mark a failure as reviewed and leave a note
 opal listen failed update 5 --reviewed --notes "TV in background"
@@ -1078,58 +1044,7 @@ opal listen failed remove 5
 
 ---
 
-## 14. `regression`: regression test management
-
-A regression test is a phrase that must keep resolving to an expected intent (and optionally expected
-slot values). Run the tests with [`opal listen test regression`](#test-regression).
-
-| Command | Description |
-|---|---|
-| `list` | List tests (columns: id, name, phrase, expected_intent, expected_slots, enabled, last_result) |
-| `get ID` | Show one test |
-| `add NAME PHRASE --expect-intent I [--slot k=v]... [--enabled/--disabled]` | Add a test |
-| `update ID [--name N] [--phrase P] [--expect-intent I] [--slot k=v]... [--enabled/--disabled]` | Change a test. `--slot` replaces **all** expected slots. |
-| `remove ID` | Delete a test |
-
-Use `--expect-intent no_match` for negative tests: phrases that must **not** trigger any intent.
-`--slot` values are parsed as YAML scalars, so `duration_minutes=10` expects the integer `10`.
-
-### Examples
-
-```bash
-# Positive test with an expected slot value (via an alias)
-opal listen regression add lounge_on "switch on the lounge lights" \
-  --expect-intent light_turn_on --slot room_name=living_room
-
-# Number slot
-opal listen regression add timer_ten "set a timer for ten minutes" \
-  --expect-intent timer_set --slot duration_minutes=10
-
-# Negative test
-opal listen regression add not_a_command "order a pizza" --expect-intent no_match
-
-# Add a test that is disabled for now
-opal listen regression add garage_on "lights on in the garage" --expect-intent light_turn_on --disabled
-
-# List and inspect
-opal listen regression list
-opal listen regression get 3
-
-# Disable a flaky test, change its phrase, or replace its expected slots
-opal listen regression update 3 --disabled
-opal listen regression update 3 --phrase "turn the lounge lights on"
-opal listen regression update 3 --slot room_name=living_room
-
-# Delete a test
-opal listen regression remove 3
-
-# Run them all
-opal listen test regression
-```
-
----
-
-## 15. Recognition history
+## 14. Recognition history
 
 Every recognition (microphone, audio file, or text with `--save`) is stored in the database as a
 recognition-log row; `max_recognition_logs` limits how many rows are kept and
@@ -1150,7 +1065,7 @@ opal listen failed list --unreviewed
 
 ---
 
-## 16. `service perf`: performance metrics
+## 15. `service perf`: performance metrics
 
 | Command | Description |
 |---|---|
@@ -1192,11 +1107,11 @@ Example `summary` output (abbreviated):
 
 ---
 
-## 17. `config`: snapshots — save, load and validate
+## 16. `config`: snapshots — save, load and validate
 
 The v2 contract replaces the old backup/export/import routes with OPAL configuration
 snapshots: one portable envelope (`format_version`, `module`, `created_at`, `settings`,
-`resources`) covering wakewords, intents, slots, profiles, personas, regression tests and
+`resources`) covering wakewords, intents, slots, profiles, personas and
 settings.
 
 | Command | Description |
@@ -1252,7 +1167,7 @@ anything is touched.
 
 ---
 
-## 18. `service`: process lifecycle, health and diagnostics
+## 17. `service`: process lifecycle, health and diagnostics
 
 `start`/`stop`/`log` are REST-first: they call the `/api/v1/service/*` ops on a running server (which
 can therefore stop or restart *itself*, still returning the status first). When the API is unreachable
@@ -1267,7 +1182,7 @@ they fall back to the same local pidfile/log management the server-side ops use 
 | `log [--lines N]` | Show the last N lines of the managed server's log (default 10) |
 | `live` | OPAL liveness probe: process + database reachability (`GET /api/v1/health/live`) |
 | `ready` | OPAL readiness probe: configuration compiles, provider loads, etc. (`GET /api/v1/health/ready`) |
-| `perf last\|summary\|history` | Performance metrics sub-group (see [§16](#16-service-perf--performance-metrics)) |
+| `perf last\|summary\|history` | Performance metrics sub-group (see [§15](#15-service-perf--performance-metrics)) |
 
 ```bash
 # Run the server in the background, check it, stop it
@@ -1276,18 +1191,18 @@ opal listen service log
 opal listen service stop
 
 # Aggregate health report: identity, status, checks and audio devices
-opal listen info health
+opal listen service health
 
 # Standard OPAL liveness/readiness probes (status: ok | degraded | unavailable; 503 when unavailable)
 opal listen service live
 opal listen service ready
 
 # Audio input devices are listed in the health report's details
-opal listen --json info health | jq '.details.audio_devices'
+opal listen --json service health | jq '.details.audio_devices'
 opal listen config setting set --name audio_device --value 2
 ```
 
-Example `doctor` output:
+Example `service health` output:
 
 ```
 ✓ sqlite           var/opal_listener.db
@@ -1307,7 +1222,7 @@ tests work without a microphone. A missing model is an error.
 
 ---
 
-## 19. `event`: publish ZeroMQ events
+## 18. `event`: publish ZeroMQ events
 
 `opal listen event publish` fires a message directly onto the opal event bus, independently of the REST
 API. It opens a ZeroMQ `PUB` socket, connects to `--xpub`, and sends a two-frame `[TOPIC, MESSAGE]`
@@ -1349,7 +1264,7 @@ message has been handed to the socket, not once a subscriber has received it.
 
 ---
 
-## 20. `reaction`: intent-triggered shell commands
+## 19. `reaction`: intent-triggered shell commands
 
 Reactions run shell commands when a live-mic recognition matches an intent (see the User Guide §4.5
 for the full model: gating, condition grammar, stdin contract).
@@ -1424,16 +1339,16 @@ at runtime without editing files.
 
 ---
 
-## 21. Walkthroughs
+## 20. Walkthroughs
 
-### 18.1 Full CRUD tour (based on `scripts/test-cli.sh`)
+### 20.1 Full CRUD tour (based on `scripts/test-cli.sh`)
 
 This tour exercises every catalog group and cleans up after itself. You can run it on a fresh server.
 
 ```bash
 # --- sanity -------------------------------------------------------------------------------
 opal listen service live
-opal listen info health
+opal listen service health
 
 # --- wakewords ----------------------------------------------------------------------------
 opal listen wakeword list
@@ -1483,7 +1398,6 @@ opal listen config setting set --name whisper_model --value tiny.en
 # --- recognition --------------------------------------------------------------------------
 opal listen test text "computer, turn on the kitchen light"
 opal listen test audio resources/cmds/cmd-kitchen-lights-off.wav
-opal listen test regression
 
 # --- pipeline -----------------------------------------------------------------------------
 opal listen pipeline status
@@ -1498,7 +1412,7 @@ opal listen profile remove test_profile
 opal listen wakeword remove nabu
 ```
 
-### 18.2 Add a new intent with a new slot
+### 20.2 Add a new intent with a new slot
 
 ```bash
 # 1. Create the slot and its values
@@ -1515,16 +1429,14 @@ opal listen intent add light_color \
 opal listen test text "computer, set the kitchen lights to cozy"
 # -> light_color, {"room_name": "kitchen", "color": "warm_white"}
 
-# 4. Guard it with a regression test
-opal listen regression add kitchen_cozy "set the kitchen lights to cozy" \
-  --expect-intent light_color --slot room_name=kitchen --slot color=warm_white
-opal listen test regression
+# 4. Guard it with a scripted check (fails loudly if the match ever breaks)
+opal listen test text "computer, set the kitchen lights to cozy" --expect-intent light_color
 
 # 5. Check that the speech model knows the new words
-opal listen info health
+opal listen service health
 ```
 
-### 18.3 The review and tuning loop
+### 20.3 The review and tuning loop
 
 ```bash
 # 1. Use the system for a while, or listen live
@@ -1534,20 +1446,21 @@ opal listen test listen --duration 300
 opal listen service perf summary
 opal listen failed list --unreviewed
 
-# 3. Promote real commands that should have matched
-opal listen failed promote 12 --intent light_turn_on
+# 3. Real commands that should have matched? Add them as training phrases
+opal listen failed get 12
+opal listen intent add-phrase light_turn_on "turn on [the] {room_name} light"
 
 # 4. Mark noise as reviewed so it doesn't show up again
 opal listen failed update 13 --reviewed --notes "background TV"
 
-# 5. Make sure nothing else broke
-opal listen test regression
+# 5. Make sure nothing else broke — rerun a few known phrases
+opal listen test text "computer, turn on the kitchen light" --expect-intent light_turn_on
 
 # 6. Check latency and match rate
 opal listen service perf summary
 ```
 
-### 18.4 Tune for a noisy room
+### 20.4 Tune for a noisy room
 
 ```bash
 # 1. Watch the levels while the room is noisy (but nobody is speaking)
@@ -1563,7 +1476,7 @@ opal listen profile activate noisy_room
 opal listen test listen-debug -n 5
 ```
 
-### 18.5 Back up and move configuration to another machine
+### 20.5 Back up and move configuration to another machine
 
 ```bash
 # On the source machine
@@ -1574,12 +1487,12 @@ git -C ./opal-config init && git -C ./opal-config add . && git -C ./opal-config 
 export OPAL_LISTEN_API_URL=http://new-pi.local:8000
 opal listen config validate --in ./opal-config/snapshot.json
 opal listen config load --in ./opal-config/snapshot.json --yes
-opal listen test regression
+opal listen test text "computer, turn on the kitchen light" --expect-intent light_turn_on
 ```
 
 ---
 
-## 22. Scripting and automation
+## 21. Scripting and automation
 
 ### JSON output with `jq`
 
@@ -1620,10 +1533,10 @@ echo "all checks passed"
 ### CI: guard your configuration
 
 ```bash
-# Fails the job (exit 1) if the snapshot is invalid or any regression test fails
+# Fails the job (exit 1) if the snapshot is invalid or a golden phrase no longer matches
 opal listen config validate --in ./opal-config/snapshot.json
 opal listen config load --in ./opal-config/snapshot.json --yes
-opal listen test regression
+opal listen test text "computer, turn on the kitchen light" --expect-intent light_turn_on --no-save
 ```
 
 ### Bulk operations
@@ -1639,10 +1552,10 @@ while IFS= read -r phrase; do
   opal listen intent add-phrase light_turn_on "$phrase"
 done < phrases.txt
 
-# Disable all regression tests whose name starts with "wip_"
-opal listen --json regression list \
+# Disable all intents whose name starts with "wip_"
+opal listen --json intent list \
   | jq -r '.[] | select(.name | startswith("wip_")) | .id' \
-  | xargs -r -n1 opal listen regression update --disabled
+  | xargs -r -n1 opal listen intent update --disabled
 ```
 
 > `xargs -n1` appends the id after `--disabled`. That works because options may come before positional
@@ -1650,7 +1563,7 @@ opal listen --json regression list \
 
 ---
 
-## 23. Troubleshooting
+## 22. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -1663,15 +1576,15 @@ opal listen --json regression list \
 | `slot remove` fails | Phrases still use the slot. Remove or edit those phrases first. |
 | Profile `update` lost a list entry | List and map options replace the stored value. Pass the full set. |
 | `test audio` returns `no_wakeword` | You used `--require-wakeword` and the recording has no audible wakeword. Check with `-v`. |
-| `test listen` shows nothing | Check `info health`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
+| `test listen` shows nothing | Check `service health`, `config setting list` (look at `audio_device`) and `pipeline status`. Use `test listen-debug` to see levels. |
 | Commands get cut off | Raise `silence_end_ms` in the active profile, or set `use_stt_endpoint=false`. |
 | False wakeword triggers | Raise the wakeword threshold, add sound-alikes to `wakeword_distractors`, or set `wakeword_trigger final`. |
-| `vocabulary` warning in `doctor` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
+| `vocabulary` warning in `service health` | A phrase or alias uses a word the speech model doesn't know. Rephrase it or use a larger model. |
 | Long operations time out | Increase `--timeout`, e.g. `opal listen --timeout 300 config load --in snapshot.json -y`. |
 
 ---
 
-## 24. Appendix: CLI ↔ REST mapping
+## 23. Appendix: CLI ↔ REST mapping
 
 All paths are relative to the API base URL. Commands that take a name or id first resolve it with a
 `GET` on the collection. Per the OPAL v1.2 standard, every `PATCH`/`DELETE` below on wakewords, intents,
@@ -1722,11 +1635,11 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config setting list` | `GET /api/v1/setting/` |
 | `config setting show` | `GET /api/v1/setting/{key}` |
 | `config setting set` | `PUT /api/v1/setting/{key}` (If-Match) |
-| `config setting remove` (`setting unset`) | `DELETE /api/v1/setting/{key}` (If-Match) |
+| `config setting remove` | `DELETE /api/v1/setting/{key}` (If-Match) |
 | `test text` | `POST /api/v1/recognition/test_text` |
 | `test audio` | `POST /api/v1/recognition/test_audio` |
+| `recognition test` | `POST /api/v1/recognition/test_text` or `POST /api/v1/recognition/test_audio` (one call, dispatching on `--text`/`--audio`) |
 | `test listen`, `test listen-debug` | `GET /api/v1/recognition/stream` (SSE) |
-| `test regression` | `POST /api/v1/regression/run` |
 | `pipeline start` | `POST /api/v1/recognition/start` |
 | `pipeline stop` | `POST /api/v1/recognition/stop` |
 | `pipeline status` | `GET /api/v1/recognition/status` |
@@ -1735,12 +1648,6 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `failed get` | `GET /api/v1/failed_utterance/{id}` |
 | `failed update` | `PATCH /api/v1/failed_utterance/{id}` |
 | `failed remove` | `DELETE /api/v1/failed_utterance/{id}` |
-| `failed promote` | `POST /api/v1/failed_utterance/{id}/promote` |
-| `regression list` | `GET /api/v1/regression/` |
-| `regression add` | `POST /api/v1/regression/` |
-| `regression get` | `GET /api/v1/regression/{id}` |
-| `regression update` | `PATCH /api/v1/regression/{id}` |
-| `regression remove` | `DELETE /api/v1/regression/{id}` |
 | `service start` | `POST /api/v1/service/start` (falls back to local spawn when the API is unreachable) |
 | `service stop` | `POST /api/v1/service/stop` (falls back to local pidfile stop when unreachable) |
 | `service log` | `GET /api/v1/service/log` (falls back to the local log file when unreachable) |
@@ -1750,11 +1657,8 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `config validate` | `POST /api/v1/config/validate` (live, or `{snapshot}` with `--in`) |
 | `config save` | `POST /api/v1/config/save` (`managed`, or `response` with `--out`) |
 | `config load` | `POST /api/v1/config/load` (If-Match; managed, or `{snapshot}` with `--in`) |
-| `info health` | `GET /api/v1/health/` |
-| `info health` | `GET /api/v1/health/audio_devices` |
+| `service health` | `GET /api/v1/health/` (audio devices are in `details.audio_devices`) |
 | `service live` | `GET /api/v1/health/live` (liveness probe) |
 | `service ready` | `GET /api/v1/health/ready` (readiness probe) |
-| `info health` | `GET /api/v1/health/` |
-| `service live` | `GET /api/v1/health/live` |
 
 See the [User Guide](USER_GUIDE.md) for the REST API, configuration files and architecture.
