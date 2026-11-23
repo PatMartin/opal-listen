@@ -14,7 +14,7 @@ from opal_listener.cli.output import console, done, escape, print_json, render, 
 RECOGNITION = "/api/v1/recognition"
 
 test_app = typer.Typer(
-    help="Test recognition with text, audio files, the microphone or regression tests.", no_args_is_help=True
+    help="Test recognition with text, audio files or the microphone.", no_args_is_help=True
 )
 pipeline_app = typer.Typer(help="Control the live microphone pipeline.", no_args_is_help=True)
 recognition_app = typer.Typer(
@@ -171,26 +171,6 @@ def test_listen_debug(
 ) -> None:
     """Like 'listen' but also shows audio levels, partial transcripts, wakeword and VAD events."""
     _stream(ctx, debug=True, count=count, duration=duration, start=start, verbose=True)
-
-
-@test_app.command("regression")
-def test_regression(
-    ctx: typer.Context,
-    all_tests: bool = typer.Option(False, "--all", help="Include disabled tests"),
-) -> None:
-    """Run saved regression tests against the current intent model (exit 1 on failure)."""
-    run = state(ctx).api.post("/api/v1/regression/run", params={"enabled_only": not all_tests})
-    if state(ctx).json_output:
-        print_json(run)
-    else:
-        render(
-            ctx,
-            run["results"],
-            ("test_id", "name", "phrase", "expected_intent", "actual_intent", "passed", "failure_reason"),
-            f"Regression: {run['passed']}/{run['total']} passed",
-        )
-    if run["failed"]:
-        raise CliError(f"{run['failed']} regression test(s) failed")
 
 
 @pipeline_app.command("start")

@@ -1,6 +1,5 @@
 # Golden text set: normalized utterances that must always resolve to this intent + slots
-# (default config, default profile). Also loaded into the regression_tests table by
-# test_regression_suite.py so the same set is exercised through /api/v1/regression/run.
+# (default config, default profile). Exercised via /api/v1/recognition/test_text.
 golden:
   - {text: "computer, turn on the kitchen light", intent_name: light_turn_on, slot_values: {room_name: kitchen}}
   - {text: "turn on kitchen lights please", intent_name: light_turn_on, slot_values: {room_name: kitchen}}

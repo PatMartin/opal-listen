@@ -487,7 +487,7 @@ class PipelineStatus(BaseModel):
     metrics: dict[str, float] = {}
 
 
-# --- failures / regression -------------------------------------------------------------------
+# --- failures --------------------------------------------------------------------------------
 
 
 class FailedUtteranceBase(BaseModel):
@@ -504,7 +504,6 @@ class FailedUtteranceRead(FailedUtteranceBase, _Read):
     id: PublicId
     recognition_log_id: PublicId | None
     reviewed: bool
-    promoted_to_phrase: bool
     created_at: datetime
 
 
@@ -514,78 +513,8 @@ class FailedUtteranceUpdate(BaseModel):
     expected_intent: str | None = None
     notes: str | None = None
     reviewed: bool | None = None
-    promoted_to_phrase: bool | None = None
 
     _at_least_one = model_validator(mode="before")(_require_one_field)
-
-
-class FailedUtterancePromoteRequest(BaseModel):
-    """Contract FailedUtterancePromoteRequest: target intent id plus optional regression creation."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    intent_id: str = Field(
-        min_length=1, description="Identifier of the intent this utterance becomes a training phrase for."
-    )
-    create_regression: bool = True
-
-
-class RegressionTestBase(BaseModel):
-    name: str = Field(max_length=200)
-    phrase: str = Field(max_length=500)
-    expected_intent: str = Field(max_length=100)
-    enabled: bool = True
-
-
-class RegressionTestCreate(RegressionTestBase):
-    expected_slots: dict[str, Any] = {}
-
-
-class RegressionTestRead(RegressionTestBase, _Read):
-    id: PublicId
-    expected_slots: dict[str, Any]
-    last_result: bool | None
-    last_run_at: datetime | None
-    created_at: datetime
-
-
-class RegressionTestUpdate(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"minProperties": 1})
-
-    name: str | None = None
-    phrase: str | None = None
-    expected_intent: str | None = None
-    expected_slots: dict[str, Any] | None = None
-    enabled: bool | None = None
-
-    _at_least_one = model_validator(mode="before")(_require_one_field)
-
-
-class RegressionCaseResult(BaseModel):
-    test_id: PublicId
-    name: str
-    phrase: str
-    expected_intent: str
-    actual_intent: str
-    expected_slots: dict[str, Any]
-    actual_slots: dict[str, Any]
-    intent_confidence: float | None
-    passed: bool
-    failure_reason: str | None = None
-
-
-class RegressionRunResult(BaseModel):
-    total: int
-    passed: int
-    failed: int
-    pass_rate: float
-    results: list[RegressionCaseResult]
-
-
-class PromoteResult(BaseModel):
-    failed_utterance: FailedUtteranceRead
-    phrase: IntentPhraseRead
-    regression_test: RegressionTestRead | None = None
 
 
 # --- performance -----------------------------------------------------------------------------

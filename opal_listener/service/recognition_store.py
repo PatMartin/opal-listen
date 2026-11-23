@@ -137,13 +137,11 @@ def count_logs(session: Session) -> dict[str, int]:
 
 
 def list_failed(
-    session: Session, reviewed: bool | None, promoted: bool | None, limit: int, offset: int = 0
+    session: Session, reviewed: bool | None, limit: int, offset: int = 0
 ) -> list[FailedUtterance]:
     query = select(FailedUtterance)
     if reviewed is not None:
         query = query.where(FailedUtterance.reviewed == reviewed)
-    if promoted is not None:
-        query = query.where(FailedUtterance.promoted_to_phrase == promoted)
     query = query.order_by(col(FailedUtterance.id).desc()).offset(offset).limit(limit)
     return list(session.exec(query).all())
 
@@ -160,7 +158,7 @@ def create_failed(session: Session, data: s.FailedUtteranceCreate) -> FailedUtte
 def update_failed(session: Session, obj_id: int, data: s.FailedUtteranceUpdate) -> FailedUtterance:
     obj = get_or_404(session, FailedUtterance, obj_id, "failed utterance")
     for key, value in data.model_dump(exclude_unset=True).items():
-        if key in ("reviewed", "promoted_to_phrase") and value is None:
+        if key == "reviewed" and value is None:
             continue
         setattr(obj, key, value)
     session.add(obj)

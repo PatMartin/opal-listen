@@ -153,7 +153,6 @@ _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
         "opal_profile_create",
         "opal_persona_create",
         "create_failed_utterance",
-        "create_regression_test",
     )
 }
 

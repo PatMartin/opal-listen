@@ -540,7 +540,7 @@ class ListenerService:
         return self._record(self.interpret(text, self.snapshot, source="text"), save_log)
 
     def interpret_text(self, text: str) -> s.RecognitionResult:
-        """Pure intent evaluation (no logging) used by regression runs."""
+        """Pure intent evaluation (no logging) used by diagnostics."""
         return self.interpret(text, self.snapshot, source="text")
 
     def test_audio(self, data: bytes, save_log: bool = True, require_wakeword: bool = False) -> s.RecognitionResult:

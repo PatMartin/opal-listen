@@ -540,28 +540,28 @@ def test_failed_utterance_crud(client: TestClient) -> None:
     assert client.get("/api/v1/failed_utterance/", params={"reviewed": False}).json() == []
     bad_log = client.post("/api/v1/failed_utterance/", json={"transcript": "x", "recognition_log_id": "42"})
     assert bad_log.status_code == 404
-    bad_intent = client.post(
-        f"/api/v1/failed_utterance/{created['id']}/promote",
-        json={"intent_id": "nope"},
-        headers={"If-Match": '"precondition"'},
-    )
-    assert bad_intent.status_code == 404
     assert client.delete(f"/api/v1/failed_utterance/{created['id']}").status_code == 204
 
 
-def test_regression_crud(client: TestClient) -> None:
-    created = client.post(
-        "/api/v1/regression/",
-        headers={"If-Match": _etag(client, "/api/v1/regression/")},
-        json={"name": "t", "phrase": "what time is it", "expected_intent": "get_time", "enabled": False},
-    ).json()
-    assert client.post("/api/v1/regression/run").json()["total"] == 0
-    assert client.post("/api/v1/regression/run", params={"enabled_only": False}).json()["passed"] == 1
-    path = f"/api/v1/regression/{created['id']}"
-    patched = client.patch(path, json={"enabled": True}, headers={"If-Match": _etag(client, path)})
-    assert patched.json()["enabled"] is True
-    assert client.get(path).json()["last_result"] is True
-    assert client.delete(path, headers={"If-Match": _etag(client, path)}).status_code == 204
+def test_promotion_and_regression_routes_are_retired(client: TestClient) -> None:
+    """v0.5.0 removed POST .../promote and the whole /api/v1/regression/ resource."""
+    assert (
+        client.post(
+            "/api/v1/failed_utterance/1/promote",
+            json={"intent_id": "1"},
+            headers={"If-Match": '"precondition"'},
+        ).status_code
+        == 404
+    )
+    for method, path in (
+        ("GET", "/api/v1/regression/"),
+        ("POST", "/api/v1/regression/"),
+        ("POST", "/api/v1/regression/run"),
+        ("GET", "/api/v1/regression/1"),
+        ("PATCH", "/api/v1/regression/1"),
+        ("DELETE", "/api/v1/regression/1"),
+    ):
+        assert client.request(method, path).status_code == 404, (method, path)
 
 
 def test_health_report(client: TestClient) -> None:

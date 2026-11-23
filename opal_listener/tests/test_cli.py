@@ -38,9 +38,9 @@ REQUIRED_COMMANDS = {
     "slot list", "slot add", "slot add-value", "slot add-alias",
     "profile list", "profile add",
     "config setting list", "config setting show", "config setting set", "config setting remove",
-    "test text", "test audio", "test listen", "test listen-debug", "test regression",
+    "test text", "test audio", "test listen", "test listen-debug",
     "recognition test",
-    "failed list", "failed promote",
+    "failed list",
     "service perf last", "service perf summary",
     "config validate", "config save", "config load",
     "info health", "service start", "service stop", "service log", "gui",
@@ -198,29 +198,11 @@ def test_pipeline_commands(cli: CliHarness, fake_provider: type) -> None:
     assert cli.json("pipeline", "stop")["status"] == "stopped"
 
 
-def test_regression_and_failed_commands(cli: CliHarness) -> None:
-    assert cli("regression", "add", "time", "what time is it", "--expect-intent", "get_time").exit_code == 0
-    result = cli(
-        "regression", "add", "kitchen", "turn on the kitchen light",
-        "--expect-intent", "light_turn_on", "--slot", "room_name=kitchen",
-    )  # fmt: skip
-    assert result.exit_code == 0
-    assert cli("test", "regression").exit_code == 0
-    tests = cli.json("regression", "list")
-    assert tests[1]["expected_slots"] == {"room_name": "kitchen"}
-    assert cli.json("regression", "get", str(tests[0]["id"]))["last_result"] is True
-    assert cli("regression", "update", str(tests[0]["id"]), "--expect-intent", "cancel").exit_code == 0
-    failing = cli("test", "regression")
-    assert failing.exit_code == 1 and "1 regression test(s) failed" in failing.output
-    assert cli("regression", "remove", str(tests[0]["id"])).exit_code == 0
-
+def test_failed_commands(cli: CliHarness) -> None:
     added = cli.json("failed", "add", "illuminate the garage", "--notes", "user said")
     assert cli.json("failed", "get", str(added["id"]))["notes"] == "user said"
     assert cli("failed", "update", str(added["id"]), "--reviewed").exit_code == 0
     assert cli.json("failed", "list", "--reviewed")[0]["id"] == added["id"]
-    promoted = cli.json("failed", "promote", str(added["id"]), "--intent", "light_turn_on")
-    assert promoted["phrase"]["phrase"] == "illuminate the {room_name}"
-    assert cli.json("test", "text", "illuminate the office")["slot_values"] == {"room_name": "office"}
     assert cli("failed", "remove", str(added["id"])).exit_code == 0
 
 
@@ -388,7 +370,7 @@ def test_listen_tree_renders_live_command_tree(cli: CliHarness) -> None:
     # piped output carries no ANSI escapes; styles only appear on a terminal
     assert "\x1b[" not in out
     # notation: required options bare, optional bracketed, positionals bare names
-    assert "promote fu_id --intent" in out
+    assert "set --name --value" in out
     assert "add name [--threshold]" in out
     # the tree's own --ascii flag shows as an optional parameter
     assert "tree [--ascii]" in out
@@ -428,7 +410,7 @@ def test_listen_tree_ascii(cli: CliHarness) -> None:
     assert "|-- wakeword" in out and "`-- " in out
     assert "├──" not in out and "└──" not in out and "│" not in out and "\x1b[" not in out
     out.encode("ascii")
-    assert "tree [--ascii]" in out and "promote fu_id --intent" in out
+    assert "tree [--ascii]" in out and "set --name --value" in out
 
 
 def test_listen_tree_tracks_command_changes(cli: CliHarness) -> None:
