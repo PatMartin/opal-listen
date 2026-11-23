@@ -208,13 +208,13 @@ class OpalListenProfileNamespacePatch(BaseModel):
     model_paths: dict[str, str] | None = None
 
 
-class OpalEventProfileNamespace(BaseModel):
-    """opal-event compartment: no profile-specific defaults declared (explicit closed empty)."""
+class OpalBusProfileNamespace(BaseModel):
+    """opal-bus compartment: no profile-specific defaults declared (explicit closed empty)."""
 
     model_config = ConfigDict(extra="forbid")
 
 
-class OpalEventProfileNamespacePatch(BaseModel):
+class OpalBusProfileNamespacePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
@@ -288,7 +288,7 @@ class OpalProfileModules(BaseModel):
 
     model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
 
-    opal_event: OpalEventProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-event")
+    opal_bus: OpalBusProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-bus")
     opal_listen: OpalListenProfileNamespace | None = Field(default=None, alias="opal-listen")
     opal_look: OpalLookProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-look")
     opal_look_yolo: OpalYoloProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-look-yolo")
@@ -316,7 +316,7 @@ class OpalProfileModulesPatch(BaseModel):
 
     model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
 
-    opal_event: OpalEventProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-event")
+    opal_bus: OpalBusProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-bus")
     opal_listen: OpalListenProfileNamespacePatch | None = Field(default=None, alias="opal-listen")
     opal_look: OpalLookProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-look")
     opal_look_yolo: OpalYoloProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-look-yolo")

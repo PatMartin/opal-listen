@@ -23,7 +23,6 @@ config_app = typer.Typer(
     help="Save, load and validate persistent configuration snapshots.", no_args_is_help=True
 )
 service_app = typer.Typer(help="Run, probe and inspect the server process.", no_args_is_help=True)
-info_app = typer.Typer(help="Service information and health.", no_args_is_help=True)
 
 
 def _confirm(ctx: typer.Context, yes: bool, message: str) -> None:
@@ -137,8 +136,8 @@ def config_validate(
 STATUS_ICON = {"ok": "[green]✓[/green]", "warning": "[yellow]![/yellow]", "degraded": "[yellow]![/yellow]", "error": "[red]✗[/red]"}
 
 
-@info_app.command("health")
-def info_health(ctx: typer.Context) -> None:
+@service_app.command("health")
+def service_health(ctx: typer.Context) -> None:
     """Aggregate health report: identity, status, live/ready and module diagnostics (details)."""
     report = state(ctx).api.get(f"{HEALTH}/")
     if state(ctx).json_output:

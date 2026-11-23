@@ -43,7 +43,7 @@ REQUIRED_COMMANDS = {
     "failed list",
     "service perf last", "service perf summary",
     "config validate", "config save", "config load",
-    "info health", "service start", "service stop", "service log", "gui",
+    "service health", "service start", "service stop", "service log", "gui",
     "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
     "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
 }  # fmt: skip
@@ -255,10 +255,10 @@ def test_config_commands(cli: CliHarness, tmp_path: Path) -> None:
 
 
 def test_service_commands(cli: CliHarness) -> None:
-    health = cli("info", "health")
-    # info health exits non-zero when any check errors (e.g. missing vosk model)
+    health = cli("service", "health")
+    # service health exits non-zero when any check errors (e.g. missing vosk model)
     assert "sqlite" in health.output and "overall" in health.output
-    result = cli("--json", "info", "health")
+    result = cli("--json", "service", "health")
     report = json.loads(result.output.split("\n┌")[0])
     assert report["name"] == "opal-listen-svc"
     assert isinstance(report["details"]["audio_devices"], list)
