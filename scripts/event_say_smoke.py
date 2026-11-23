@@ -203,12 +203,12 @@ rules:
 
         with TestClient(create_app(settings, service)) as client:
             etag = client.get("/api/v1/setting/").headers["etag"]
-            patch = client.patch(
-                "/api/v1/setting/",
-                json={"intent_dispatch": "event", "vosk_model_path": str(VOSK_MODEL)},
+            put = client.put(
+                "/api/v1/setting/intent_dispatch",
+                json={"value": "event"},
                 headers={"If-Match": etag},
             )
-            check("intent_dispatch=event accepted", patch.status_code == 200, patch.text[:120])
+            check("intent_dispatch=event accepted", put.status_code == 200, put.text[:120])
 
             client.post("/api/v1/recognition/start")
             try:
@@ -256,11 +256,11 @@ rules:
                 ).json()
                 if receipts:
                     rec = receipts[0]
-                    exec_ok = rec["status"] == "succeeded" and rec.get("http_status") == 200
+                    exec_ok = rec["status"] == "completed" and rec.get("http_status") == 200
             time.sleep(0.5)
         check("event stored in opal-event", event_id is not None, f"id={event_id}")
         check(
-            "execution receipt: say_ack succeeded",
+            "execution receipt: say_ack completed",
             exec_ok,
             f"status={receipts[0]['status'] if receipts else None} "
             f"http_status={receipts[0].get('http_status') if receipts else None}",
