@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Voice Intent API
-  version: '0.1.0'
+  version: '0.5.0'
   description: "Wakeword, STT, intent recognition, and slot extraction engine\n\n\
     OPAL SUITE STANDARD v2.0.0 (normative; follows the shared kernel version)\nX-Opal-Session-Id is an optional logical\
     \ context identifier; it does not create a server-managed session or grant authorization.\
@@ -31,16 +31,16 @@ info:
     \ history.\n\n\n    OPAL LISTEN (normative additions)\n\n    Versioning:\
     \ this document's info.version is the authoritative REST contract version, independent\
     \ of the\n    Python package version and of the event-envelope metadata schema_version\
-    \ (currently '2.0' \u2014 the\n    envelope emitted on opal.listen.intent.match). The OPAL suite standard follows the shared kernel version (currently v1.2).\n\
+    \ (currently '2.0' \u2014 the\n    envelope emitted on opal.listen.intent.match). The OPAL suite standard follows the shared kernel version (currently v3.0.0).\n\
     \n    Event publication: external intent-match events are published only when\
     \ setting\n    event_publication_enabled is true (default false, live-toggleable\
-    \ via PATCH /api/v1/settings/).\n    Recognition results from the diagnostic sources\
+    \ via PUT /api/v1/setting/event_publication_enabled).\n    Recognition results from the diagnostic sources\
     \ (\"text\" via POST /api/v1/recognition/test_text and\n    \"audio\" via POST\
     \ /api/v1/recognition/test_audio) are always evaluated, logged and streamed locally\n\
     \    but never published externally; only live microphone (\"mic\") matches are\
     \ actionable. Duplicate live\n    matches inside dedup_window_ms are flagged deduplicated\
     \ and not republished. event_transport selects\n    'http' or 'zmq'; 'both' is\
-    \ rejected (no cross-transport deduplication in OPAL Event).\n\n    Refinement:\
+    \ rejected (no cross-transport deduplication in OPAL Bus).\n\n    Refinement:\
     \ optional second-pass STT refinement (stt_refiner) runs asynchronously on a bounded\n\
     \    worker queue and never blocks capture. On refiner error, refiner_timeout_ms\
     \ timeout or a full\n    queue the draft transcript is used and the result carries\
@@ -1196,6 +1196,13 @@ paths:
       - recognition
       summary: Start Pipeline
       operationId: start_recognition
+      description: >-
+        Request recognition start. `{"status": "started"}` means the request was
+        *accepted* — a worker was spawned in `starting`; actual capture/engine readiness
+        is reported by GET /api/v1/recognition/status when `state` reaches `running`
+        (or `recovering`/`error` if startup fails). `{"status": "already_running"}` is
+        an idempotent no-op; `{"status": "stopping"}` means a previous worker is still
+        unwinding and the caller should retry shortly. At most one worker is ever alive.
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1232,6 +1239,12 @@ paths:
       - recognition
       summary: Stop Pipeline
       operationId: stop_recognition
+      description: >-
+        Request recognition stop. `{"status": "stopped"}` means the worker fully
+        terminated; `{"status": "stopping"}` means stop was accepted but the worker is
+        still unwinding (bounded ~5 s join; poll status until `stopped`);
+        `{"status": "not_running"}` is an idempotent no-op. Concurrent stops are safe:
+        callers may observe any of the three results.
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -1404,14 +1417,6 @@ paths:
           - type: boolean
           - type: 'null'
           title: Reviewed
-      - name: promoted
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Promoted
       - $ref: './shared/opal_kernel.yaml#/components/parameters/Limit'
       responses:
         '401':
@@ -1569,284 +1574,6 @@ paths:
               $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
         '404':
           $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-  /api/v1/failed_utterance/{failed_utterance_id}/promote:
-    parameters:
-    - $ref: '#/components/parameters/FailedUtteranceId'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
-    post:
-      tags:
-      - failed_utterances
-      summary: Promote To Phrase
-      description: Promote a failed utterance as a training phrase for the given intent.
-      operationId: promote_failed_utterance
-      parameters:
-      - $ref: './shared/opal_kernel.yaml#/components/parameters/IfMatch'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FailedUtterancePromoteRequest'
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PromoteResult'
-          headers:
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '404':
-          $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
-        '412':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionFailed'
-        '428':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionRequired'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-  /api/v1/regression/:
-    parameters:
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
-    get:
-      tags:
-      - regression
-      summary: List Regression Tests
-      operationId: list_regression_tests
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/RegressionTestRead'
-                type: array
-                title: Response List Regression Tests Api V1 Regression  Get
-          headers:
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-    post:
-      tags:
-      - regression
-      summary: Create Regression Test
-      operationId: create_regression_test
-      parameters:
-      - $ref: './shared/opal_kernel.yaml#/components/parameters/IfMatch'
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegressionTestCreate'
-        required: true
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegressionTestRead'
-          headers:
-            Location:
-              description: Resource URL
-              schema:
-                type: string
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '412':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionFailed'
-        '428':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionRequired'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-  /api/v1/regression/run:
-    parameters:
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
-    post:
-      tags:
-      - regression
-      summary: Run Regression Tests
-      description: Run all (enabled) regression tests against the current intent model.
-      operationId: run_regression_tests
-      parameters:
-      - name: enabled_only
-        in: query
-        required: false
-        schema:
-          type: boolean
-          default: true
-          title: Enabled Only
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegressionRunResult'
-          headers:
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-  /api/v1/regression/{test_id}:
-    parameters:
-    - $ref: '#/components/parameters/TestId'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalSessionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
-    - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
-    get:
-      tags:
-      - regression
-      summary: Get Regression Test
-      operationId: show_regression_test
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegressionTestRead'
-          headers:
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '404':
-          $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-    patch:
-      tags:
-      - regression
-      summary: Update Regression Test
-      operationId: update_regression_test
-      parameters:
-      - $ref: './shared/opal_kernel.yaml#/components/parameters/IfMatch'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegressionTestUpdate'
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RegressionTestRead'
-          headers:
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '404':
-          $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
-        '412':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionFailed'
-        '428':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionRequired'
-        '422':
-          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
-    delete:
-      tags:
-      - regression
-      summary: Delete Regression Test
-      operationId: remove_regression_test
-      parameters:
-      - $ref: './shared/opal_kernel.yaml#/components/parameters/IfMatch'
-      responses:
-        '401':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
-        '403':
-          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
-        '204':
-          description: Successful Response
-          headers:
-            X-Opal-Session-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
-            X-Opal-Transaction-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
-            X-Opal-Request-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
-            X-Opal-Causation-Id:
-              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
-        '404':
-          $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
-        '412':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionFailed'
-        '428':
-          $ref: './shared/opal_kernel.yaml#/components/responses/PreconditionRequired'
         '422':
           $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
   /api/v1/performance/last:
@@ -2122,9 +1849,6 @@ components:
         reviewed:
           type: boolean
           title: Reviewed
-        promoted_to_phrase:
-          type: boolean
-          title: Promoted To Phrase
         created_at:
           type: string
           format: date-time
@@ -2135,7 +1859,6 @@ components:
       - id
       - recognition_log_id
       - reviewed
-      - promoted_to_phrase
       - created_at
       title: FailedUtteranceRead
     FailedUtteranceUpdate:
@@ -2155,31 +1878,9 @@ components:
           - type: boolean
           - type: 'null'
           title: Reviewed
-        promoted_to_phrase:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Promoted To Phrase
       type: object
       minProperties: 1
       title: FailedUtteranceUpdate
-    FailedUtterancePromoteRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        intent_id:
-          type: string
-          minLength: 1
-          description: Identifier of the intent this utterance becomes a training phrase for.
-          title: Intent Id
-        create_regression:
-          type: boolean
-          description: Also add a regression test for this utterance.
-          default: true
-          title: Create Regression
-      required:
-      - intent_id
-      title: FailedUtterancePromoteRequest
     IntentAlternative:
       properties:
         intent_name:
@@ -2533,11 +2234,23 @@ components:
           - starting
           - running
           - stopping
+          - recovering
           - error
           title: State
+          description: >-
+            Public lifecycle state. `stopped`: no worker. `starting`: start accepted,
+            capture/engine not yet ready. `running`: capturing and recognizing.
+            `stopping`: stop accepted, worker still unwinding. `recovering`: transient
+            failure, worker alive and retrying with backoff — self-heals without
+            client action. `error`: worker terminated mid-recovery without a stop
+            request; inspect `last_error`.
         provider:
           type: string
           title: Provider
+          description: >-
+            Active speech engine name. When wakeword_engine and transcription_engine
+            select different engines the value is "wakeword+transcription"
+            (e.g. "openwakeword+faster_whisper").
         profile_name:
           anyOf:
           - type: string
@@ -2595,11 +2308,46 @@ components:
           - type: string
           - type: 'null'
           title: Last Error
+        recovery_attempts:
+          type: integer
+          title: Recovery Attempts
+          description: >-
+            Consecutive failed start attempts in the current recovery episode
+            (0 while capture is healthy).
+          default: 0
+        recovery_retry_delay_s:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Recovery Retry Delay S
+          description: Backoff delay currently in effect while `recovering`.
+        last_recovery_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Recovery Reason
+          description: Reason for the most recent recovery attempt.
+        last_capture_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Capture At
+          description: Timestamp of the last audio frame captured.
         metrics:
           additionalProperties:
             type: number
           type: object
           title: Metrics
+          description: >-
+            Reliability counters, reset per run. Dispatch vocabulary: dispatched_local /
+            dispatched_event count results *selected* for each target; events_accepted
+            counts work taken by the event publisher queue (HTTP) or socket (ZMQ);
+            events_delivered counts confirmed delivery (HTTP 2xx; ZMQ is fire-and-forget
+            so this only means frames handed to the socket); event_delivery_failures
+            counts queue-full drops and transport errors. Selection never implies delivery.
+            sse_dropped_events counts SSE messages evicted from bounded per-subscriber
+            queues (see /api/v1/recognition/stream).
           default: {}
       type: object
       required:
@@ -2620,21 +2368,6 @@ components:
       - last_result_at
       - last_error
       title: PipelineStatus
-    PromoteResult:
-      properties:
-        failed_utterance:
-          $ref: '#/components/schemas/FailedUtteranceRead'
-        phrase:
-          $ref: '#/components/schemas/IntentPhraseRead'
-        regression_test:
-          anyOf:
-          - $ref: '#/components/schemas/RegressionTestRead'
-          - type: 'null'
-      type: object
-      required:
-      - failed_utterance
-      - phrase
-      title: PromoteResult
     RecognitionResult:
       properties:
         session_id:
@@ -2762,194 +2495,6 @@ components:
       - created_at
       title: RecognitionResult
       description: Outcome of one pass through the pipeline (live, audio file or text).
-    RegressionCaseResult:
-      properties:
-        test_id:
-          type: string
-          title: Test Id
-        name:
-          type: string
-          title: Name
-        phrase:
-          type: string
-          title: Phrase
-        expected_intent:
-          type: string
-          title: Expected Intent
-        actual_intent:
-          type: string
-          title: Actual Intent
-        expected_slots:
-          additionalProperties: true
-          type: object
-          title: Expected Slots
-        actual_slots:
-          additionalProperties: true
-          type: object
-          title: Actual Slots
-        intent_confidence:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Intent Confidence
-        passed:
-          type: boolean
-          title: Passed
-        failure_reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Failure Reason
-      type: object
-      required:
-      - test_id
-      - name
-      - phrase
-      - expected_intent
-      - actual_intent
-      - expected_slots
-      - actual_slots
-      - intent_confidence
-      - passed
-      title: RegressionCaseResult
-    RegressionRunResult:
-      properties:
-        total:
-          type: integer
-          title: Total
-        passed:
-          type: integer
-          title: Passed
-        failed:
-          type: integer
-          title: Failed
-        pass_rate:
-          type: number
-          title: Pass Rate
-        results:
-          items:
-            $ref: '#/components/schemas/RegressionCaseResult'
-          type: array
-          title: Results
-      type: object
-      required:
-      - total
-      - passed
-      - failed
-      - pass_rate
-      - results
-      title: RegressionRunResult
-    RegressionTestCreate:
-      properties:
-        name:
-          type: string
-          maxLength: 200
-          title: Name
-        phrase:
-          type: string
-          maxLength: 500
-          title: Phrase
-        expected_intent:
-          type: string
-          maxLength: 100
-          title: Expected Intent
-        enabled:
-          type: boolean
-          title: Enabled
-          default: true
-        expected_slots:
-          additionalProperties: true
-          type: object
-          title: Expected Slots
-          default: {}
-      type: object
-      required:
-      - name
-      - phrase
-      - expected_intent
-      title: RegressionTestCreate
-    RegressionTestRead:
-      properties:
-        name:
-          type: string
-          maxLength: 200
-          title: Name
-        phrase:
-          type: string
-          maxLength: 500
-          title: Phrase
-        expected_intent:
-          type: string
-          maxLength: 100
-          title: Expected Intent
-        enabled:
-          type: boolean
-          title: Enabled
-          default: true
-        id:
-          type: string
-          title: Id
-        expected_slots:
-          additionalProperties: true
-          type: object
-          title: Expected Slots
-        last_result:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Last Result
-        last_run_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Last Run At
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-      type: object
-      required:
-      - name
-      - phrase
-      - expected_intent
-      - id
-      - expected_slots
-      - last_result
-      - last_run_at
-      - created_at
-      title: RegressionTestRead
-    RegressionTestUpdate:
-      properties:
-        name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Name
-        phrase:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Phrase
-        expected_intent:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Expected Intent
-        expected_slots:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          title: Expected Slots
-        enabled:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Enabled
-      type: object
-      minProperties: 1
-      title: RegressionTestUpdate
     SlotAliasCreate:
       properties:
         alias:
@@ -3262,7 +2807,6 @@ tags:
 - name: performance
 - name: persona
 - name: recognition
-- name: regression
 - name: slots
 - name: wakewords
 - name: service
@@ -3330,11 +2874,10 @@ x-opal-snapshot:
   - wakewords
   - intents
   - slots
-  - regression_tests
   description: >-
     Declares the canonical module identity and resource sections carried in this module's
     configuration snapshots. `config load`/`config validate` validate `snapshot` against the shared
     `OpalConfigSnapshot` envelope and the declared `module` identity and resource
     sections; wrong-module, unsupported-version, and unknown-section snapshots are
     rejected. Snapshots carry persistent desired configuration only:
-    profiles, personas, wakewords, intents, slots, regression_tests; never runtime history, sessions, streams, binaries, or secrets.
+    profiles, personas, wakewords, intents, slots; never runtime history, sessions, streams, binaries, or secrets.

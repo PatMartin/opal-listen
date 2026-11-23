@@ -225,7 +225,7 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
 
     OpalContextMiddleware stamps the four X-Opal-* correlation headers on every response
     (success, error, and streaming alike); ETag-bearing reads and Location-bearing creates
-    are annotated per operation, matching openapi/opal_listen_v0.1.0.yaml.
+    are annotated per operation, matching openapi/opal_listen_v0.5.0.yaml.
     """
     components = schema.setdefault("components", {})
     components.setdefault("headers", {}).update(_OPAL_HEADER_COMPONENTS)
@@ -309,7 +309,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="0.1.0",
+        version="0.5.0",
         lifespan=lifespan,
     )
     app.state.listener = service
