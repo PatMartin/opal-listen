@@ -32,13 +32,15 @@ from opal_listener.service.http_events import HttpEventPublisher
 from opal_listener.service.nlu.normalizer import normalize_text, split_wakeword
 from opal_listener.service.pipeline import CommandOutcome, PipelineEvent, RecognitionPipeline
 from opal_listener.service.providers.base import (
+    Engine,
     ListenerProvider,
-    ProviderConfig,
     ProviderError,
     SttRefiner,
     Transcript,
+    TranscriptionEngine,
+    WakewordEngine,
 )
-from opal_listener.service.providers.registry import create_provider, create_refiner
+from opal_listener.service.providers.manager import ProviderManager
 from opal_listener.service.reactions import ReactionRunner
 from opal_listener.service.refinement import DEFAULT_QUEUE_CAPACITY, RefinementWorker, RefineTask
 from opal_listener.service.runtime_config import ConfigInvalidError, RuntimeSnapshot, compile_bundle
@@ -88,19 +90,6 @@ def _capture_signature(settings: dict[str, Any]) -> tuple[Any, ...]:
     return tuple(settings[k] for k in _CAPTURE_SETTING_KEYS)
 
 
-def _provider_fingerprint(config: ProviderConfig) -> tuple[Any, ...]:
-    """Hashable identity of a provider's model configuration.
-
-    Providers are cached per (name, fingerprint): an unchanged fingerprint reuses the live
-    instance (no reload), a changed one creates a fresh instance so in-flight sessions keep
-    running on the configuration they started with."""
-    return (
-        config.sample_rate,
-        tuple(sorted(config.model_paths.items())),
-        tuple(sorted((k, repr(v)) for k, v in config.options.items())),
-    )
-
-
 SourceFactory = Callable[[dict[str, Any]], AudioSource]
 
 
@@ -130,6 +119,86 @@ def default_event_publisher(settings: AppSettings) -> EventPublisher:
     return HttpEventPublisher(base_url=settings.opal_event_url, token=settings.opal_event_token)
 
 
+class _DispatchSequencer:
+    """Orders external dispatch (event publish, reactions) by capture sequence.
+
+    Mic results finalize on two different threads — the capture thread (no refiner, or a
+    full refine queue) and the refinement worker — so a later command can finalize first.
+    External side effects are therefore gated through capture-order tickets: a result's
+    dispatch runs only after every earlier-captured command has finalized. Recording,
+    streaming and dedup marking stay immediate; only dispatch waits its turn.
+
+    Tickets are monotonic per service. `reset()` on pipeline start re-bases the gate so a
+    late finalization from a previous run (already dispatch-blocked by its generation
+    stamp) can never gate or fire behind a newer run's commands.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next = 0
+        self._expected = 1
+        self._pending: dict[int, Callable[[], None]] = {}
+
+    def assign(self) -> int:
+        with self._lock:
+            self._next += 1
+            return self._next
+
+    def reset(self) -> None:
+        with self._lock:
+            self._expected = self._next + 1
+            self._pending.clear()
+
+    def complete(self, seq: int, fn: Callable[[], None]) -> None:
+        """Release `fn` (dispatch) when every earlier seq has completed; drop stale tickets.
+
+        Callbacks execute inside the lock: collecting them under the lock but running them
+        after release only ordered the *release decision* — a concurrent thread could collect
+        a later seq's callback while this one still waited to run, dispatching out of order.
+        In-lock execution serializes the calls themselves, which requires callbacks to stay
+        non-blocking (queue enqueues only — publish() and reaction dispatch() are). A raising
+        callback is logged and skipped so one failed dispatch can neither stall every later
+        ticket nor drop a callback already collected in the same ready run."""
+        with self._lock:
+            if seq < self._expected:
+                return  # superseded generation or already released
+            self._pending[seq] = fn
+            ready = []
+            while self._expected in self._pending:
+                ready.append(self._pending.pop(self._expected))
+                self._expected += 1
+            for fn_ in ready:
+                try:
+                    fn_()
+                except Exception:
+                    log.exception("dispatch for a recognition result failed; continuing in sequence order")
+
+
+class _DedupWindow:
+    """Thread-safe seen-key tracker for result deduplication.
+
+    `seen_recently` evicts expired entries on every call so a long-running listener cannot
+    grow the map without bound; `reset` clears state between run generations — dedup memory
+    belongs to the run that collected it. `_record` may call from the refinement worker
+    thread while `reset` runs on the lifecycle thread, hence the lock."""
+
+    def __init__(self) -> None:
+        self._seen: dict[tuple[object, ...], float] = {}
+        self._lock = threading.Lock()
+
+    def seen_recently(self, key: tuple[object, ...], window_s: float, now: float) -> bool:
+        with self._lock:
+            self._seen = {k: ts for k, ts in self._seen.items() if now - ts < window_s}
+            if key in self._seen:
+                return True
+            self._seen[key] = now
+            return False
+
+    def reset(self) -> None:
+        with self._lock:
+            self._seen.clear()
+
+
 @dataclass
 class _RuntimeStats:
     state: str = "stopped"
@@ -144,9 +213,9 @@ class _RuntimeStats:
     last_result_at: datetime | None = None
     last_error: str | None = None
     last_recovery_reason: str | None = None
-    # consecutive failed attempts in the current recovery episode; reset to 0 once frames flow
+    # recovery episode accounting: consecutive failed start attempts (reset on a successful
+    # listen), the backoff delay currently in effect, and the last frame timestamp
     recovery_attempts: int = 0
-    # backoff delay currently in effect while `recovering`
     recovery_retry_delay_s: float | None = None
     last_capture_at: datetime | None = None
     audio_device: str | None = None
@@ -171,7 +240,9 @@ class ListenerService:
         self,
         db: Database,
         app_settings: AppSettings,
-        provider_factory: Callable[[str], ListenerProvider] = create_provider,
+        provider_factory: Callable[[str], ListenerProvider] | None = None,
+        wakeword_engine_factory: Callable[[str], WakewordEngine] | None = None,
+        transcription_engine_factory: Callable[[str], TranscriptionEngine] | None = None,
         source_factory: SourceFactory = default_source_factory,
         event_publisher: EventPublisher | None = None,
     ) -> None:
@@ -179,16 +250,15 @@ class ListenerService:
         self.app_settings = app_settings
         self.bus = EventBus()
         self.event_publisher: EventPublisher = event_publisher or default_event_publisher(app_settings)
-        self._provider_factory = provider_factory
+        self._engines = ProviderManager(
+            provider_factory=provider_factory,
+            wakeword_factory=wakeword_engine_factory,
+            transcription_factory=transcription_engine_factory,
+        )
         self._source_factory = source_factory
         self._config_lock = threading.RLock()
-        self._provider_lock = threading.Lock()
         self._snapshot: RuntimeSnapshot | None = None
         self._version = 0
-        # name -> (config fingerprint, instance); at most one loaded instance per name — a replaced
-        # entry is GC'd once the last in-flight pipeline drops its reference
-        self._providers: dict[str, tuple[tuple[Any, ...], ListenerProvider]] = {}
-        self._refiners: dict[str, tuple[tuple[Any, ...], SttRefiner]] = {}
         self._stats = _RuntimeStats()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -196,12 +266,12 @@ class ListenerService:
         self._shutdown = False
         # restart-only setting values as captured at startup (pending_restart provenance)
         self._startup_setting_values: dict[str, Any] = {}
-        self._dedup_seen: dict[tuple[object, ...], float] = {}
-        self._dedup_lock = threading.Lock()
+        self._dedup = _DedupWindow()
         # run identity: bumped on every start(); outcomes carry the generation that captured
         # them so a late finalization (e.g. deferred refinement) cannot dispatch into a new run
         self._generation = 0
         self._active_source: AudioSource | None = None
+        self._sequencer = _DispatchSequencer()
         self._refine_worker = RefinementWorker(
             capacity=DEFAULT_QUEUE_CAPACITY, refiner_for=self._refiner_for, finalize=self._finalize_result
         )
@@ -309,20 +379,32 @@ class ListenerService:
             self.event_publisher.connect()
 
     def _check_provider_change(self, new: RuntimeSnapshot) -> None:
-        """Validate provider/model changes before committing (cheap checks, no model load)."""
+        """Validate engine/model changes before committing (cheap checks, no model load)."""
         old = self._snapshot
-        if old and (old.provider_name, old.provider_config.model_paths) == (
+        if old and (
+            old.provider_name,
+            old.wakeword_engine_name,
+            old.transcription_engine_name,
+            old.provider_config.model_paths,
+        ) == (
             new.provider_name,
+            new.wakeword_engine_name,
+            new.transcription_engine_name,
             new.provider_config.model_paths,
         ):
             return
-        try:
-            provider = self._provider_factory(new.provider_name)
-        except ProviderError as exc:
-            raise InvalidRequestError(str(exc)) from exc
-        failures = [c for c in provider.check(new.provider_config) if not c.ok and c.severity == "error"]
-        if failures:
-            raise InvalidRequestError(f"provider check failed: {failures[0].detail}")
+        checked: set[str] = set()
+        for role, name in (("wakeword", new.wakeword_engine_name), ("transcription", new.transcription_engine_name)):
+            if name in checked:
+                continue
+            checked.add(name)
+            try:
+                engine = self._engines.transient(name, role=role)
+            except ProviderError as exc:
+                raise InvalidRequestError(str(exc)) from exc
+            failures = [c for c in engine.check(new.provider_config) if not c.ok and c.severity == "error"]
+            if failures:
+                raise InvalidRequestError(f"{role} engine check failed: {failures[0].detail}")
 
     @contextlib.contextmanager
     def config_change(self) -> Iterator[Session]:
@@ -354,57 +436,59 @@ class ListenerService:
 
     # --- providers ----------------------------------------------------------------------------
 
-    def provider_for(self, snapshot: RuntimeSnapshot) -> ListenerProvider:
-        """Returns the loaded provider for snapshot's configuration.
+    @property
+    def _providers(self) -> dict[str, tuple[tuple[Any, ...], Engine]]:
+        """Compat accessor for the manager's engine cache (name -> (fingerprint, instance))."""
+        return self._engines.engines
 
-        An unchanged config fingerprint reuses the live instance without reloading. A changed one
-        creates and loads a fresh instance under the lock — the previous instance is dropped from
-        the cache (never mutated or unloaded while in-flight sessions still reference it)."""
-        fingerprint = _provider_fingerprint(snapshot.provider_config)
-        with self._provider_lock:
-            cached = self._providers.get(snapshot.provider_name)
-            if cached is not None and cached[0] == fingerprint:
-                return cached[1]
-            provider = self._provider_factory(snapshot.provider_name)
-            provider.load(snapshot.provider_config)
-            self._providers[snapshot.provider_name] = (fingerprint, provider)
-            return provider
+    def engines_for(self, snapshot: RuntimeSnapshot) -> tuple[WakewordEngine, TranscriptionEngine]:
+        """The loaded wakeword and transcription engines for a snapshot (one shared instance
+        when both resolve to the same engine name)."""
+        return self._engines.engines_for(snapshot)
 
-    def provider_status(self) -> tuple[ListenerProvider | None, RuntimeSnapshot | None]:
-        """Inspection-only: returns the active provider (or a transient instance for check())
-        without loading models or mutating recognition state."""
+    def provider_for(self, snapshot: RuntimeSnapshot) -> Engine:
+        """Legacy combined-provider accessor: the engine behind the snapshot's transcription
+        role (which is the single shared instance whenever the two roles select the same engine)."""
+        return self.engines_for(snapshot)[1]
+
+    def provider_status(self) -> tuple[Engine | None, RuntimeSnapshot | None]:
+        """Inspection-only: returns the active transcription engine (or a transient instance for
+        check()) without loading models or mutating recognition state."""
         snap = self._snapshot
         if snap is None:
             return None, None
         try:
-            with self._provider_lock:
-                cached = self._providers.get(snap.provider_name)
-            provider = cached[1] if cached else self._provider_factory(snap.provider_name)
-            return provider, snap
+            engine = self._engines.cached(snap.transcription_engine_name)
+            if engine is None:
+                engine = self._engines.transient(snap.transcription_engine_name, role="transcription")
+            return engine, snap
         except ProviderError:
             return None, snap
 
+    def engine_status(self) -> tuple[list[Engine], RuntimeSnapshot | None]:
+        """All engines selected by the active snapshot, for health checks (cached or transient)."""
+        snap = self._snapshot
+        if snap is None:
+            return [], None
+        engines = []
+        for name, role in (
+            (snap.wakeword_engine_name, "wakeword"),
+            (snap.transcription_engine_name, "transcription"),
+        ):
+            with contextlib.suppress(ProviderError):
+                engines.append(self._engines.cached(name) or self._engines.transient(name, role=role))
+        return engines, snap
+
     def _refiner_for(self, snapshot: RuntimeSnapshot) -> SttRefiner | None:
-        name = snapshot.refiner_name
-        if name in ("", "none"):
-            return None
-        fingerprint = _provider_fingerprint(snapshot.provider_config)
-        with self._provider_lock:
-            cached = self._refiners.get(name)
-            if cached is not None and cached[0] == fingerprint:
-                return cached[1]
-            refiner = create_refiner(name)
-            if refiner is None:
-                return None
-            refiner.load(snapshot.provider_config)
-            self._refiners[name] = (fingerprint, refiner)
-            return refiner
+        return self._engines.refiner_for(snapshot)
 
     def _make_pipeline(
         self, snapshot: RuntimeSnapshot, debug: bool, cooldown: bool, *, live: bool = False
     ) -> RecognitionPipeline:
+        wakeword_engine, transcription_engine = self.engines_for(snapshot)
         return RecognitionPipeline(
-            provider=self.provider_for(snapshot),
+            wakeword_engine=wakeword_engine,
+            transcription_engine=transcription_engine,
             wakewords=snapshot.wakewords,
             wakeword_thresholds=snapshot.wakeword_thresholds,
             grammar=snapshot.grammar,
@@ -475,13 +559,20 @@ class ListenerService:
         )
 
     def _record(
-        self, result: s.RecognitionResult, save_log: bool, *, allow_dispatch: bool = True
+        self,
+        result: s.RecognitionResult,
+        save_log: bool,
+        *,
+        allow_dispatch: bool = True,
+        gate: Callable[[Callable[[], None]], None] | None = None,
     ) -> s.RecognitionResult:
         """Log, stream, and (when allowed) dispatch a recognition result.
 
         ``allow_dispatch`` is False for results captured under an older run generation: they
         are still logged and streamed locally but can never publish events or fire reactions.
-        Dispatch enablement itself is read from the *current* snapshot — the final authority
+        ``gate`` defers the external side effects (event publish, reactions) until every
+        earlier-captured command has finalized — see _DispatchSequencer; logging, dedup
+        marking and the local result stream are not gated.
         for side effects regardless of which config version captured the utterance."""
         snapshot = self.snapshot
         if result.source == "mic" and result.matched and allow_dispatch:
@@ -493,13 +584,8 @@ class ListenerService:
             )
             now = time.monotonic()
             window = int(snapshot.settings["dedup_window_ms"]) / 1000
-            with self._dedup_lock:  # _record may run on the refinement worker thread
-                # evict expired entries so a long-running listener cannot grow this map without bound
-                self._dedup_seen = {k: ts for k, ts in self._dedup_seen.items() if now - ts < window}
-                if key in self._dedup_seen:
-                    result.deduplicated = True
-                else:
-                    self._dedup_seen[key] = now
+            if self._dedup.seen_recently(key, window, now):
+                result.deduplicated = True
         if save_log:
             capture = bool(snapshot.settings["auto_capture_failures"]) and result.source != "text"
             with self.db.session() as session:
@@ -511,25 +597,29 @@ class ListenerService:
                     self._prune_storage(session, snapshot.settings)
                 session.commit()
         actionable = (
-            result.matched
-            and not result.deduplicated
-            and result.source not in DIAGNOSTIC_SOURCES
-            and allow_dispatch
+            result.matched and not result.deduplicated and result.source not in DIAGNOSTIC_SOURCES and allow_dispatch
         )
         targets = dispatch_targets(snapshot.settings) if actionable else frozenset()
         # the resolved path is recorded on the result before dispatch so the local stream,
         # the event payload and the reaction payload all carry the same selection
         result.dispatched_to = sorted(targets)
-        if "event" in targets:
-            publish_start = time.monotonic()
-            self.event_publisher.publish(INTENT_MATCH_TOPIC, result.model_dump(mode="json"))
-            self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
-            self._stats.dispatched_event += 1
-        if "local" in targets:
-            self._reaction_runner.dispatch(result.model_dump(mode="json"))
-            self._stats.dispatched_local += 1
-        if actionable and not targets:
-            self._stats.dispatch_suppressed += 1
+
+        def _dispatch() -> None:
+            if "event" in targets:
+                publish_start = time.monotonic()
+                self.event_publisher.publish(INTENT_MATCH_TOPIC, result.model_dump(mode="json"))
+                self._stats.publish_latency_ms = round((time.monotonic() - publish_start) * 1000, 2)
+                self._stats.dispatched_event += 1
+            if "local" in targets:
+                self._reaction_runner.dispatch(result.model_dump(mode="json"))
+                self._stats.dispatched_local += 1
+            if actionable and not targets:
+                self._stats.dispatch_suppressed += 1
+
+        if gate is not None:
+            gate(_dispatch)  # released in capture order via _DispatchSequencer
+        else:
+            _dispatch()
         self.bus.publish("result", result.model_dump(mode="json"))
         return result
 
@@ -543,10 +633,6 @@ class ListenerService:
 
     def test_text(self, text: str, save_log: bool = True) -> s.RecognitionResult:
         return self._record(self.interpret(text, self.snapshot, source="text"), save_log)
-
-    def interpret_text(self, text: str) -> s.RecognitionResult:
-        """Pure intent evaluation (no logging) used by diagnostics."""
-        return self.interpret(text, self.snapshot, source="text")
 
     def test_audio(self, data: bytes, save_log: bool = True, require_wakeword: bool = False) -> s.RecognitionResult:
         if len(data) > self.app_settings.max_upload_bytes:
@@ -598,8 +684,8 @@ class ListenerService:
             self.snapshot  # noqa: B018 - raises if configuration is not loaded
             self._stop.clear()
             self._generation += 1
-            with self._dedup_lock:
-                self._dedup_seen.clear()  # dedup state belongs to the run that collected it
+            self._dedup.reset()  # dedup state belongs to the run that collected it
+            self._sequencer.reset()  # stale-run dispatches can never gate a new generation
             self._stats = _RuntimeStats(state="starting", started_at=utc_now(), started_monotonic=time.monotonic())
             self._thread = threading.Thread(target=self._run, name="listener-runtime", daemon=True)
             self._thread.start()
@@ -622,7 +708,9 @@ class ListenerService:
             self._publish_status()
             return {"status": "stopped"}
 
-    # internal run-state vocabulary -> contract PipelineStatus.state enum
+    # internal run-state vocabulary -> contract PipelineStatus.state enum; "recovering"
+    # surfaces as itself (transient, self-healing) rather than collapsing into "error",
+    # which is reserved for a worker that terminated without a stop request.
     _STATUS_STATES = {"listening": "running", "capturing": "running"}
 
     def status(self) -> s.PipelineStatus:
@@ -630,16 +718,20 @@ class ListenerService:
         snap = self._snapshot
         if self.running:
             state = self._STATUS_STATES.get(st.state, st.state)
-        elif st.state == "stopped" or self._stop.is_set():
-            state = "stopped"
+        elif st.state == "recovering" and not self._stop.is_set():
+            state = "error"  # worker died mid-recovery without a stop request
         else:
-            # worker gone while stats say it was mid-run (e.g. recovering): it terminated
-            # without a stop request — inspect last_error
-            state = "error"
+            state = "stopped"
         return s.PipelineStatus(
             running=self.running,
             state=state,
-            provider=snap.provider_name if snap else "unknown",
+            provider=(
+                "unknown"
+                if not snap
+                else snap.provider_name
+                if snap.wakeword_engine_name == snap.transcription_engine_name
+                else f"{snap.wakeword_engine_name}+{snap.transcription_engine_name}"
+            ),
             profile_name=snap.profile_name if snap else None,
             audio_device=st.audio_device,
             capture_sample_rate=st.capture_sample_rate,
@@ -695,13 +787,13 @@ class ListenerService:
             "dispatched_local": float(st.dispatched_local),
             "dispatched_event": float(st.dispatched_event),
             "dispatch_suppressed": float(st.dispatch_suppressed),
-            # event-delivery pipeline: accepted = taken by the publisher queue/socket,
-            # delivered = confirmed (HTTP 2xx / ZMQ frame handed to the socket),
-            # failures = queue-full drops + transport errors; selection never implies delivery
-            "events_accepted": float(getattr(self.event_publisher, "accepted", 0)),
-            "events_delivered": float(getattr(self.event_publisher, "delivered", 0)),
-            "event_delivery_failures": float(getattr(self.event_publisher, "delivery_failures", 0)),
-            "sse_dropped_events": float(self.bus.dropped_events),
+            # SSE stream loss: messages evicted from bounded subscriber queues (see
+            # service/events.py for the disposable-vs-important drop policy)
+            "sse_dropped_events": float(self.bus.dropped_total),
+            # delivery accounting from the configured publisher: events_accepted (queue/send
+            # accepted), events_delivered (HTTP = 2xx confirmed; ZMQ = socket handed the
+            # frames, subscriber receipt unverifiable), event_delivery_failures
+            **getattr(self.event_publisher, "stats", dict)(),
             "recoveries": float(st.audio_restarts),
             "stt_latency_ms": st.stt_latency_ms or 0.0,
             "refine_latency_ms": st.refine_latency_ms or 0.0,
@@ -722,6 +814,7 @@ class ListenerService:
         backoff = 1.0
         while not self._stop.is_set():
             source: AudioSource | None = None
+            snapshot: RuntimeSnapshot | None = None
             try:
                 snapshot = self.snapshot
                 pipeline = self._make_pipeline(snapshot, debug=self.bus.subscriber_count > 0, cooldown=True, live=True)
@@ -732,6 +825,8 @@ class ListenerService:
                 self._stats.capture_sample_rate = source.capture_rate
                 self._stats.capture_signature = _capture_signature(snapshot.settings)
                 self._stats.last_error = None
+                self._stats.recovery_attempts = 0
+                self._stats.recovery_retry_delay_s = None
                 self._set_state("listening")
                 backoff = 1.0
                 self._listen(source, pipeline, snapshot)
@@ -748,6 +843,14 @@ class ListenerService:
                     if self._active_source is source:
                         self._active_source = None
             if not self._stop.is_set() and self._stats.state == "recovering":
+                # bounded recovery: after recovery_max_attempts consecutive failures the worker
+                # gives up — status() then reports `error` (worker dead without a stop request)
+                # instead of hiding a persistent problem behind an endless restart loop.
+                max_attempts = int((snapshot.settings if snapshot else {}).get("recovery_max_attempts", 0))
+                if max_attempts > 0 and self._stats.recovery_attempts >= max_attempts:
+                    log.error("listener runtime giving up after %d recovery attempts", self._stats.recovery_attempts)
+                    self._stats.recovery_retry_delay_s = None
+                    return
                 self._stats.recovery_retry_delay_s = backoff
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)
@@ -826,11 +929,10 @@ class ListenerService:
                 last_frame = time.monotonic()
                 self._stats.frames_processed += 1
                 self._stats.last_capture_at = utc_now()
-                if self._stats.state == "recovering":
-                    # frames are flowing again — the recovery episode is over
-                    self._stats.recovery_attempts = 0
-                    self._stats.recovery_retry_delay_s = None
-                    self._set_state("listening")
+                # frames are flowing: any recovery episode (e.g. a rejected capture-setting
+                # reopen recorded by _recover) is over — the attempt counter is *consecutive*
+                self._stats.recovery_attempts = 0
+                self._stats.recovery_retry_delay_s = None
                 events = pipeline.feed(frame.pcm, frame.captured_at)
                 self._stats.last_audio_level = pipeline.last_level
                 for event in events:
@@ -851,6 +953,7 @@ class ListenerService:
         if event.kind == "session_end" and event.outcome is not None:
             outcome = event.outcome
             outcome.generation = self._generation  # stamp the run that captured the command
+            outcome.seq = self._sequencer.assign()  # dispatch ticket (capture order)
             self._set_state("listening")  # capture resumes immediately; finalization may be deferred
             if snapshot.refiner_name not in ("", "none") and outcome.transcript.text:
                 if self._refine_worker.submit(RefineTask(outcome=outcome, snapshot=snapshot)):
@@ -879,7 +982,9 @@ class ListenerService:
         result = self.interpret(outcome.transcript.text, snapshot, source="mic", outcome=outcome)
         if refinement_error:
             result.refinement_error = refinement_error
-        self._record(result, save_log=True, allow_dispatch=outcome.generation == self._generation)
+        seq = outcome.seq if outcome.generation == self._generation else 0
+        gate = (lambda fn: self._sequencer.complete(seq, fn)) if seq else None
+        self._record(result, save_log=True, allow_dispatch=bool(seq), gate=gate)
         self._stats.results += 1
         self._stats.last_result_at = result.created_at
         self._stats.stt_latency_ms = result.stt_latency_ms

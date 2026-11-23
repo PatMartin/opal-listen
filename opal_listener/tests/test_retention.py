@@ -33,11 +33,10 @@ def _log_row(session: Any, days_old: float, transcript: str | None = "turn it on
     return row
 
 
-def _failed(session: Any, days_old: float, reviewed: bool = False, promoted: bool = False) -> FailedUtterance:
+def _failed(session: Any, days_old: float, reviewed: bool = False) -> FailedUtterance:
     row = FailedUtterance(
         transcript="miss",
         reviewed=reviewed,
-        promoted_to_phrase=promoted,
         created_at=utc_now() - timedelta(days=days_old),
     )
     session.add(row)
@@ -77,13 +76,12 @@ def test_unreviewed_failures_expire_but_curated_ones_survive(client: Any, servic
         stale = _failed(session, days_old=100)
         fresh = _failed(session, days_old=1)
         reviewed = _failed(session, days_old=100, reviewed=True)
-        promoted = _failed(session, days_old=100, promoted=True)
         session.commit()
         assert recognition_store.prune_failed_utterances(session, 90) == 1
         session.commit()
         remaining = {f.id for f in session.exec(select(FailedUtterance)).all()}
         assert stale.id not in remaining
-        assert {fresh.id, reviewed.id, promoted.id} <= remaining  # curated examples preserved
+        assert {fresh.id, reviewed.id} <= remaining  # curated examples preserved
         assert recognition_store.prune_failed_utterances(session, 90) == 0  # idempotent second cycle
 
 

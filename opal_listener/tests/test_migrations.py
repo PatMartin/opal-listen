@@ -16,7 +16,7 @@ from opal_listener.data.db import Database, alembic_config
 
 TABLES = {
     "wakewords", "intents", "intent_phrases", "slots", "slot_values", "slot_aliases", "profiles", "settings",
-    "recognition_logs", "failed_utterances", "regression_tests", "performance_results",
+    "recognition_logs", "failed_utterances", "performance_results",
 }  # fmt: skip
 
 

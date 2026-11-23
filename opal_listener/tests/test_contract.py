@@ -14,6 +14,7 @@ resolves those into a single in-memory document before any assertion runs.
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 from typing import Any
 
@@ -291,8 +292,11 @@ def test_every_operation_has_a_cli_command() -> None:
     from opal_listener.cli.main import OPERATION_COMMANDS
 
     docs = {"openapi", "swagger_ui_html", "swagger_ui_redirect", "redoc_html"}
+    # Infrastructure probes for external monitors (k8s liveness/readiness); intentionally
+    # have no CLI command — `service health` is the human-facing health check.
+    probe_ops = {"opal_health_live_get", "opal_health_ready_get"}
     operations = {r.name for r in _iter_routes(create_app(AppSettings()).routes) if hasattr(r, "methods")} - docs
-    missing = sorted(operations - set(OPERATION_COMMANDS))
+    missing = sorted(operations - set(OPERATION_COMMANDS) - probe_ops)
     assert not missing, f"REST operations without CLI command: {missing}"
     assert not sorted(set(OPERATION_COMMANDS) - operations), "stale CLI mapping entries"
 
@@ -315,7 +319,9 @@ def test_web_ui_parity_table_matches_api_and_cli(generated: dict[str, Any]) -> N
             api[name] = (method.upper(), path)
     assert {n: (m, p) for n, (m, p, _) in ui.items()} == api
     for name, (_m, _p, cli) in ui.items():
-        assert OPERATION_COMMANDS[name] in cli, f"{name}: UI says '{cli}', CLI says '{OPERATION_COMMANDS[name]}'"
+        command = OPERATION_COMMANDS.get(name)
+        if command is not None:
+            assert command in cli, f"{name}: UI says '{cli}', CLI says '{command}'"
 
 
 def test_info_version_matches_contract(generated: dict[str, Any]) -> None:
@@ -504,3 +510,55 @@ def test_opal_correlation_headers_stamped_at_runtime(client: TestClient) -> None
     assert invalid.json()["error"]["code"] == "invalid_header"
     assert invalid.headers["X-Opal-Transaction-Id"]
     assert invalid.headers["X-Opal-Request-Id"]
+
+
+# --- Strict conformance: the generated spec must not silently exceed the contract ---------
+
+
+def test_no_undocumented_operations(generated: dict[str, Any]) -> None:
+    """Every generated (path, method, operationId) must be declared by the contract — an op
+    that exists only in code is drift the contract has not ratified."""
+    extra = []
+    for path, item in generated["paths"].items():
+        for method, op in item.items():
+            if method not in METHODS:
+                continue
+            want = CONTRACT["paths"].get(path, {}).get(method)
+            if want is None:
+                extra.append(f"{method.upper()} {path}")
+            elif want.get("operationId") != op.get("operationId"):
+                extra.append(f"{method.upper()} {path}: operationId {op.get('operationId')}")
+    assert not extra, f"generated operations missing from the contract: {extra}"
+
+
+def test_no_undocumented_response_codes(generated: dict[str, Any]) -> None:
+    """Every response status code a generated op advertises must be a code the contract
+    documents — an undocumented code is behavior callers cannot anticipate."""
+    extra = {}
+    for path, item in CONTRACT["paths"].items():
+        for method in METHODS:
+            if method not in item or path not in generated["paths"]:
+                continue
+            want_codes = set(item[method]["responses"])
+            got_codes = set(generated["paths"][path][method]["responses"])
+            if undocumented := got_codes - want_codes:
+                extra[f"{method.upper()} {path}"] = sorted(undocumented)
+    assert not extra, f"generated response codes missing from the contract: {extra}"
+
+
+def test_documented_if_match_is_enforced(client: TestClient) -> None:
+    """Behavioral conformance: every operation that declares a required If-Match parameter
+    must return 428 when the header is omitted — not merely document the requirement."""
+    violations = []
+    for path, item in CONTRACT["paths"].items():
+        for method in METHODS:
+            if method not in item:
+                continue
+            params = item[method].get("parameters", [])
+            if not any(p.get("name") == "If-Match" and p.get("in") == "header" for p in params):
+                continue
+            url = re.sub(r"\{[^}]+\}", "nonexistent-0", path)
+            response = client.request(method.upper(), url, json={})
+            if response.status_code != 428:
+                violations.append(f"{method.upper()} {path} -> {response.status_code}")
+    assert not violations, f"If-Match declared but not enforced: {violations}"

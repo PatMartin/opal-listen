@@ -9,8 +9,6 @@ cd "$(dirname "$0")/.."
 source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate
 
 # --- Health and identity ---
-opal listen service live
-opal listen service ready
 opal listen service health
 
 # --- Catalog reads ---
@@ -54,16 +52,16 @@ opal listen reaction list
 opal listen reaction get kitchen_lights
 
 # Dry-run against a literal payload — shows ✓/✗ per reaction with the failing condition
-opal listen reaction test --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}'
-opal listen reaction test --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "den"}}'
+opal listen test reaction --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}'
+opal listen test reaction --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "den"}}'
 
 # Dry-run with a REAL utterance through the live pipeline (needs the service)
-opal listen reaction test --text "turn on the kitchen light"
+opal listen test reaction --text "turn on the kitchen light"
 
 # Actually run the matching command (stdin JSON -> python -m json.tool echoes it).
 # Note: the payload must satisfy every condition — a missing field (e.g. no
 # intent_confidence here) makes the reaction NOT match and nothing executes.
-opal listen reaction test --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}' --execute
+opal listen test reaction --payload '{"intent_name": "light_turn_on", "slot_values": {"room_name": "kitchen"}, "intent_confidence": 0.9}' --execute
 
 # Update: rename + retime; toggle off and on
 opal listen reaction update kitchen_lights --name lights_kitchen --timeout 30
@@ -72,9 +70,9 @@ opal listen reaction enable lights_kitchen
 
 # Turn firing on for the running service (a mic match would now run the command),
 # confirm, then switch it back off
-opal listen config setting set --name reactions_enabled --value true
-opal listen config setting show --name reactions_enabled
-opal listen config setting set --name reactions_enabled --value false
+opal listen config setting set reactions_enabled true
+opal listen config setting show reactions_enabled
+opal listen config setting set reactions_enabled false
 
 # Disarm the reaction so the smoke run leaves no state behind
 opal listen reaction remove lights_kitchen
@@ -82,7 +80,7 @@ opal listen reaction remove lights_kitchen
 # Execution journal (may not exist yet — only live-mic matches write it)
 opal listen reaction log --limit 5 || true
 
-# --- Live configuration validation (reactions.yaml is intentionally outside it) ---
+# --- Config bundle validation (the six YAML files; reactions.yaml is intentionally outside it) ---
 opal listen config validate
 
 # --- The live command tree ---

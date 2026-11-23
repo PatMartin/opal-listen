@@ -22,6 +22,8 @@ from opal_listener.service.providers.base import (
     SttRefiner,
     Transcriber,
     Transcript,
+    TranscriptionEngine,
+    WakewordEngine,
     WakewordEvent,
     WakewordEventKind,
 )
@@ -49,6 +51,9 @@ class CommandOutcome:
     # listener run generation that captured this command; a result finalizing under a newer
     # generation (stop/start boundary) is recorded but never dispatched
     generation: int = 0
+    # capture-order dispatch ticket assigned by ListenerService at session_end; external
+    # side effects (event publish, reactions) are released strictly in seq order
+    seq: int = 0
 
 
 @dataclass
@@ -68,7 +73,10 @@ class _Session:
 class RecognitionPipeline:
     def __init__(
         self,
-        provider: ListenerProvider,
+        provider: ListenerProvider | None = None,
+        *,
+        wakeword_engine: WakewordEngine | None = None,
+        transcription_engine: TranscriptionEngine | None = None,
         wakewords: Sequence[str],
         wakeword_thresholds: dict[str, float],
         grammar: Sequence[str] | None,
@@ -78,7 +86,16 @@ class RecognitionPipeline:
         refiner: SttRefiner | None = None,
         debug: bool = False,
     ) -> None:
-        self.provider = provider
+        # `provider` is the combined-provider shorthand: a single ListenerProvider serving both
+        # engine roles (Vosk). Split configs pass wakeword_engine / transcription_engine instead.
+        if provider is not None:
+            wakeword_engine = wakeword_engine or provider
+            transcription_engine = transcription_engine or provider
+        if wakeword_engine is None or transcription_engine is None:
+            raise ValueError("pipeline needs a wakeword engine and a transcription engine")
+        self.provider = transcription_engine  # legacy attribute: the engine behind transcription
+        self.wakeword_engine = wakeword_engine
+        self.transcription_engine = transcription_engine
         self.wakewords = list(wakewords)
         self.wakeword_thresholds = wakeword_thresholds
         self.grammar = list(grammar) if grammar is not None else None
@@ -87,7 +104,7 @@ class RecognitionPipeline:
         self.cooldown_ms = cooldown_ms
         self.refiner = refiner
         self.debug = debug
-        self.detector = provider.create_wakeword_detector(self.wakewords) if self.wakewords else None
+        self.detector = wakeword_engine.create_wakeword_detector(self.wakewords) if self.wakewords else None
         self._background_vad = EnergyVad(vad_settings, frame_ms)
         self._ring: deque[bytes] = deque(maxlen=max(1, vad_settings.pre_roll_ms // frame_ms))
         self._session: _Session | None = None
@@ -142,7 +159,7 @@ class RecognitionPipeline:
         session = _Session(
             session_id=uuid.uuid4().hex[:12],
             wakeword=event.wakeword,
-            transcriber=self.provider.create_transcriber(self.grammar),
+            transcriber=self.transcription_engine.create_transcriber(self.grammar),
             vad=vad,
             wake_pending=True,
         )
@@ -313,7 +330,7 @@ class RecognitionPipeline:
 
     def transcribe_direct(self, pcm_frames: Sequence[bytes]) -> CommandOutcome:
         """Transcribe audio without a wakeword session (audio tests with require_wakeword=False)."""
-        transcriber = self.provider.create_transcriber(self.grammar)
+        transcriber = self.transcription_engine.create_transcriber(self.grammar)
         for frame in pcm_frames:
             transcriber.accept(frame)
         ended_at = time.monotonic()

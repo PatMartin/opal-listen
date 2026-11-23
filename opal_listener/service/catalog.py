@@ -264,7 +264,14 @@ def _deactivate_others(session: Session, keep_id: int | None) -> None:
 
 
 # The opal-listen compartment lives in dedicated columns; everything else is stored verbatim.
-_COMPARTMENT_FIELDS = ("wakeword_names", "confidence_thresholds", "vad_settings", "enabled_intents", "enabled_slots", "model_paths")
+_COMPARTMENT_FIELDS = (
+    "wakeword_names",
+    "confidence_thresholds",
+    "vad_settings",
+    "enabled_intents",
+    "enabled_slots",
+    "model_paths",
+)
 _COMPARTMENT_DEFAULTS: dict[str, Any] = {
     "wakeword_names": [],
     "confidence_thresholds": {},

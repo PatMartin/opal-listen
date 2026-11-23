@@ -106,6 +106,48 @@ def test_wakeword_crud(client: TestClient) -> None:
     assert result["wakeword"] is None
 
 
+def test_persona_crud(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/persona/",
+        headers={"If-Match": _etag(client, "/api/v1/persona/")},
+        json={"persona_id": "alice", "name": "Alice", "voice_id": "opal-female-1", "description": "primary"},
+    )
+    assert created.status_code == 201
+    assert created.headers["location"] == "/api/v1/persona/alice"
+    persona = created.json()
+    assert persona["persona_id"] == "alice" and persona["enabled"] is True
+
+    assert (
+        client.post(
+            "/api/v1/persona/",
+            headers={"If-Match": _etag(client, "/api/v1/persona/")},
+            json={"persona_id": "alice", "name": "Alice again"},
+        ).status_code
+        == 409
+    )
+
+    path = "/api/v1/persona/alice"
+    assert client.get(path).json()["voice_id"] == "opal-female-1"
+    assert any(p["persona_id"] == "alice" for p in client.get("/api/v1/persona/").json())
+    assert client.get("/api/v1/persona/?enabled=false").json() == []
+
+    report = client.post(f"{path}/validate").json()
+    assert report["valid"] is True and report["errors"] == []
+
+    assert client.patch(path, json={"enabled": False}).status_code == 428  # missing If-Match
+    assert client.patch(path, json={"enabled": False}, headers={"If-Match": '"stale"'}).status_code == 412
+    etag = _etag(client, path)
+    assert client.patch(path, json={"enabled": False}, headers={"If-Match": etag}).json()["enabled"] is False
+    assert client.get("/api/v1/persona/?enabled=false").json()[0]["persona_id"] == "alice"
+
+    disabled = client.post(f"{path}/validate").json()
+    assert disabled["valid"] is False and "disabled" in disabled["errors"][0]
+
+    assert client.delete(path, headers={"If-Match": _etag(client, path)}).status_code == 204
+    assert client.get(path).status_code == 404
+    assert client.post("/api/v1/persona/ghost/validate").status_code == 404
+
+
 def test_intent_and_phrase_crud(client: TestClient) -> None:
     created = client.post(
         "/api/v1/intent/",
@@ -294,12 +336,22 @@ def test_profile_envelope_compartments(client: TestClient) -> None:
     assert again["modules"]["opal-say"] == {"voice_id": "en-us-lessac-medium", "speed": 1.2}
 
     # shared is a closed empty object: members rejected; unknown top-level fields rejected.
-    assert client.patch(
-        f"/api/v1/profile/{body['id']}", json={"shared": {"bogus": 1}}, headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")}
-    ).status_code == 422
-    assert client.patch(
-        f"/api/v1/profile/{body['id']}", json={"wakeword_names": []}, headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")}
-    ).status_code == 422
+    assert (
+        client.patch(
+            f"/api/v1/profile/{body['id']}",
+            json={"shared": {"bogus": 1}},
+            headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.patch(
+            f"/api/v1/profile/{body['id']}",
+            json={"wakeword_names": []},
+            headers={"If-Match": _etag(client, f"/api/v1/profile/{body['id']}")},
+        ).status_code
+        == 422
+    )
 
 
 def test_profiles_activate_and_filters(client: TestClient) -> None:
@@ -346,51 +398,39 @@ def test_profiles_activate_and_filters(client: TestClient) -> None:
 def test_setting_put_validation(client: TestClient) -> None:
     """Per-key PUT validation (v2: the atomic collection PATCH is retired)."""
     etag = _etag(client, "/api/v1/setting/")
-    updated = client.put(
-        "/api/v1/setting/cooldown_ms", json={"value": "2500"}, headers={"If-Match": etag}
-    ).json()
+    updated = client.put("/api/v1/setting/cooldown_ms", json={"value": "2500"}, headers={"If-Match": etag}).json()
     assert updated["value"] == 2500 and updated["configured_value"] == 2500
     etag = _etag(client, "/api/v1/setting/")
     assert (
-        client.put("/api/v1/setting/cooldown_ms", json={"value": "soon"}, headers={"If-Match": etag}).status_code
-        == 422
+        client.put("/api/v1/setting/cooldown_ms", json={"value": "soon"}, headers={"If-Match": etag}).status_code == 422
     )
     assert (
-        client.put("/api/v1/setting/not_a_setting", json={"value": "1"}, headers={"If-Match": etag}).status_code
-        == 404
+        client.put("/api/v1/setting/not_a_setting", json={"value": "1"}, headers={"If-Match": etag}).status_code == 404
     )
     updated = client.put(
         "/api/v1/setting/auto_capture_failures", json={"value": "no"}, headers={"If-Match": etag}
     ).json()
     assert updated["value"] is False
     assert client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}).status_code == 428  # no If-Match
-    stale = client.put(
-        "/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": '"stale-etag"'}
-    )
+    stale = client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": '"stale-etag"'})
     assert stale.status_code == 412
-    assert (
-        client.put("/api/v1/setting/cooldown_ms", json={}, headers={"If-Match": etag}).status_code == 422
-    )
+    assert client.put("/api/v1/setting/cooldown_ms", json={}, headers={"If-Match": etag}).status_code == 422
     # an invalid write is rejected: the value on record is unchanged
     etag = _etag(client, "/api/v1/setting/")
-    bad = client.put(
-        "/api/v1/setting/event_publication_enabled", json={"value": "maybe"}, headers={"If-Match": etag}
-    )
+    bad = client.put("/api/v1/setting/event_publication_enabled", json={"value": "maybe"}, headers={"If-Match": etag})
     assert bad.status_code == 422
     settings = client.get("/api/v1/setting/").json()
     assert settings["event_publication_enabled"] == "false" and settings["cooldown_ms"] == "2500"
     etag = _etag(client, "/api/v1/setting/")
-    restored = client.put(
-        "/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": etag}
-    ).json()
+    restored = client.put("/api/v1/setting/cooldown_ms", json={"value": "1500"}, headers={"If-Match": etag}).json()
     assert restored["value"] == 1500
 
 
 def test_settings_collection_patch_is_retired(client: TestClient) -> None:
     etag = _etag(client, "/api/v1/setting/")
-    assert (
-        client.patch("/api/v1/setting/", json={"cooldown_ms": "2500"}, headers={"If-Match": etag}).status_code
-        in (404, 405)
+    assert client.patch("/api/v1/setting/", json={"cooldown_ms": "2500"}, headers={"If-Match": etag}).status_code in (
+        404,
+        405,
     )
 
 
@@ -543,27 +583,6 @@ def test_failed_utterance_crud(client: TestClient) -> None:
     assert client.delete(f"/api/v1/failed_utterance/{created['id']}").status_code == 204
 
 
-def test_promotion_and_regression_routes_are_retired(client: TestClient) -> None:
-    """v0.5.0 removed POST .../promote and the whole /api/v1/regression/ resource."""
-    assert (
-        client.post(
-            "/api/v1/failed_utterance/1/promote",
-            json={"intent_id": "1"},
-            headers={"If-Match": '"precondition"'},
-        ).status_code
-        == 404
-    )
-    for method, path in (
-        ("GET", "/api/v1/regression/"),
-        ("POST", "/api/v1/regression/"),
-        ("POST", "/api/v1/regression/run"),
-        ("GET", "/api/v1/regression/1"),
-        ("PATCH", "/api/v1/regression/1"),
-        ("DELETE", "/api/v1/regression/1"),
-    ):
-        assert client.request(method, path).status_code == 404, (method, path)
-
-
 def test_health_report(client: TestClient) -> None:
     report = client.get("/api/v1/health/").json()
     names = {c["name"] for c in report["details"]["checks"]}
@@ -597,3 +616,37 @@ def test_pipeline_start_stop_idempotent(client: TestClient, fake_provider: type)
     status = client.get("/api/v1/recognition/status").json()
     assert status["running"] is False
     assert status["provider"] == "fake"
+
+
+def test_health_probes(client: TestClient, monkeypatch) -> None:
+    import opal_listener.view.api.health as health_api
+    from opal_listener.service.health import run_health_checks
+
+    live = client.get("/api/v1/health/live")
+    assert live.status_code == 200
+    assert live.json()["status"] == "ok" and live.json()["ready"] is True
+
+    ready = client.get("/api/v1/health/ready")
+    assert ready.status_code in (200, 503)
+    assert ready.json()["ready"] == (ready.status_code == 200)
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    monkeypatch.setattr(service.db, "ping", lambda: (_ for _ in ()).throw(RuntimeError("db gone")))
+    down = client.get("/api/v1/health/live")
+    assert down.status_code == 503
+    assert down.json()["status"] == "unavailable" and "db gone" in down.json()["details"]["error"]
+    monkeypatch.undo()
+
+    baseline = run_health_checks(service)
+    degraded = baseline.model_copy(update={"status": "degraded"})
+    monkeypatch.setattr(health_api, "run_health_checks", lambda svc: degraded)
+    resp = client.get("/api/v1/health/ready")
+    assert resp.status_code == 200 and resp.json()["status"] == "degraded"
+
+    failed = baseline.model_copy(
+        update={"status": "error", "details": {"checks": [{"name": "x", "status": "error", "detail": "boom"}]}}
+    )
+    monkeypatch.setattr(health_api, "run_health_checks", lambda svc: failed)
+    resp = client.get("/api/v1/health/ready")
+    assert resp.status_code == 503 and resp.json()["ready"] is False
+    assert resp.json()["details"]["failures"] == ["boom"]

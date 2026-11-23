@@ -17,3 +17,4 @@ resources/models/
 resources/vosk/
 logs/
 !.env.example
+local/

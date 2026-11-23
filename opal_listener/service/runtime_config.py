@@ -71,6 +71,8 @@ class RuntimeSnapshot:
     filler_words: tuple[str, ...]
     warnings: tuple[str, ...] = ()
     provider_name: str = "vosk"
+    wakeword_engine_name: str = ""  # resolved at compile: engine name or provider_name
+    transcription_engine_name: str = ""
     refiner_name: str = "none"
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -250,6 +252,8 @@ def compile_bundle(bundle: ConfigBundle, version: int = 0) -> tuple[CompileRepor
         filler_words=tuple(parse_csv(str(settings["filler_words"]))),
         warnings=tuple(report.warnings),
         provider_name=str(settings["listener_provider"]),
+        wakeword_engine_name=str(settings.get("wakeword_engine") or settings["listener_provider"]),
+        transcription_engine_name=str(settings.get("transcription_engine") or settings["listener_provider"]),
         refiner_name=str(settings["stt_refiner"]),
     )
     return report, snapshot

@@ -34,10 +34,33 @@ def _provider_choices() -> tuple[str, ...]:
     return tuple(sorted(available_providers()))
 
 
+def _wakeword_engine_choices() -> tuple[str, ...]:
+    from opal_listener.service.providers.registry import available_wakeword_engines
+
+    return ("", *sorted(available_wakeword_engines()))
+
+
+def _transcription_engine_choices() -> tuple[str, ...]:
+    from opal_listener.service.providers.registry import available_transcription_engines
+
+    return ("", *sorted(available_transcription_engines()))
+
+
+_DYNAMIC_CHOICES = {
+    "listener_provider": _provider_choices,
+    "wakeword_engine": _wakeword_engine_choices,
+    "transcription_engine": _transcription_engine_choices,
+}
+
+
 SETTINGS: dict[str, SettingDef] = {
     d.key: d
     for d in [
         SettingDef("listener_provider", str, "vosk", "stt", "ListenerProvider implementation"),
+        SettingDef("wakeword_engine", str, "", "stt",
+                   "Wakeword-detection engine ('' = use listener_provider)"),
+        SettingDef("transcription_engine", str, "", "stt",
+                   "Speech-to-text engine ('' = use listener_provider)"),
         SettingDef("vosk_model_path", str, lambda: get_app_settings().vosk_model_path, "stt",
                    "Default Vosk model directory (profiles may override via model_paths.vosk_model)"),
         SettingDef("stt_mode", str, "grammar", "stt", "grammar: constrain STT to intent vocabulary; open: dictation",
@@ -57,6 +80,9 @@ SETTINGS: dict[str, SettingDef] = {
         SettingDef("audio_device", str, "", "stt", "Input device index or name substring ('' = default)"),
         SettingDef("audio_capture_rate", int, 0, "stt", "Capture sample rate (0 = auto)", minimum=0, maximum=192000),
         SettingDef("audio_block_ms", int, 100, "stt", "Audio frame size in ms", minimum=20, maximum=500),
+        SettingDef("recovery_max_attempts", int, 8, "stt",
+                   "Consecutive recovery attempts before the listener gives up and reports error "
+                   "(0 = retry forever)", minimum=0),
         SettingDef("auto_start_listener", bool, False, "settings", "Start the microphone pipeline on startup",
                    restart_required=True),
         SettingDef("cooldown_ms", int, 1500, "settings", "Ignore wakewords for this long after a session",
@@ -84,7 +110,7 @@ SETTINGS: dict[str, SettingDef] = {
                    "Days to keep transcript text in recognition logs; 0 = forever (rows stay)",
                    minimum=0, maximum=36500),
         SettingDef("unreviewed_failure_ttl_days", int, 90, "settings",
-                   "Auto-delete unreviewed, unpromoted failed utterances after N days; 0 = forever",
+                   "Auto-delete unreviewed failed utterances after N days; 0 = forever",
                    minimum=0, maximum=36500),
     ]
 }  # fmt: skip
@@ -122,7 +148,8 @@ def parse_setting(key: str, raw: Any) -> Scalar:
             value = str(raw)
     except (TypeError, ValueError) as exc:
         raise SettingValueError(f"setting '{key}': {exc}") from exc
-    choices = definition.choices or (_provider_choices() if key == "listener_provider" else None)
+    dynamic = _DYNAMIC_CHOICES.get(key)
+    choices = definition.choices or (dynamic() if dynamic else None)
     if choices and value not in choices:
         raise SettingValueError(f"setting '{key}' must be one of {', '.join(choices)}")
     if isinstance(value, int | float) and not isinstance(value, bool):

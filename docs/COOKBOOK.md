@@ -47,7 +47,7 @@ seeded `light_turn_on` intent already uses `{room_name}` — teach it a new
 nickname and the slot comes back canonical.
 
 ```bash
-opal listen slot values room_name
+opal listen slot value list room_name
 opal listen slot add-alias room_name office "the den"
 opal listen test text "computer, turn on the den light" --expect-intent light_turn_on --verbose
 # -> "slot_values": {"room_name": "office"}
@@ -80,7 +80,7 @@ opal listen config setting set --name wakeword_distractors --value "commuter,com
 opal listen failed list
 ```
 
-### 5. Regression-test a folder of golden WAVs
+### 5. Batch-test a folder of golden WAVs
 
 `test audio` feeds a real 16-bit PCM file through wakeword detection, STT and
 intent matching end-to-end. `--require-wakeword` makes a file score as `no_match`
@@ -95,12 +95,13 @@ opal listen test audio samples/negatives/smalltalk.wav --require-wakeword --verb
 
 ### 6. Open a live sound-engineer console
 
-`listen-debug` streams every SSE event: a real-time dBFS level meter, partial
-transcripts, VAD and wakeword events, then the final result. The fastest way to
-answer "did it even hear me?".
+The live SSE stream (`GET /api/v1/recognition/stream?debug=true`) emits every event:
+a real-time dBFS level meter, partial transcripts, VAD and wakeword events, then
+the final result. The fastest way to answer "did it even hear me?". The CLI's
+`test listen` prints results only; the debug stream is a raw curl away:
 
 ```bash
-opal listen test listen-debug --duration 60
+curl -N "http://localhost:8000/api/v1/recognition/stream?debug=true"
 ```
 
 ### 7. Run a local script when a phrase matches — no event bus
@@ -130,26 +131,31 @@ Only live-microphone matches fire. `test text`/`test audio` never do, so
 diagnostics can't trigger side effects. Repeats inside `dedup_window_ms` are
 suppressed as well.
 
-### 8. Put a regression gate in front of catalog edits
+### 8. Put a phrase gate in front of catalog edits
 
-Pin the phrases that matter as a checklist of `test text --expect-intent`
-assertions — it exits 1 on any mismatch, before and after every vocabulary
-change.
+Keep the phrases that matter in a file and make `test text --expect-intent` a
+hard gate — it exits 1 when a phrase resolves to a different intent, before and
+after every vocabulary change.
 
 ```bash
-opal listen test text "turn on the kitchen light" --expect-intent light_turn_on --no-save
-opal listen test text "turn on the den light" --expect-intent light_turn_on --no-save
-opal listen test text "order a pizza" --expect-intent no_match --no-save
+while IFS='|' read -r phrase intent; do
+  opal listen test text "$phrase" --expect-intent "$intent" --no-save
+done <<'EOF'
+turn on the kitchen light|light_turn_on
+turn on the den light|light_turn_on
+order a pizza|no_match
+EOF
 ```
 
 ### 9. Wire the service into CI, systemd and Kubernetes
 
-Three probes for three depths of "is it healthy": `live` (process + DB),
-`ready` (config compiles, provider loads), `health` (every startup check,
-human-readable). All exit non-zero on failure.
+Four probe shapes for four depths of "is it healthy": `ping` (TCP/HTTP up),
+`live` (process + DB) and `ready` (config compiles, provider loads) probes are
+REST-only (no CLI commands); `service health` is the aggregate report. `service health`
+exits non-zero on failure.
 
 ```bash
-opal listen service live && opal listen service ready
+curl -sf http://localhost:8000/api/v1/health/live && curl -sf http://localhost:8000/api/v1/health/ready
 opal listen service health   # ✓/!/✗ per check: sqlite, model, microphone, intents, slots
 ```
 
@@ -227,16 +233,13 @@ opal listen profile activate default
 ### 15. Turn "it didn't understand me" into training data
 
 Users report misses; you log them, review, and write the corrected transcript
-into the right intent yourself — `intent add-phrase`, generalizing slot values
-to `{placeholders}` — then mark the failure reviewed.
+into the right intent as a training phrase.
 
 ```bash
 opal listen failed add "light on in the kitchen" --expected-intent light_turn_on \
   --notes "field report: quiet voice at distance"
 opal listen failed list --unreviewed
-opal listen intent add-phrase light_turn_on --phrase "light on in the {room_name}"
-opal listen failed update 7 --reviewed --expected-intent light_turn_on
-opal listen test text "light on in the kitchen" --expect-intent light_turn_on --no-save
+opal listen phrase add light_turn_on "light on in the {room_name}"
 ```
 
 ### 16. Mine the recognition history for what people really say
@@ -250,7 +253,7 @@ intent or match status there to find where the model leaks.
 opal listen service perf summary
 opal listen service perf history --limit 50
 opal listen failed list
-opal listen failed get 424
+opal listen failed show 424
 ```
 
 ### 17. Audit your wake-to-intent latency budget
@@ -267,16 +270,16 @@ opal listen service perf history --limit 25
 
 ### 18. Rehearse a reaction before it can fire
 
-`reaction test` evaluates every armed reaction against a result without
+`test reaction` evaluates every armed reaction against a result without
 running anything, and names the condition that failed. `--text` gets the payload
 from a real recognition, so you test exactly what the live pipeline will
 produce. Add `--execute` only when you want to debug the script itself.
 
 ```bash
 opal listen reaction list
-opal listen reaction test --text "computer, turn on the den light"   # ✓ lights — would fire
-opal listen reaction test --text "computer, what time is it"         # ✗ (intent_name eq 'light_turn_on')
-opal listen reaction test --payload \
+opal listen test reaction --text "computer, turn on the den light"   # ✓ lights — would fire
+opal listen test reaction --text "computer, what time is it"         # ✗ (intent_name eq 'light_turn_on')
+opal listen test reaction --payload \
   '{"intent_name":"light_turn_on","slot_values":{"room_name":"office"},"intent_confidence":0.9}' --execute
 opal listen reaction disable lights                  # park it; keeps conditions and actions
 opal listen config setting set --name reactions_enabled --value false      # or stop all reactions at once
@@ -370,13 +373,14 @@ WAV:
 
 ### 22. Dry-fire the loop without a microphone
 
-`opal listen event publish` writes straight onto the ZeroMQ bus — inject a
-synthetic `opal.listen.intent.match` envelope and watch the rule fire, no
-wakeword required. Then audit the action run.
+Inject a synthetic `opal.listen.intent.match` envelope through the opal-event
+ingest route and watch the rule fire, no wakeword required. Then audit the
+action run.
 
 ```bash
-opal listen event publish opal.listen.intent.match \
-  '{"intent_name":"light_turn_on","slot_values":{"room_name":"kitchen"},"source":"cli-test"}'
+curl -s -X POST http://localhost:8080/api/v1/event/ \
+  -H 'content-type: application/json' \
+  -d '{"topic":"opal.listen.intent.match","data":{"intent_name":"light_turn_on","slot_values":{"room_name":"kitchen"},"source":"cli-test"}}'
 opal event executions list
 opal event list --topic opal.listen.intent.match --limit 5
 ```
@@ -451,7 +455,7 @@ speech request in talk — one utterance, one audit trail.
 opal listen --json failed list
 opal event executions list --limit 10
 opal event get <event-id from the execution>
-opal listen failed get <failed-utterance-id>   # expected intent, notes, review state
+opal listen failed show <failed-utterance-id>   # expected intent, notes, review state
 ```
 
 ### 27. "Good night" — one phrase, a house-wide scene
@@ -569,7 +573,7 @@ illness.
 cat > /opt/opal/health_sweep.sh <<'SH'
 #!/usr/bin/env bash
 fail=""
-opal listen service live   >/dev/null 2>&1 || fail="$fail listen"
+opal listen service health   >/dev/null 2>&1 || fail="$fail listen"
 opal talk health          >/dev/null 2>&1 || fail="$fail talk"
 opal event health         >/dev/null 2>&1 || fail="$fail event"
 opal think health         >/dev/null 2>&1 || fail="$fail think"
@@ -668,10 +672,10 @@ to a bug report.
 
 ```bash
 day=$(date +%s); mkdir -p incident-$day
+opal listen --json service health           > incident-$day/listen-info.json
 opal listen --json service health        > incident-$day/listen-health.json
-opal listen --json service ready         > incident-$day/listen-ready.json
 opal listen --json pipeline status       > incident-$day/pipeline.json
-opal listen --json service perf summary  > incident-$day/perf.json
+opal listen --json perf summary          > incident-$day/perf.json
 opal event stats                         > incident-$day/event-stats.txt
 opal event executions list --limit 50    > incident-$day/executions.txt
 opal talk info                           > incident-$day/talk-info.txt
@@ -683,5 +687,5 @@ tar -czf incident-$day.tgz incident-$day
 ---
 
 *These recipes assume defaults unless noted. Every service documents its own
-surface: `opal listen docs/CLI.md`, each sibling's `docs/`, and the contracts in
+surface: `opal-listen/docs/CLI.md`, each sibling's `docs/`, and the contracts in
 `opal-api/openapi/`.*

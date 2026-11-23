@@ -98,7 +98,7 @@ security:
   http_action_allowlist:
     - {{host: 127.0.0.1, ports: [{SAY_PORT}], schemes: [http]}}
 persistence:
-  database: {str(tmp / 'opal_event.db').replace(chr(92), '/')}
+  database: {str(tmp / "opal_event.db").replace(chr(92), "/")}
   event_mode: all
   retention_days: 7
   execution_history_enabled: true
@@ -251,9 +251,7 @@ rules:
             events = httpx.get(f"{EVENT_BASE}/api/v1/event/", params={"topic": TOPIC}, timeout=5).json()
             if events:
                 event_id = events[0]["id"]
-                receipts = httpx.get(
-                    f"{EVENT_BASE}/api/v1/execution/", params={"event_id": event_id}, timeout=5
-                ).json()
+                receipts = httpx.get(f"{EVENT_BASE}/api/v1/execution/", params={"event_id": event_id}, timeout=5).json()
                 if receipts:
                     rec = receipts[0]
                     exec_ok = rec["status"] == "completed" and rec.get("http_status") == 200

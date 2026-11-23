@@ -93,18 +93,15 @@ def prune_transcripts(session: Session, retention_days: int) -> int:
 
 
 def prune_failed_utterances(session: Session, ttl_days: int) -> int:
-    """Hard-delete unreviewed, unpromoted failed utterances older than ``ttl_days``.
+    """Hard-delete unreviewed failed utterances older than ``ttl_days``.
 
-    Reviewed or promoted failures are intentionally curated and always kept; ``0`` keeps
+    Reviewed failures are intentionally curated and always kept; ``0`` keeps
     everything. Returns the number of rows deleted."""
     if ttl_days <= 0:
         return 0
     cutoff = datetime.now(UTC) - timedelta(days=ttl_days)
     result = session.exec(
-        delete(FailedUtterance)
-        .where(col(FailedUtterance.created_at) < cutoff)
-        .where(FailedUtterance.reviewed == False)  # noqa: E712
-        .where(FailedUtterance.promoted_to_phrase == False)  # noqa: E712
+        delete(FailedUtterance).where(col(FailedUtterance.created_at) < cutoff).where(FailedUtterance.reviewed == False)  # noqa: E712
     )
     return result.rowcount or 0
 
@@ -136,9 +133,7 @@ def count_logs(session: Session) -> dict[str, int]:
 # --- failed utterances -----------------------------------------------------------------------
 
 
-def list_failed(
-    session: Session, reviewed: bool | None, limit: int, offset: int = 0
-) -> list[FailedUtterance]:
+def list_failed(session: Session, reviewed: bool | None, limit: int, offset: int = 0) -> list[FailedUtterance]:
     query = select(FailedUtterance)
     if reviewed is not None:
         query = query.where(FailedUtterance.reviewed == reviewed)

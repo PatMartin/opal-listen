@@ -119,14 +119,10 @@ def test_http_event_publisher_handles_network_failure_gracefully() -> None:
         publisher.close()
 
 
-def _mock_publisher(
-    handler: Callable[[httpx.Request], httpx.Response], **kwargs: Any
-) -> HttpEventPublisher:
+def _mock_publisher(handler: Callable[[httpx.Request], httpx.Response], **kwargs: Any) -> HttpEventPublisher:
     """Publisher whose HTTP client talks to a MockTransport (injected before the worker starts)."""
     publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080", **kwargs)
-    publisher._client = httpx.Client(
-        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler)
-    )
+    publisher._client = httpx.Client(base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler))
     return publisher
 
 
@@ -265,23 +261,31 @@ def test_full_queue_drops_newest_and_records_failures() -> None:
         publisher.close()
 
 
-def test_publish_after_close_reconnects() -> None:
+def test_publish_after_close_is_dropped_not_delivered() -> None:
+    """Post-shutdown publish produces no actionable side effect: no worker resurrection,
+    no delivery — the drop is counted instead."""
     received: list[httpx.Request] = []
     publisher = _mock_publisher(_ok_handler(received))
     publisher.publish("t", {"i": 0})
     assert _wait_until(lambda: len(received) == 1)
     publisher.close()
     assert publisher._worker_thread is None
-    # inject a fresh mock client (the old one was closed by the retiring worker)
-    publisher._client = httpx.Client(
-        base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(_ok_handler(received))
-    )
-    try:
-        publisher.publish("t", {"i": 1})
-        assert _wait_until(lambda: len(received) == 2)
-        assert publisher._worker_thread is not None and publisher._worker_thread.is_alive()
-    finally:
-        publisher.close()
+    publisher.publish("t", {"i": 1})
+    time.sleep(0.2)  # give a hypothetical resurrected worker time to deliver
+    assert len(received) == 1  # nothing delivered after close
+    assert publisher._worker_thread is None or not publisher._worker_thread.is_alive()
+    assert publisher.delivery_failures == 1
+    assert "publisher closed" in (publisher.last_error or "")
+
+
+def test_zmq_publish_after_close_is_dropped() -> None:
+    """Same post-shutdown guarantee for the ZMQ publisher: no socket recreation."""
+    publisher = ZmqEventPublisher("tcp://127.0.0.1:5999")
+    publisher._closed = True  # simulate post-close state without needing a context
+    publisher.publish("t", {"i": 0})
+    assert publisher._socket is None and publisher._context is None
+    assert publisher.delivery_failures == 1
+    assert "publisher closed" in (publisher.last_error or "")
 
 
 def test_default_event_publisher_selection() -> None:
@@ -298,3 +302,82 @@ def test_default_event_publisher_selection() -> None:
     settings_both = AppSettings(event_transport="both")
     with pytest.raises(ValueError, match="does not deduplicate"):
         default_event_publisher(settings_both)
+
+
+def test_delivery_accounting_counters() -> None:
+    """accepted/delivered/failures are tracked separately: a selected dispatch is observable
+    as queue-accepted vs transport-confirmed."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(202, json={"status": "accepted"})
+
+    publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080")
+    publisher._client = httpx.Client(base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler))
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
+        assert _wait_until(lambda: publisher.delivered == 1)
+        assert publisher.accepted == 1 and publisher.delivery_failures == 0
+        stats = publisher.stats()
+        assert stats == {
+            "event_queue_depth": 0.0,
+            "events_accepted": 1.0,
+            "events_delivered": 1.0,
+            "event_delivery_failures": 0.0,
+        }
+    finally:
+        publisher.close()
+
+
+def test_delivery_accounting_on_failure() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": "boom"})
+
+    publisher = HttpEventPublisher(base_url="http://mock-opal-event:8080")
+    publisher._client = httpx.Client(base_url="http://mock-opal-event:8080", transport=httpx.MockTransport(handler))
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
+        assert _wait_until(lambda: publisher.delivery_failures == 1)
+        assert publisher.accepted == 1 and publisher.delivered == 0
+        assert "500" in (publisher.last_error or "")
+        assert publisher.stats()["event_delivery_failures"] == 1.0
+    finally:
+        publisher.close()
+
+
+def test_zmq_publisher_delivery_accounting() -> None:
+    """ZMQ is fire-and-forget: 'delivered' counts frames handed to the socket; failures
+    (oversize, socket errors) are counted with a last_error diagnostic."""
+    publisher = ZmqEventPublisher("tcp://127.0.0.1:5599")
+
+    class FakeSocket:
+        def __init__(self) -> None:
+            self.sent: list[list[bytes]] = []
+            self.fail = False
+
+        def send_multipart(self, frames: list[bytes]) -> None:
+            if self.fail:
+                raise RuntimeError("socket gone")
+            self.sent.append(frames)
+
+        def close(self, linger: int = 0) -> None:
+            pass
+
+    socket = FakeSocket()
+    publisher._socket = socket
+    try:
+        publisher.publish("opal.listen.intent.match", {"intent_name": "x"})
+        assert socket.sent and publisher.delivered == 1 and publisher.delivery_failures == 0
+
+        socket.fail = True
+        publisher.publish("opal.listen.intent.match", {"intent_name": "y"})
+        assert publisher.delivery_failures == 1 and "socket gone" in (publisher.last_error or "")
+
+        publisher.publish("opal.listen.intent.match", {"intent_name": "z" * 2_000_000})
+        assert publisher.delivery_failures == 2 and "exceeds" in (publisher.last_error or "")
+
+        stats = publisher.stats()
+        assert stats["events_accepted"] == 2.0  # the oversized event was rejected before send
+        assert stats["events_delivered"] == 1.0
+        assert stats["event_delivery_failures"] == 2.0
+    finally:
+        publisher.close()

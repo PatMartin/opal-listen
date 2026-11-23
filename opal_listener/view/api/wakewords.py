@@ -80,7 +80,9 @@ def update_wakeword(
     with svc.config_change() as session:
         current = WakewordRead.model_validate(catalog.get_by_ref(session, Wakeword, wakeword_id, "wakeword"))
         require_matching_etag(if_match, item_etag(current), "wakeword")
-        result = WakewordRead.model_validate(catalog.update_wakeword(session, catalog.parse_id(wakeword_id, "wakeword"), data))
+        result = WakewordRead.model_validate(
+            catalog.update_wakeword(session, catalog.parse_id(wakeword_id, "wakeword"), data)
+        )
     return result
 
 

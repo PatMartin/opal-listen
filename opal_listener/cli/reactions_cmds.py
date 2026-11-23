@@ -24,6 +24,7 @@ from rich.text import Text
 from opal_listener.app_settings import AppSettings
 from opal_listener.cli.client import CliError
 from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state
+from opal_listener.cli.test_cmds import test_app
 from opal_listener.service.reactions import (
     OPERATORS,
     ReactionCondition,
@@ -41,7 +42,7 @@ reactions_app = typer.Typer(
 _FILE_HEADER = """\
 # Managed by `opal listen reaction` — edits are safe but comments are not preserved.
 # Reactions fire only on live-mic matches while `reactions_enabled` is true:
-#   opal listen setting set reactions_enabled true
+#   opal listen config setting set --name reactions_enabled --value true
 # Schema: docs/USER_GUIDE.md section 4.5 (intent reactions).
 """
 
@@ -200,8 +201,8 @@ def reactions_list(ctx: typer.Context) -> None:
     render(ctx, data, ("name", "enabled", "conditions", "actions"), "Reactions")
 
 
-@reactions_app.command("get")
-def reactions_get(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
+@reactions_app.command("show")
+def reactions_show(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
     """Show one reaction in full."""
     _, reactions = _load_raw()
     render_kv(ctx, _find(reactions, name), f"Reaction '{name}'")
@@ -306,7 +307,8 @@ def _toggle(ctx: typer.Context, name: str, enabled: bool) -> None:
     done(ctx, f"reaction '{name}' {'enabled' if enabled else 'disabled'}")
 
 
-@reactions_app.command("test")
+# `test reaction` lives under the `test` group alongside `test text|audio|listen`.
+@test_app.command("reaction")
 def reactions_test(
     ctx: typer.Context,
     text: str | None = typer.Option(None, "--text", help="Run a real utterance through test_text"),

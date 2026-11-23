@@ -12,10 +12,10 @@ from opal_listener.models.opal_standard import (
 )
 from opal_listener.models.schemas import (
     PERSONA_ID_PATTERN,
-    OpalValidationReport,
     OpalPersonaCreate,
     OpalPersonaRead,
     OpalPersonaUpdate,
+    OpalValidationReport,
 )
 from opal_listener.service import catalog
 from opal_listener.service.concurrency import collection_etag, item_etag, require_matching_etag

@@ -35,6 +35,15 @@ def _report(service: ListenerService, status: s.HealthStatus, checks: list[s.Hea
         details["audio_devices"] = list_input_devices()
     except Exception:  # noqa: BLE001 - diagnostics never break the report
         details["audio_devices"] = []
+    runtime = service.status()
+    details["listener"] = {
+        "state": runtime.state,
+        "recovery_attempts": runtime.recovery_attempts,
+        "recovery_retry_delay_s": runtime.recovery_retry_delay_s,
+        "last_recovery_reason": runtime.last_recovery_reason,
+        "last_capture_at": runtime.last_capture_at.isoformat() if runtime.last_capture_at else None,
+        "audio_restarts": runtime.audio_restarts,
+    }
     active_id: str | None = None
     try:
         with service.db.session() as session:
@@ -104,17 +113,19 @@ def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
     if report.warnings:
         checks.append(_check("config_warnings", "warning", "; ".join(report.warnings)))
 
-    provider, snap = service.provider_status()
+    engines, snap = service.engine_status()
+    provider = engines[0] if engines else None
     if provider is None or snap is None:
         checks.append(_check("provider", "error", "listener provider unavailable"))
     else:
-        provider_checks = provider.check(snap.provider_config)
-        for c in provider_checks:
+        multi = len({e.name for e in engines}) > 1
+        provider_checks = [(e, c) for e in engines for c in e.check(snap.provider_config)]
+        for engine, c in provider_checks:
             status: s.CheckStatus = "ok" if c.ok else ("error" if c.severity == "error" else "warning")
-            checks.append(_check(c.name, status, c.detail))
-        if all(c.ok for c in provider_checks):
+            checks.append(_check(f"{engine.name}.{c.name}" if multi else c.name, status, c.detail))
+        if all(c.ok for _e, c in provider_checks):
             try:
-                service.provider_for(snap)
+                service.engines_for(snap)
                 checks.append(_check("provider", "ok", f"{snap.provider_name} loaded"))
             except ProviderError as exc:
                 checks.append(_check("provider", "error", str(exc)))
@@ -148,7 +159,12 @@ def run_health_checks(service: ListenerService) -> s.OpalHealthReport:
             checks.append(_check("microphone", missing_status, str(exc)))
 
     runtime = service.status()
-    if runtime.running and runtime.last_error:
+    if runtime.state == "error":
+        checks.append(_check("listener", "error", runtime.last_error or "listener in error state"))
+    elif runtime.state == "recovering":
+        reason = runtime.last_recovery_reason or "unknown failure"
+        checks.append(_check("listener", "warning", f"recovering (attempt {runtime.recovery_attempts}): {reason}"))
+    elif runtime.running and runtime.last_error:
         checks.append(_check("listener", "warning", f"{runtime.state}: {runtime.last_error}"))
     else:
         checks.append(_check("listener", "ok", runtime.state))

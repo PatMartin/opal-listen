@@ -50,7 +50,9 @@ def stop_recognition(svc: ListenerService = Depends(get_service)) -> dict[str, s
     return svc.stop()
 
 
-@router.get("/status", response_model=PipelineStatus, responses=OPAL_422_RESPONSE, operation_id="show_recognition_status")
+@router.get(
+    "/status", response_model=PipelineStatus, responses=OPAL_422_RESPONSE, operation_id="show_recognition_status"
+)
 def show_recognition_status(svc: ListenerService = Depends(get_service)) -> PipelineStatus:
     return svc.status()
 

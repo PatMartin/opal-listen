@@ -189,9 +189,7 @@ class ServiceProcessManager:
             code = proc.poll()
             if code is not None:
                 tail = "\n".join((self.tail_log(5) or {}).get("lines", []))
-                raise OperationFailedError(
-                    f"managed server exited immediately (code {code}); log tail: {tail}"
-                )
+                raise OperationFailedError(f"managed server exited immediately (code {code}); log tail: {tail}")
             time.sleep(0.05)
         status = {
             "state": "running",
@@ -227,6 +225,7 @@ class ServiceProcessManager:
         The tracked pidfile is removed first so a replacement child waiting on
         OPAL_LISTENER_WAIT_FOR_PID observes a clean exit ordering.
         """
+
         def _die() -> None:
             time.sleep(delay)
             try:

@@ -1,4 +1,4 @@
-"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v0.5.0.yaml; extra models/fields are additive."""
+"""Pydantic API contracts. Names and fields mirror openapi/opal_listen_v0.2.0.yaml; extra models/fields are additive."""
 
 from __future__ import annotations
 
@@ -249,7 +249,9 @@ class OpalThinkProfileNamespacePatch(BaseModel):
 
 
 _RateFloat = Annotated[
-    float, Field(ge=0.25, le=4.0), WithJsonSchema({"type": "number", "format": "float", "minimum": 0.25, "maximum": 4.0})
+    float,
+    Field(ge=0.25, le=4.0),
+    WithJsonSchema({"type": "number", "format": "float", "minimum": 0.25, "maximum": 4.0}),
 ]
 _VolumeFloat = Annotated[
     float, Field(ge=0.0, le=2.0), WithJsonSchema({"type": "number", "format": "float", "minimum": 0.0, "maximum": 2.0})
@@ -286,7 +288,9 @@ class OpalProfileModules(BaseModel):
     """Compartment catalog: declared keys use their strict namespace schemas; any other
     well-formed object is accepted and preserved verbatim (unverified)."""
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}}
+    )
 
     opal_bus: OpalBusProfileNamespace | dict[str, Any] | None = Field(default=None, alias="opal-bus")
     opal_listen: OpalListenProfileNamespace | None = Field(default=None, alias="opal-listen")
@@ -314,7 +318,9 @@ class OpalProfileModulesPatch(BaseModel):
     """Patch catalog: compartment values merge field-wise. Only the receiving service's own
     compartment key may be supplied; foreign keys are validated at the route and return 422."""
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}})
+    model_config = ConfigDict(
+        extra="allow", populate_by_name=True, json_schema_extra={"additionalProperties": {"type": "object"}}
+    )
 
     opal_bus: OpalBusProfileNamespacePatch | dict[str, Any] | None = Field(default=None, alias="opal-bus")
     opal_listen: OpalListenProfileNamespacePatch | None = Field(default=None, alias="opal-listen")
@@ -457,8 +463,9 @@ class RecognitionResult(BaseModel):
     audio_level: float | None = None
     deduplicated: bool = False
     refinement_error: str | None = None  # set when refinement failed/timed out and the draft was used
-    # dispatch targets actually invoked for this result (subset of {"local", "event"}); always
-    # empty for diagnostics, deduplicated repeats, and superseded-generation results
+    # dispatch targets selected for this result (subset of {"local", "event"}); always empty
+    # for diagnostics, deduplicated repeats, and superseded-generation results. Selection is
+    # best-effort, not delivery: confirmed delivery is reported via the event_* metrics.
     dispatched_to: list[str] = []
     recognition_log_id: PublicId | None = None
     created_at: datetime
@@ -481,20 +488,20 @@ class PipelineStatus(BaseModel):
     last_audio_level: float | None
     last_result_at: datetime | None
     last_error: str | None
-    # consecutive failed start attempts in the current recovery episode (0 while capture is healthy)
+    # recovery diagnostics: consecutive failed start attempts in the current episode (0 when
+    # healthy), the backoff delay currently in effect, the last failure's reason, and when a
+    # frame was last captured
     recovery_attempts: int = 0
-    # backoff delay currently in effect while `recovering`
     recovery_retry_delay_s: float | None = None
     last_recovery_reason: str | None = None
     last_capture_at: datetime | None = None
     # lightweight reliability counters, reset per run: mic_overflows, dropped_audio_blocks,
     # audio_queue_depth/utilization, refine_queue_depth, refinement_completed/failed,
-    # recoveries, events_accepted/events_delivered/event_delivery_failures, sse_dropped_events,
-    # and last-result stt/refine/intent/publish latencies (ms)
+    # recoveries, and last-result stt/refine/intent/publish latencies (ms)
     metrics: dict[str, float] = {}
 
 
-# --- failures --------------------------------------------------------------------------------
+# --- failures / promotion --------------------------------------------------------------------
 
 
 class FailedUtteranceBase(BaseModel):

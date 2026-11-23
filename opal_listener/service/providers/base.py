@@ -1,6 +1,9 @@
-"""ListenerProvider abstraction: pluggable wakeword detection and speech-to-text engines.
+"""Speech-engine abstractions: pluggable wakeword detection and speech-to-text engines.
 
-The listener_service only depends on these interfaces. Providers receive 16 kHz mono int16 PCM frames.
+`WakewordEngine` and `TranscriptionEngine` are independently selectable roles (the
+`wakeword_engine` / `transcription_engine` settings); `ListenerProvider` is the combined
+compatibility interface implemented by engines like Vosk that serve both. The
+listener_service only depends on these interfaces. Engines receive 16 kHz mono int16 PCM.
 """
 
 from __future__ import annotations
@@ -79,8 +82,12 @@ class Transcriber(ABC):
     def finalize(self) -> Transcript: ...
 
 
-class ListenerProvider(ABC):
-    """Speech engine used by listener_service for wakeword spotting and command transcription."""
+class Engine(ABC):
+    """Shared contract for a selectable speech engine.
+
+    Engines are long-lived: `load()` models once, then spawn per-session workers
+    (WakewordDetector / Transcriber). All engines receive 16 kHz mono int16 PCM frames.
+    """
 
     name: ClassVar[str]
 
@@ -98,15 +105,33 @@ class ListenerProvider(ABC):
     def check(self, config: ProviderConfig) -> list[ProviderCheck]:
         """Cheap readiness checks (e.g. model paths) that do not load models."""
 
+    def info(self) -> dict[str, Any]:
+        return {"name": self.name, "loaded": self.is_loaded()}
+
+
+class WakewordEngine(Engine):
+    """Engine that creates per-session wakeword detectors (e.g. Vosk KWS, openWakeWord)."""
+
     @abstractmethod
     def create_wakeword_detector(self, wakewords: Sequence[str]) -> WakewordDetector: ...
+
+
+class TranscriptionEngine(Engine):
+    """Engine that creates per-session speech-to-text transcribers (e.g. Vosk, faster-whisper)."""
 
     @abstractmethod
     def create_transcriber(self, grammar: Sequence[str] | None) -> Transcriber:
         """grammar=None means open dictation; otherwise constrain recognition to these phrases."""
 
-    def info(self) -> dict[str, Any]:
-        return {"name": self.name, "loaded": self.is_loaded()}
+
+class ListenerProvider(WakewordEngine, TranscriptionEngine):
+    """Legacy combined provider: a WakewordEngine and TranscriptionEngine in one object.
+
+    Compatibility path for engines (like Vosk) that implement both roles — it makes every
+    existing ListenerProvider selectable for either role without adapters.
+    """
+
+    name: ClassVar[str]
 
 
 class SttRefiner(ABC):

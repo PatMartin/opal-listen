@@ -261,15 +261,13 @@ def apply_snapshot(session: Session, snapshot: s.OpalConfigSnapshot) -> dict[str
     existing = {r.key: r for r in session.exec(select(Setting)).all()}
     for key, definition in SETTINGS.items():
         row = existing.get(key) or Setting(key=key, value="")
-        row.value = to_storage(snapshot.settings[key]) if key in snapshot.settings else to_storage(
-            definition.default_value()
+        row.value = (
+            to_storage(snapshot.settings[key]) if key in snapshot.settings else to_storage(definition.default_value())
         )
         row.updated_at = now
         session.add(row)
     session.flush()
-    return {
-        section: len(resources[section]) for section in RESOURCE_SECTIONS
-    } | {"settings": len(snapshot.settings)}
+    return {section: len(resources[section]) for section in RESOURCE_SECTIONS} | {"settings": len(snapshot.settings)}
 
 
 def validate_snapshot(raw: dict[str, Any]) -> tuple[list[s.OpalValidationIssue], list[s.OpalValidationIssue]]:
@@ -282,9 +280,7 @@ def validate_snapshot(raw: dict[str, Any]) -> tuple[list[s.OpalValidationIssue],
             errors.append(_issue("unknown_field", key, f"unexpected snapshot field '{key}'"))
     version = raw.get("format_version")
     if version != SNAPSHOT_FORMAT_VERSION:
-        errors.append(
-            _issue("unsupported_version", "format_version", f"unsupported format_version {version!r}")
-        )
+        errors.append(_issue("unsupported_version", "format_version", f"unsupported format_version {version!r}"))
     module = raw.get("module")
     if module != SNAPSHOT_MODULE:
         errors.append(_issue("wrong_module", "module", f"snapshot is for module {module!r}"))
@@ -308,13 +304,9 @@ def validate_snapshot(raw: dict[str, Any]) -> tuple[list[s.OpalValidationIssue],
     else:
         for section, items in resources.items():
             if section not in RESOURCE_SECTIONS:
-                errors.append(
-                    _issue("unknown_section", f"resources.{section}", f"unknown section '{section}'")
-                )
+                errors.append(_issue("unknown_section", f"resources.{section}", f"unknown section '{section}'"))
             elif not isinstance(items, list):
-                errors.append(
-                    _issue("invalid_field", f"resources.{section}", f"'{section}' must be an array")
-                )
+                errors.append(_issue("invalid_field", f"resources.{section}", f"'{section}' must be an array"))
     return errors, warnings
 
 
@@ -338,7 +330,5 @@ def load_managed(data_dir: Path) -> s.OpalConfigSnapshot:
         raise InvalidRequestError(f"managed snapshot is unreadable: {exc}") from exc
     errors, _ = validate_snapshot(raw)
     if errors:
-        raise InvalidRequestError(
-            "managed snapshot is invalid: " + "; ".join(f"{i.path}: {i.message}" for i in errors)
-        )
+        raise InvalidRequestError("managed snapshot is invalid: " + "; ".join(f"{i.path}: {i.message}" for i in errors))
     return s.OpalConfigSnapshot.model_validate(raw)

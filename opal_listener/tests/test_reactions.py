@@ -36,9 +36,12 @@ def wait_file(path: Path, timeout: float = 5.0) -> str | None:
 
 def marker_argv(marker: Path) -> list[str]:
     """Subprocess that copies stdin's intent_name field into the marker file."""
-    return [sys.executable, "-c",
-            "import json,sys; d=json.load(sys.stdin); open(sys.argv[1],'w').write(d['intent_name'])",
-            str(marker)]
+    return [
+        sys.executable,
+        "-c",
+        "import json,sys; d=json.load(sys.stdin); open(sys.argv[1],'w').write(d['intent_name'])",
+        str(marker),
+    ]
 
 
 PAYLOAD: dict[str, Any] = {
@@ -61,10 +64,18 @@ def test_load_missing_file_is_empty(tmp_path: Path) -> None:
 
 def test_load_valid_file(tmp_path: Path) -> None:
     path = tmp_path / "reactions.yaml"
-    write_reactions(path, {"reactions": [
-        {"name": "r1", "conditions": [{"path": "intent_name", "operator": "eq", "value": "x"}],
-         "actions": [{"type": "command", "argv": ["/bin/true"]}]},
-    ]})
+    write_reactions(
+        path,
+        {
+            "reactions": [
+                {
+                    "name": "r1",
+                    "conditions": [{"path": "intent_name", "operator": "eq", "value": "x"}],
+                    "actions": [{"type": "command", "argv": ["/bin/true"]}],
+                },
+            ]
+        },
+    )
     reactions = load_reactions(path)
     assert len(reactions) == 1
     assert reactions[0].name == "r1"
@@ -86,20 +97,23 @@ def test_load_invalid_schema_returns_empty(tmp_path: Path) -> None:
 # --- condition evaluation ------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("cond,expected", [
-    ({"path": "intent_name", "operator": "eq", "value": "light_turn_on"}, True),
-    ({"path": "intent_name", "operator": "eq", "value": "other"}, False),
-    ({"path": "intent_name", "operator": "ne", "value": "other"}, True),
-    ({"path": "intent_confidence", "operator": "gte", "value": 0.8}, True),
-    ({"path": "intent_confidence", "operator": "gt", "value": 0.95}, False),
-    ({"path": "intent_confidence", "operator": "lt", "value": "high"}, False),  # non-numeric right
-    ({"path": "slot_values.room_name", "operator": "in", "value": ["kitchen", "den"]}, True),
-    ({"path": "slot_values.room_name", "operator": "not_in", "value": ["den"]}, True),
-    ({"path": "transcript", "operator": "contains", "value": "kitchen"}, True),
-    ({"path": "slot_values.missing", "operator": "exists"}, False),
-    ({"path": "slot_values.room_name", "operator": "exists"}, True),
-    ({"path": "slot_values.missing", "operator": "eq", "value": "x"}, False),  # absent never matches
-])
+@pytest.mark.parametrize(
+    "cond,expected",
+    [
+        ({"path": "intent_name", "operator": "eq", "value": "light_turn_on"}, True),
+        ({"path": "intent_name", "operator": "eq", "value": "other"}, False),
+        ({"path": "intent_name", "operator": "ne", "value": "other"}, True),
+        ({"path": "intent_confidence", "operator": "gte", "value": 0.8}, True),
+        ({"path": "intent_confidence", "operator": "gt", "value": 0.95}, False),
+        ({"path": "intent_confidence", "operator": "lt", "value": "high"}, False),  # non-numeric right
+        ({"path": "slot_values.room_name", "operator": "in", "value": ["kitchen", "den"]}, True),
+        ({"path": "slot_values.room_name", "operator": "not_in", "value": ["den"]}, True),
+        ({"path": "transcript", "operator": "contains", "value": "kitchen"}, True),
+        ({"path": "slot_values.missing", "operator": "exists"}, False),
+        ({"path": "slot_values.room_name", "operator": "exists"}, True),
+        ({"path": "slot_values.missing", "operator": "eq", "value": "x"}, False),  # absent never matches
+    ],
+)
 def test_condition_operators(cond: dict[str, Any], expected: bool) -> None:
     assert check_condition(ReactionCondition.model_validate(cond), PAYLOAD) is expected
 
@@ -110,11 +124,19 @@ def test_condition_operators(cond: dict[str, Any], expected: bool) -> None:
 def test_dispatch_fires_command(tmp_path: Path) -> None:
     config = tmp_path / "reactions.yaml"
     marker = tmp_path / "fired.txt"
-    write_reactions(config, {"reactions": [
-        {"name": "light", "enabled": True,
-         "conditions": [{"path": "intent_name", "operator": "eq", "value": "light_turn_on"}],
-         "actions": [{"type": "command", "argv": marker_argv(marker)}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {
+                    "name": "light",
+                    "enabled": True,
+                    "conditions": [{"path": "intent_name", "operator": "eq", "value": "light_turn_on"}],
+                    "actions": [{"type": "command", "argv": marker_argv(marker)}],
+                },
+            ]
+        },
+    )
     runner = ReactionRunner(config, tmp_path / "log.jsonl")
     runner.start()
     try:
@@ -131,11 +153,19 @@ def test_dispatch_fires_command(tmp_path: Path) -> None:
 def test_dispatch_conditions_filter(tmp_path: Path) -> None:
     config = tmp_path / "reactions.yaml"
     marker = tmp_path / "fired.txt"
-    write_reactions(config, {"reactions": [
-        {"name": "wrong_room", "enabled": True,
-         "conditions": [{"path": "slot_values.room_name", "operator": "eq", "value": "den"}],
-         "actions": [{"type": "command", "argv": marker_argv(marker)}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {
+                    "name": "wrong_room",
+                    "enabled": True,
+                    "conditions": [{"path": "slot_values.room_name", "operator": "eq", "value": "den"}],
+                    "actions": [{"type": "command", "argv": marker_argv(marker)}],
+                },
+            ]
+        },
+    )
     runner = ReactionRunner(config, tmp_path / "log.jsonl")
     runner.start()
     try:
@@ -148,20 +178,37 @@ def test_dispatch_conditions_filter(tmp_path: Path) -> None:
 def test_disabled_reaction_does_not_fire(tmp_path: Path) -> None:
     config = tmp_path / "reactions.yaml"
     marker = tmp_path / "fired.txt"
-    write_reactions(config, {"reactions": [
-        {"name": "off", "enabled": False, "conditions": [],
-         "actions": [{"type": "command", "argv": marker_argv(marker)}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {
+                    "name": "off",
+                    "enabled": False,
+                    "conditions": [],
+                    "actions": [{"type": "command", "argv": marker_argv(marker)}],
+                },
+            ]
+        },
+    )
     runner = ReactionRunner(config, tmp_path / "log.jsonl")
     assert runner.dispatch(PAYLOAD) == 0
 
 
 def test_failed_exit_is_counted(tmp_path: Path) -> None:
     config = tmp_path / "reactions.yaml"
-    write_reactions(config, {"reactions": [
-        {"name": "boom", "conditions": [],
-         "actions": [{"type": "command", "argv": [sys.executable, "-c", "import sys;sys.exit(3)"]}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {
+                    "name": "boom",
+                    "conditions": [],
+                    "actions": [{"type": "command", "argv": [sys.executable, "-c", "import sys;sys.exit(3)"]}],
+                },
+            ]
+        },
+    )
     runner = ReactionRunner(config, tmp_path / "log.jsonl")
     runner.start()
     try:
@@ -178,11 +225,24 @@ def test_failed_exit_is_counted(tmp_path: Path) -> None:
 
 def test_timeout_is_counted_as_failure(tmp_path: Path) -> None:
     config = tmp_path / "reactions.yaml"
-    write_reactions(config, {"reactions": [
-        {"name": "slow", "conditions": [],
-         "actions": [{"type": "command",
-                      "argv": [sys.executable, "-c", "import time;time.sleep(10)"], "timeout_s": 1}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {
+                    "name": "slow",
+                    "conditions": [],
+                    "actions": [
+                        {
+                            "type": "command",
+                            "argv": [sys.executable, "-c", "import time;time.sleep(10)"],
+                            "timeout_s": 1,
+                        }
+                    ],
+                },
+            ]
+        },
+    )
     runner = ReactionRunner(config, tmp_path / "log.jsonl")
     runner.start()
     try:
@@ -198,9 +258,14 @@ def test_timeout_is_counted_as_failure(tmp_path: Path) -> None:
 
 def test_full_queue_drops(tmp_path: Path) -> None:
     config = tmp_path / "reactions.yaml"
-    write_reactions(config, {"reactions": [
-        {"name": "r", "conditions": [], "actions": [{"type": "command", "argv": ["/bin/true"]}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {"name": "r", "conditions": [], "actions": [{"type": "command", "argv": ["/bin/true"]}]},
+            ]
+        },
+    )
     runner = ReactionRunner(config, tmp_path / "log.jsonl", capacity=1)
     # Worker never started: first dispatch fills the queue, the second must drop.
     runner.dispatch(PAYLOAD)
@@ -216,9 +281,14 @@ def test_mtime_reload_picks_up_edits(tmp_path: Path) -> None:
     runner.start()
     try:
         assert runner.dispatch(PAYLOAD) == 0
-        write_reactions(config, {"reactions": [
-            {"name": "new", "conditions": [], "actions": [{"type": "command", "argv": marker_argv(marker)}]},
-        ]})
+        write_reactions(
+            config,
+            {
+                "reactions": [
+                    {"name": "new", "conditions": [], "actions": [{"type": "command", "argv": marker_argv(marker)}]},
+                ]
+            },
+        )
         assert runner.dispatch(PAYLOAD) == 1
         assert wait_file(marker) == "light_turn_on"
     finally:
@@ -230,9 +300,14 @@ def test_mtime_reload_picks_up_edits(tmp_path: Path) -> None:
 
 def _arm_marker_reaction(service: Any, tmp_path: Path, marker: Path) -> None:
     config = tmp_path / "reactions.yaml"
-    write_reactions(config, {"reactions": [
-        {"name": "light", "conditions": [], "actions": [{"type": "command", "argv": marker_argv(marker)}]},
-    ]})
+    write_reactions(
+        config,
+        {
+            "reactions": [
+                {"name": "light", "conditions": [], "actions": [{"type": "command", "argv": marker_argv(marker)}]},
+            ]
+        },
+    )
     service._reaction_runner._config_path = config
     service._reaction_runner._loaded_mtime_ns = None
 
@@ -301,15 +376,12 @@ def test_dispatch_targets_resolution() -> None:
         {"intent_dispatch": "auto", "reactions_enabled": True, "event_publication_enabled": True}
     ) == frozenset({"local", "event"})
     # explicit values override both flags entirely
-    assert dispatch_targets(
-        {"intent_dispatch": "off", "reactions_enabled": True, "event_publication_enabled": True}
-    ) == frozenset()
-    assert dispatch_targets(
-        {"intent_dispatch": "local", "event_publication_enabled": True}
-    ) == frozenset({"local"})
-    assert dispatch_targets(
-        {"intent_dispatch": "event", "reactions_enabled": True}
-    ) == frozenset({"event"})
+    assert (
+        dispatch_targets({"intent_dispatch": "off", "reactions_enabled": True, "event_publication_enabled": True})
+        == frozenset()
+    )
+    assert dispatch_targets({"intent_dispatch": "local", "event_publication_enabled": True}) == frozenset({"local"})
+    assert dispatch_targets({"intent_dispatch": "event", "reactions_enabled": True}) == frozenset({"event"})
     assert dispatch_targets({"intent_dispatch": "both"}) == frozenset({"local", "event"})
 
 
@@ -318,9 +390,12 @@ def test_dispatch_off_suppresses_all_side_effects(client: Any, service: Any, tmp
     marker = tmp_path / "fired.txt"
     _arm_marker_reaction(service, tmp_path, marker)
     publisher = service.event_publisher
-    assert patch_settings(
-        client, intent_dispatch="off", reactions_enabled="true", event_publication_enabled="true"
-    ).status_code == 200
+    assert (
+        patch_settings(
+            client, intent_dispatch="off", reactions_enabled="true", event_publication_enabled="true"
+        ).status_code
+        == 200
+    )
     result = _mic_match(service)
     assert result.dispatched_to == []
     assert wait_file(marker, timeout=0.5) is None
@@ -334,9 +409,7 @@ def test_dispatch_local_only(client: Any, service: Any, tmp_path: Path) -> None:
     marker = tmp_path / "fired.txt"
     _arm_marker_reaction(service, tmp_path, marker)
     publisher = service.event_publisher
-    assert patch_settings(
-        client, intent_dispatch="local", event_publication_enabled="true"
-    ).status_code == 200
+    assert patch_settings(client, intent_dispatch="local", event_publication_enabled="true").status_code == 200
     result = _mic_match(service)
     assert wait_file(marker) == "light_turn_on"
     assert publisher.events == []
@@ -350,9 +423,7 @@ def test_dispatch_event_only(client: Any, service: Any, tmp_path: Path) -> None:
     marker = tmp_path / "fired.txt"
     _arm_marker_reaction(service, tmp_path, marker)
     publisher = service.event_publisher
-    assert patch_settings(
-        client, intent_dispatch="event", reactions_enabled="true"
-    ).status_code == 200
+    assert patch_settings(client, intent_dispatch="event", reactions_enabled="true").status_code == 200
     result = _mic_match(service)
     assert len(publisher.events) == 1 and publisher.events[0][1]["intent_name"] == "light_turn_on"
     assert publisher.events[0][1]["dispatched_to"] == ["event"]  # payload carries the selection
@@ -379,17 +450,21 @@ def test_dispatch_auto_keeps_legacy_flags_working(client: Any, service: Any, tmp
     marker = tmp_path / "fired.txt"
     _arm_marker_reaction(service, tmp_path, marker)
     publisher = service.event_publisher
-    assert patch_settings(
-        client, intent_dispatch="auto", dedup_window_ms="0",
-        reactions_enabled="true", event_publication_enabled="false",
-    ).status_code == 200
+    assert (
+        patch_settings(
+            client,
+            intent_dispatch="auto",
+            dedup_window_ms="0",
+            reactions_enabled="true",
+            event_publication_enabled="false",
+        ).status_code
+        == 200
+    )
     assert _mic_match(service).dispatched_to == ["local"]
     assert wait_file(marker) == "light_turn_on"
     assert publisher.events == []
     marker.unlink()
-    assert patch_settings(
-        client, reactions_enabled="false", event_publication_enabled="true"
-    ).status_code == 200
+    assert patch_settings(client, reactions_enabled="false", event_publication_enabled="true").status_code == 200
     assert _mic_match(service).dispatched_to == ["event"]
     assert len(publisher.events) == 1
     assert wait_file(marker, timeout=0.5) is None

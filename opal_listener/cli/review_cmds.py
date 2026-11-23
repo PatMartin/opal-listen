@@ -7,7 +7,7 @@ from typing import Any
 import typer
 
 from opal_listener.cli.catalog_cmds import _changes
-from opal_listener.cli.output import console, done, print_json, render, render_kv, state
+from opal_listener.cli.output import done, print_json, render, render_kv, state
 
 FAILED = "/api/v1/failed_utterance/"
 PERF = "/api/v1/performance"
@@ -42,8 +42,8 @@ def failed_list(
     render(ctx, items, FAILED_COLUMNS, "Failed utterances")
 
 
-@failed_app.command("get")
-def failed_get(ctx: typer.Context, fu_id: str) -> None:
+@failed_app.command("show")
+def failed_show(ctx: typer.Context, fu_id: str) -> None:
     """Show a failed utterance."""
     render_kv(ctx, state(ctx).api.get(f"{FAILED}{fu_id}"))
 

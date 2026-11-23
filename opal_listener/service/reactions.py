@@ -190,6 +190,8 @@ class ReactionRunner:
         """Evaluate conditions and enqueue matching actions. Returns matches found.
 
         Runs on the recognition thread; must stay fast — condition eval only."""
+        if self._stop.is_set():
+            return 0  # post-shutdown dispatch: nothing is queued that would never execute
         matched: list[ReactionAction] = []
         names: list[str] = []
         for reaction in self._reactions():
@@ -280,7 +282,7 @@ def run_action(
 ) -> dict[str, Any]:
     """Run one command action with the payload as JSON on stdin and journal the outcome.
 
-    Shared by the service worker (origin="service") and `opal listen reaction test
+    Shared by the service worker (origin="service") and `opal listen test reaction
     --execute` (origin="cli"), so both paths execute identically and land in the
     same journal; `origin` tells them apart."""
     started = time.monotonic()
@@ -312,4 +314,3 @@ def run_action(
     _append_journal(log_path, json.dumps(record, default=str) + "\n", max_bytes)
     record["failed"] = failed
     return record
-

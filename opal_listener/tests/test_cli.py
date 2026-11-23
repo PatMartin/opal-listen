@@ -34,18 +34,17 @@ def command_paths() -> set[str]:
 
 REQUIRED_COMMANDS = {
     "wakeword list", "wakeword add", "wakeword remove",
-    "intent list", "intent add", "intent remove", "intent add-phrase",
-    "slot list", "slot add", "slot add-value", "slot add-alias",
+    "intent list", "intent add", "intent remove", "phrase list", "phrase add", "phrase remove",
+    "slot list", "slot add", "slot value list", "slot value add", "slot value remove", "slot add-alias",
     "profile list", "profile add",
     "config setting list", "config setting show", "config setting set", "config setting remove",
-    "test text", "test audio", "test listen", "test listen-debug",
-    "recognition test",
-    "failed list",
+    "test text", "test audio", "test listen",
+    "failed list", "test reaction",
     "service perf last", "service perf summary",
     "config validate", "config save", "config load",
     "service health", "service start", "service stop", "service log", "gui",
-    "reaction list", "reaction get", "reaction add", "reaction update", "reaction remove",
-    "reaction enable", "reaction disable", "reaction test", "reaction log", "reaction path",
+    "reaction list", "reaction show", "reaction add", "reaction update", "reaction remove",
+    "reaction enable", "reaction disable", "reaction log", "reaction path",
 }  # fmt: skip
 
 
@@ -61,9 +60,9 @@ def test_wakewords_commands(cli: CliHarness) -> None:
     assert cli("wakeword", "add", "Jarvis", "--threshold", "0.7").exit_code == 0
     names = [w["name"] for w in cli.json("wakeword", "list")]
     assert names == ["computer", "jarvis"]
-    assert cli.json("wakeword", "get", "jarvis")["confidence_threshold"] == 0.7
+    assert cli.json("wakeword", "show", "jarvis")["confidence_threshold"] == 0.7
     assert cli("wakeword", "update", "jarvis", "--disabled").exit_code == 0
-    assert cli.json("wakeword", "get", "jarvis")["enabled"] is False
+    assert cli.json("wakeword", "show", "jarvis")["enabled"] is False
     assert cli("wakeword", "remove", "jarvis").exit_code == 0
     assert "Wakewords" in cli("wakeword", "list").output
     missing = cli("wakeword", "remove", "nobody")
@@ -73,12 +72,12 @@ def test_wakewords_commands(cli: CliHarness) -> None:
 def test_intents_commands(cli: CliHarness) -> None:
     result = cli("intent", "add", "music_play", "--phrase", "play music", "--description", "Music")
     assert result.exit_code == 0, result.output
-    assert cli("intent", "add-phrase", "music_play", "play (some | the) music").exit_code == 0
-    assert len(cli.json("intent", "phrases", "music_play")) == 2
-    assert cli.json("intent", "get", "music_play")["description"] == "Music"
-    assert cli("intent", "remove-phrase", "music_play", "play music").exit_code == 0
+    assert cli("phrase", "add", "music_play", "play (some | the) music").exit_code == 0
+    assert len(cli.json("phrase", "list", "music_play")) == 2
+    assert cli.json("intent", "show", "music_play")["description"] == "Music"
+    assert cli("phrase", "remove", "music_play", "play music").exit_code == 0
     assert cli("intent", "update", "music_play", "--threshold", "0.9").exit_code == 0
-    bad = cli("intent", "add-phrase", "music_play", "play {ghost}")
+    bad = cli("phrase", "add", "music_play", "play {ghost}")
     assert bad.exit_code == 1 and "unknown slot" in bad.output
     assert cli("intent", "remove", "music_play").exit_code == 0
     assert "light_turn_on" in cli("intent", "list").output
@@ -87,14 +86,14 @@ def test_intents_commands(cli: CliHarness) -> None:
 
 def test_slots_commands(cli: CliHarness) -> None:
     assert cli("slot", "add", "color", "--value", "red").exit_code == 0
-    assert cli("slot", "add-value", "color", "blue", "--alias", "navy").exit_code == 0
+    assert cli("slot", "value", "add", "color", "blue", "--alias", "navy").exit_code == 0
     assert cli("slot", "add-alias", "color", "red", "crimson").exit_code == 0
-    values = cli.json("slot", "values", "color")
+    values = cli.json("slot", "value", "list", "color")
     assert [v["value"] for v in values] == ["red", "blue"]
     assert [a["alias"] for a in cli.json("slot", "aliases", "color", "red")] == ["crimson"]
-    assert cli.json("slot", "get", "color")["values"][1]["aliases"][0]["alias"] == "navy"
+    assert cli.json("slot", "show", "color")["values"][1]["aliases"][0]["alias"] == "navy"
     assert cli("slot", "remove-alias", "color", "red", "crimson").exit_code == 0
-    assert cli("slot", "remove-value", "color", "blue").exit_code == 0
+    assert cli("slot", "value", "remove", "color", "blue").exit_code == 0
     assert cli("slot", "update", "color", "--description", "Colours").exit_code == 0
     assert "room_name" in cli("slot", "list").output
     assert cli("slot", "remove", "color").exit_code == 0
@@ -108,7 +107,7 @@ def test_profiles_and_settings_commands(cli: CliHarness) -> None:
         "--intent", "get_time", "--wakeword", "computer",
     )  # fmt: skip
     assert result.exit_code == 0, result.output
-    profile = cli.json("profile", "get", "night")
+    profile = cli.json("profile", "show", "night")
     assert profile["modules"]["opal-listen"]["confidence_thresholds"] == {"intent": 0.9}
     assert profile["modules"]["opal-listen"]["vad_settings"] == {"silence_end_ms": 900}
     assert cli("profile", "activate", "night").exit_code == 0
@@ -142,25 +141,6 @@ def test_test_audio_command(cli: CliHarness) -> None:
     assert cli("test", "audio", wav, "--expect-intent", "light_turn_on").exit_code == 0
 
 
-def test_recognition_test_command(cli: CliHarness, tmp_path) -> None:
-    result = cli.json("recognition", "test", "--text", "computer, turn on the kitchen light")
-    assert result["intent_name"] == "light_turn_on" and result["slot_values"] == {"room_name": "kitchen"}
-    # exactly one of --text/--audio
-    assert cli("recognition", "test").exit_code != 0
-    wav = tmp_path / "clip.wav"
-    wav.write_bytes(b"RIFF" + bytes(40))
-    assert cli("recognition", "test", "--text", "x", "--audio", str(wav)).exit_code != 0
-    # --require-wakeword is audio-only
-    assert cli("recognition", "test", "--text", "x", "--require-wakeword").exit_code != 0
-
-
-@pytest.mark.vosk
-def test_recognition_test_audio(cli: CliHarness) -> None:
-    wav = str(FIXTURES_DIR / "golden_kitchen_light_on.wav")
-    result = cli.json("recognition", "test", "--audio", wav, "--require-wakeword")
-    assert result["intent_name"] == "light_turn_on" and result["wakeword"] == "computer"
-
-
 def test_test_listen_commands(cli: CliHarness, monkeypatch: pytest.MonkeyPatch) -> None:
     from opal_listener.cli import client as client_module
 
@@ -174,8 +154,8 @@ def test_test_listen_commands(cli: CliHarness, monkeypatch: pytest.MonkeyPatch) 
     ]
     calls: list[str] = []
 
-    def fake_stream(self: Any, path: str, params: dict[str, Any] | None = None, **kwargs: Any) -> Any:
-        calls.append(f"{path}?debug={params['debug']}")
+    def fake_stream(self: Any, path: str, **kwargs: Any) -> Any:
+        calls.append(path)
         yield from events
 
     monkeypatch.setattr(client_module.ApiClient, "stream_events", fake_stream)
@@ -183,10 +163,7 @@ def test_test_listen_commands(cli: CliHarness, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(service, "start", lambda: {"status": "already_running"})
     out = cli("test", "listen", "--count", "1")
     assert out.exit_code == 0 and "light_turn_on" in out.output and "get_time" not in out.output
-    debug = cli("test", "listen-debug", "--count", "2")
-    assert debug.exit_code == 0
-    assert "dBFS" in debug.output and "turn on" in debug.output and "wakeword_candidate" in debug.output
-    assert calls == ["/api/v1/recognition/stream?debug=False", "/api/v1/recognition/stream?debug=True"]
+    assert calls == ["/api/v1/recognition/stream"]
 
 
 def test_pipeline_commands(cli: CliHarness, fake_provider: type) -> None:
@@ -200,7 +177,7 @@ def test_pipeline_commands(cli: CliHarness, fake_provider: type) -> None:
 
 def test_failed_commands(cli: CliHarness) -> None:
     added = cli.json("failed", "add", "illuminate the garage", "--notes", "user said")
-    assert cli.json("failed", "get", str(added["id"]))["notes"] == "user said"
+    assert cli.json("failed", "show", str(added["id"]))["notes"] == "user said"
     assert cli("failed", "update", str(added["id"]), "--reviewed").exit_code == 0
     assert cli.json("failed", "list", "--reviewed")[0]["id"] == added["id"]
     assert cli("failed", "remove", str(added["id"])).exit_code == 0
@@ -259,10 +236,10 @@ def test_service_commands(cli: CliHarness) -> None:
     # service health exits non-zero when any check errors (e.g. missing vosk model)
     assert "sqlite" in health.output and "overall" in health.output
     result = cli("--json", "service", "health")
-    report = json.loads(result.output.split("\n┌")[0])
+    report = json.JSONDecoder().raw_decode(result.output)[0]
     assert report["name"] == "opal-listen-svc"
     assert isinstance(report["details"]["audio_devices"], list)
-    assert cli.json("service", "live")["status"] == "ok"
+    assert report["live"] is True
 
 
 def test_service_stop_and_log_without_server(cli: CliHarness, tmp_path: Path, monkeypatch) -> None:
@@ -277,85 +254,10 @@ def test_service_stop_and_log_without_server(cli: CliHarness, tmp_path: Path, mo
     assert "line 14" in out and "line 5" in out and "line 4" not in out
 
 
-def test_event_publish_command(cli: CliHarness) -> None:
-    """The CLI's PUB socket connects to the broker's XSUB endpoint; a real subscriber connects to
-    the broker's XPUB endpoint. This mirrors the real opal_listener event bus topology (an
-    XPUB/XSUB proxy), where --xpub/--xsub name the proxy's two bound endpoints."""
-    import contextlib
-    import threading
-
-    import zmq
-
-    def _run_proxy(frontend: zmq.Socket, backend: zmq.Socket) -> None:
-        with contextlib.suppress(zmq.ZMQError):  # raised when torn down at the end of the test
-            zmq.proxy(frontend, backend)
-
-    ctx = zmq.Context()
-    xpub = ctx.socket(zmq.XPUB)
-    xpub_port = xpub.bind_to_random_port("tcp://127.0.0.1")
-    xsub = ctx.socket(zmq.XSUB)
-    xsub_port = xsub.bind_to_random_port("tcp://127.0.0.1")
-    proxy_thread = threading.Thread(target=_run_proxy, args=(xpub, xsub), daemon=True)
-    proxy_thread.start()
-
-    sub = ctx.socket(zmq.SUB)
-    sub.connect(f"tcp://127.0.0.1:{xpub_port}")
-    sub.setsockopt_string(zmq.SUBSCRIBE, "")
-    try:
-        result = cli("--xpub", f"tcp://127.0.0.1:{xsub_port}", "event", "publish", "wakeword", "hello world")
-        assert result.exit_code == 0, result.output
-        assert f"tcp://127.0.0.1:{xsub_port}" in result.output
-        assert sub.poll(3000), "no message received through the XPUB/XSUB broker"
-        topic, message = sub.recv_multipart()
-        assert topic == b"wakeword"
-        envelope = json.loads(message)
-        assert envelope["topic"] == "wakeword" and envelope["source"] == "opal-listen"
-        assert envelope["data"]["message"] == "hello world"
-    finally:
-        sub.close()
-        xpub.close()
-        xsub.close()
-        ctx.term()
-
-
-def test_event_publish_wraps_plain_text(cli: CliHarness) -> None:
-    from opal_listener.cli.event_cmds import event_envelope_for
-
-    envelope = event_envelope_for("opal.listen.note", "hello world")
-    assert envelope["topic"] == "opal.listen.note"
-    assert envelope["id"] and envelope["source"] == "opal-listen" and envelope["timestamp"].endswith("Z")
-    assert envelope["data"]["message"] == "hello world"
-
-
-def test_event_publish_handles_json_payloads(cli: CliHarness) -> None:
-    from opal_listener.cli.event_cmds import event_envelope_for
-
-    # a JSON object becomes the event data
-    envelope = event_envelope_for("opal.listen.note", '{"room": "kitchen"}')
-    assert envelope["data"]["room"] == "kitchen"
-    assert envelope["data"]["metadata"]["schema_version"] == "2.0"
-    # a complete envelope passes through with defaults filled for missing optional fields
-    envelope = event_envelope_for("opal.listen.note", '{"topic": "opal.listen.note", "data": {"x": 1}}')
-    assert envelope["data"] == {"x": 1}
-    assert envelope["id"] and envelope["source"] == "opal-listen" and envelope["timestamp"].endswith("Z")
-
-
-def test_event_publish_rejects_envelope_topic_mismatch(cli: CliHarness) -> None:
-    result = cli("event", "publish", "a.b", '{"topic": "x.y", "data": {}}')
-    assert result.exit_code == 1
-    assert "does not match" in result.output
-
-
-def test_event_publish_rejects_invalid_topic(cli: CliHarness) -> None:
-    result = cli("event", "publish", "Not A Topic", "hello")
-    assert result.exit_code == 1
-    assert "invalid topic" in result.output
-
-
 def test_unreachable_api_gives_friendly_error(monkeypatch: pytest.MonkeyPatch) -> None:
     from typer.testing import CliRunner
 
-    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "service", "live"])
+    result = CliRunner().invoke(cli_app, ["listen", "--api-url", "http://127.0.0.1:9", "service", "health"])
     assert result.exit_code == 1
     assert "cannot reach the opal listener API" in result.output
 

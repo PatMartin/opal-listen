@@ -34,7 +34,7 @@ class AppSettings(BaseSettings):
     # disables authentication, which the kernel permits on loopback deployments; set it whenever
     # the service listens on a non-loopback interface. Never exposed in settings or exports.
     api_token: str | None = None
-    # Shared with the CLI's --xpub/--xsub (see cli/client.py); no OPAL_LISTENER_ prefix so the
+    # No OPAL_LISTENER_ prefix so the
     # server and CLI agree on the same event bus without separate configuration.
     xpub_url: str = Field(
         default="tcp://127.0.0.1:5555",

@@ -29,11 +29,9 @@ KEY_COLUMNS = frozenset({"id", "name", "filename", "test_id", "intent_name", "va
 
 
 class CliState:
-    def __init__(self, api: ApiClient, json_output: bool, xpub_url: str = "", xsub_url: str = "") -> None:
+    def __init__(self, api: ApiClient, json_output: bool) -> None:
         self.api = api
         self.json_output = json_output
-        self.xpub_url = xpub_url
-        self.xsub_url = xsub_url
 
 
 def state(ctx: typer.Context) -> CliState:

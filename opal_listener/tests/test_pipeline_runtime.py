@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from opal_listener.service.audio.capture import AudioCaptureError, AudioFrame, AudioSource
 from opal_listener.service.audio.vad import VadSettings
 from opal_listener.service.pipeline import RecognitionPipeline
-from opal_listener.service.providers.base import Transcript, WakewordEvent, WakewordEventKind
+from opal_listener.service.providers.base import Transcript, WakewordEngine, WakewordEvent, WakewordEventKind
 from opal_listener.service.providers.fake_provider import FakeListenerProvider, FakeWakewordDetector
 from opal_listener.tests.conftest import etag_of, list_logs, log_counts, patch_settings, silence_frame, tone_frame
 
@@ -448,7 +448,7 @@ def test_event_bus_fan_out_is_thread_safe() -> None:
 
     from opal_listener.service.events import EventBus
 
-    async def main() -> list[dict[str, Any]]:
+    async def main() -> tuple[list[dict[str, Any]], EventBus]:
         bus = EventBus(max_queue=5)
         normal = bus.subscribe()
         debug = bus.subscribe(debug=True)
@@ -464,10 +464,14 @@ def test_event_bus_fan_out_is_thread_safe() -> None:
         bus.unsubscribe(normal)
         bus.unsubscribe(debug)
         assert bus.subscriber_count == 0
-        return items
+        return items, bus
 
-    items = asyncio.run(main())
-    assert items[-1]["event"] == "audio_level"
+    items, bus = asyncio.run(main())
+    # a disposable diagnostic must never evict important results: the audio_level is
+    # dropped (and counted) rather than displacing a queued result
+    assert len(items) == 5
+    assert all(item["event"] == "result" for item in items)
+    assert bus.dropped_total == 11  # 5 results evicted per queue + 1 dropped level
 
 
 class _BlockingSource(AudioSource):
@@ -895,9 +899,10 @@ def test_refiner_hang_is_bounded(client: TestClient, fake_provider: type) -> Non
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
     finalized = _spy_finalize(service)
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0").status_code
+        == 200
+    )
     fake_provider.script.extend(["turn on the kitchen light"] * 4)
     service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
     client.post("/api/v1/recognition/start")
@@ -919,9 +924,10 @@ def test_refinement_recovers_when_stuck_calls_return(client: TestClient, fake_pr
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
     finalized = _spy_finalize(service)
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0").status_code
+        == 200
+    )
     feed: deque[bytes] = deque()
     fake_provider.script.extend(["turn on the kitchen light"] * 2)
     service._source_factory = lambda settings: _FeedSource(feed)
@@ -949,9 +955,12 @@ def test_late_result_from_old_generation_cannot_dispatch(client: TestClient, fak
     publisher = service.event_publisher
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
     feed: deque[bytes] = deque()
     service._source_factory = lambda settings: _FeedSource(feed)
     client.post("/api/v1/recognition/start")
@@ -982,9 +991,12 @@ def test_pending_result_still_dispatches_after_stop(client: TestClient, fake_pro
     publisher = service.event_publisher
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
     feed: deque[bytes] = deque()
     service._source_factory = lambda settings: _FeedSource(feed)
     client.post("/api/v1/recognition/start")
@@ -1026,9 +1038,10 @@ def test_bounded_shutdown_with_stuck_refiner(client: TestClient, fake_provider: 
     service = client.app.state.listener  # type: ignore[attr-defined]
     refiner = _GatedRefiner()
     service._refine_worker._refiner_for = lambda snap: refiner
-    assert patch_settings(
-        client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0"
-    ).status_code == 200
+    assert (
+        patch_settings(client, stt_refiner="faster_whisper", refiner_timeout_ms="500", cooldown_ms="0").status_code
+        == 200
+    )
     fake_provider.script.extend(["turn on the kitchen light"] * 4)
     service._source_factory = lambda settings: ScriptedSource(COMMAND * 4)
     client.post("/api/v1/recognition/start")
@@ -1186,3 +1199,443 @@ def test_failed_capture_restart_keeps_frames_flowing(client: TestClient, fake_pr
     finally:
         client.post("/api/v1/recognition/stop")
     assert not any(s.started for s in sources)  # stop still releases the device
+
+
+def test_recovering_is_a_distinct_public_state(client: TestClient, fake_provider: type) -> None:
+    """A worker retrying after a transient capture failure reports `recovering`, not `error`."""
+    from opal_listener.service.audio.capture import AudioCaptureError
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+
+    def failing_factory(settings):
+        raise AudioCaptureError("no input device")
+
+    service._source_factory = failing_factory
+    try:
+        assert service.start()["status"] == "started"
+        wait_for(lambda: service.status().state == "recovering", timeout=10)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["state"] == "recovering"
+        assert status["running"] is True  # worker alive, backing off
+        assert "no input device" in status["last_error"]
+    finally:
+        service.stop()
+    assert client.get("/api/v1/recognition/status").json()["state"] == "stopped"
+
+
+def test_error_state_only_when_worker_dies_unrequested(service) -> None:
+    """`error` is reserved for a worker that terminated mid-recovery without a stop request;
+    an intentional stop during recovery reports `stopped`."""
+    service._stats.state = "recovering"  # type: ignore[attr-defined]
+    service._stats.last_error = "device vanished"  # type: ignore[attr-defined]
+    # no thread, _stop not requested -> abnormal termination
+    assert service.status().state == "error"
+
+    service._stop.set()  # type: ignore[attr-defined]
+    assert service.status().state == "stopped"
+
+
+def test_dispatch_order_preserved_when_queue_full_bypasses(client: TestClient, fake_provider: type) -> None:
+    """A command taking the queue-full bypass finalizes immediately on the capture thread,
+    but its external dispatch still waits for every earlier-captured command."""
+    import queue as queue_mod
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    service._refine_worker._queue = queue_mod.Queue(maxsize=1)  # force a queue-full bypass
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
+    fake_provider.script.extend(
+        ["turn on the kitchen light", "turn on the bedroom light", "turn on the bathroom light"]
+    )
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        feed.extend(COMMAND * 3)
+        wait_for(lambda: refiner.entered >= 1, timeout=15)  # seq 1 is stuck in refine
+        wait_for(lambda: log_counts(client)["total"] >= 1, timeout=15)  # a bypass already recorded
+        assert publisher.events == []  # dispatch gated behind the earlier capture
+        refiner.gate.set()
+        wait_for(lambda: len(publisher.events) == 3, timeout=15)
+        rooms = [e[1]["slot_values"]["room_name"] for e in publisher.events]
+        assert rooms == ["kitchen", "bedroom", "bathroom"]  # capture order, not finalize order
+    finally:
+        refiner.gate.set()
+        client.post("/api/v1/recognition/stop")
+
+
+def test_stale_generation_seq_can_never_gate_new_run(client: TestClient, fake_provider: type) -> None:
+    """After stop/start the sequencer re-bases: a late finalization from the old generation
+    neither dispatches nor blocks the new run's commands."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    publisher = service.event_publisher
+    refiner = _GatedRefiner()
+    service._refine_worker._refiner_for = lambda snap: refiner
+    assert (
+        patch_settings(
+            client, stt_refiner="faster_whisper", event_publication_enabled="true", cooldown_ms="0"
+        ).status_code
+        == 200
+    )
+    feed: deque[bytes] = deque()
+    service._source_factory = lambda settings: _FeedSource(feed)
+    client.post("/api/v1/recognition/start")
+    try:
+        fake_provider.script.append("turn on the kitchen light")
+        feed.extend(COMMAND)
+        wait_for(lambda: refiner.entered >= 1)
+        assert client.post("/api/v1/recognition/stop").json()["status"] == "stopped"
+        assert client.post("/api/v1/recognition/start").json()["status"] == "started"
+        fake_provider.script.append("turn on the bedroom light")
+        feed.extend(COMMAND)
+        refiner.gate.set()  # the stale seq completes; the new-run command queues behind it
+        wait_for(lambda: len(publisher.events) == 1, timeout=15)
+        # only the new generation dispatches, and it is not held by the stale ticket
+        assert publisher.events[0][1]["slot_values"]["room_name"] == "bedroom"
+    finally:
+        refiner.gate.set()
+        client.post("/api/v1/recognition/stop")
+
+
+# --- independent wakeword / transcription engine selection ----------------------------------------
+
+
+class _AltWakeProvider(FakeListenerProvider):
+    name = "fake_wake_alt"
+
+
+class _WakeOnlyEngine(WakewordEngine):
+    name = "wake_only"
+
+    def load(self, config) -> None:
+        pass
+
+    def is_loaded(self) -> bool:
+        return True
+
+    def check(self, config) -> list:
+        return []
+
+    def create_wakeword_detector(self, wakewords):
+        return FakeWakewordDetector(list(wakewords), 0.9)
+
+
+def test_engines_for_shares_instance_when_names_match(client: TestClient, fake_provider: type) -> None:
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    snap = service.snapshot
+    wake, trans = service.engines_for(snap)
+    assert wake is trans  # one engine name: a single loaded instance serves both roles
+    assert len(service._providers) == 1  # type: ignore[attr-defined]
+
+
+def test_engines_for_split_roles(client: TestClient, fake_provider: type) -> None:
+    import dataclasses
+
+    from opal_listener.service.providers.base import ProviderError
+
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    snap = service.snapshot
+    old_factories = service._engines.wakeword_factory, service._engines.transcription_factory
+    service._engines.wakeword_factory = lambda name: {
+        "fake": FakeListenerProvider,
+        "fake_wake_alt": _AltWakeProvider,
+        "wake_only": _WakeOnlyEngine,
+    }[name]()
+    service._engines.transcription_factory = service._engines.wakeword_factory
+    try:
+        snap_split = dataclasses.replace(snap, wakeword_engine_name="fake_wake_alt")
+        wake, trans = service.engines_for(snap_split)
+        assert isinstance(wake, _AltWakeProvider) and type(trans) is FakeListenerProvider
+        assert wake is not trans
+        assert set(service._providers) == {"fake", "fake_wake_alt"}  # type: ignore[attr-defined]
+
+        # a wakeword-only engine cannot serve the transcription role, cached or not
+        snap_bad = dataclasses.replace(snap, wakeword_engine_name="wake_only", transcription_engine_name="wake_only")
+        with pytest.raises(ProviderError, match="cannot serve the transcription role"):
+            service.engines_for(snap_bad)
+
+        # pipeline routes each role to its own engine
+        pipeline = service._make_pipeline(snap_split, debug=False, cooldown=False)
+        assert pipeline.wakeword_engine is wake and pipeline.transcription_engine is trans
+        assert pipeline.provider is trans  # legacy attribute tracks the transcription engine
+    finally:
+        service._engines.wakeword_factory, service._engines.transcription_factory = old_factories
+
+
+def test_split_engine_settings_validation(client: TestClient, fake_provider: type) -> None:
+    # unknown engine names are rejected by setting validation (dynamic registry choices)
+    for key in ("wakeword_engine", "transcription_engine"):
+        etag = client.get("/api/v1/setting/").headers["etag"]
+        response = client.put(f"/api/v1/setting/{key}", json={"value": "bogus"}, headers={"If-Match": etag})
+        assert response.status_code == 422, response.text
+        assert "must be one of" in response.json()["error"]["message"]
+    # a valid explicit selection compiles and resolves in the snapshot
+    assert patch_settings(client, wakeword_engine="fake").status_code == 200
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert service.snapshot.wakeword_engine_name == "fake"
+    assert service.snapshot.transcription_engine_name == "fake"
+    # '' inherits listener_provider
+    assert patch_settings(client, wakeword_engine="").status_code == 200
+    assert service.snapshot.wakeword_engine_name == service.snapshot.provider_name
+
+
+def test_provider_kwarg_remains_combined_shorthand(fake_provider: type) -> None:
+    provider = fake_provider()
+    pipeline = RecognitionPipeline(
+        provider=provider,
+        wakewords=["computer"],
+        wakeword_thresholds={},
+        grammar=None,
+        vad_settings=VadSettings(),
+        frame_ms=30,
+        cooldown_ms=0,
+    )
+    assert pipeline.wakeword_engine is provider and pipeline.transcription_engine is provider
+
+
+# --- recovery diagnostics and bounded recovery ----------------------------------------------------
+
+
+def test_recovery_diagnostics_reported_while_recovering(client: TestClient, fake_provider: type) -> None:
+    """While backing off, status reports attempt count, retry delay, and the failure reason."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert patch_settings(client, recovery_max_attempts=0).status_code == 200
+
+    def failing_factory(settings):
+        raise AudioCaptureError("no input device")
+
+    service._source_factory = failing_factory
+    try:
+        assert service.start()["status"] == "started"
+        wait_for(lambda: service.status().recovery_attempts >= 1, timeout=10)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["state"] == "recovering"
+        assert status["recovery_attempts"] >= 1
+        assert status["recovery_retry_delay_s"] is None or status["recovery_retry_delay_s"] >= 1.0
+        assert "no input device" in (status["last_recovery_reason"] or "")
+        assert "no input device" in status["last_error"]
+    finally:
+        service.stop()
+        patch_settings(client, recovery_max_attempts=8)
+
+
+def test_bounded_recovery_gives_up_with_error_state(client: TestClient, fake_provider: type) -> None:
+    """After recovery_max_attempts consecutive failures the worker stops retrying and status
+    reports `error` with the episode diagnostics intact."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    assert patch_settings(client, recovery_max_attempts=2).status_code == 200
+
+    def failing_factory(settings):
+        raise AudioCaptureError("mic still gone")
+
+    service._source_factory = failing_factory
+    try:
+        assert service.start()["status"] == "started"
+        wait_for(lambda: service.status().state == "error", timeout=20)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["state"] == "error"
+        assert status["running"] is False  # worker gave up — not a silent restart loop
+        assert status["recovery_attempts"] == 2
+        assert status["audio_restarts"] == 2
+        assert "mic still gone" in status["last_error"]
+    finally:
+        patch_settings(client, recovery_max_attempts=8)
+
+
+def test_recovery_episode_resets_after_successful_capture(client: TestClient, fake_provider: type) -> None:
+    """A transient failure followed by a healthy stream reports attempts=0, no retry delay,
+    and a fresh last_capture_at."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    attempts: list[int] = []
+
+    def factory(settings):
+        attempts.append(1)
+        return ScriptedSource([], fail_start=len(attempts) == 1)
+
+    service._source_factory = factory
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(
+            lambda: len(attempts) >= 2 and client.get("/api/v1/recognition/status").json()["state"] == "running",
+            timeout=10,
+        )
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["last_capture_at"] is not None)
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["audio_restarts"] == 1  # lifetime counter survives the episode
+        assert status["recovery_attempts"] == 0
+        assert status["recovery_retry_delay_s"] is None
+        assert status["last_capture_at"] is not None
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_health_report_carries_recovery_diagnostics(
+    client: TestClient, fake_provider: type, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kernel health report surfaces the listener episode: warning while recovering,
+    error after give-up, diagnostics under details.listener."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    base = service.status()
+
+    recovering = base.model_copy(
+        update={
+            "state": "recovering",
+            "running": True,
+            "recovery_attempts": 3,
+            "last_recovery_reason": "device unplugged",
+        }
+    )
+    monkeypatch.setattr(service, "status", lambda: recovering)
+    report = client.get("/api/v1/health/").json()
+    listener_detail = report["details"]["listener"]
+    assert listener_detail["state"] == "recovering"
+    assert listener_detail["recovery_attempts"] == 3
+    assert listener_detail["last_recovery_reason"] == "device unplugged"
+    listener_check = next(c for c in report["details"]["checks"] if c["name"] == "listener")
+    assert listener_check["status"] == "warning"
+    assert "attempt 3" in listener_check["detail"]
+
+    monkeypatch.setattr(
+        service, "status", lambda: recovering.model_copy(update={"state": "error", "last_error": "gave up"})
+    )
+    report = client.get("/api/v1/health/").json()
+    listener_check = next(c for c in report["details"]["checks"] if c["name"] == "listener")
+    assert listener_check["status"] == "error"
+
+
+# --- shutdown/restart concurrency hardening --------------------------------------------------------
+
+
+def test_shutdown_during_recovery_backoff_returns_promptly(client: TestClient, fake_provider: type) -> None:
+    """shutdown() while the worker is sleeping out a recovery backoff must not wait it out."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+
+    def failing_factory(settings):
+        raise AudioCaptureError("no input device")
+
+    service._source_factory = failing_factory
+    assert service.start()["status"] == "started"
+    wait_for(lambda: service.status().state == "recovering", timeout=10)
+    started = time.monotonic()
+    service.shutdown()
+    assert time.monotonic() - started < 10  # the 1s+ backoff wait was interrupted
+    assert client.get("/api/v1/recognition/status").json()["state"] == "stopped"
+
+
+def test_repeated_start_stop_cycles_stay_bounded(client: TestClient, fake_provider: type) -> None:
+    """Six start/stop cycles: exactly one engine instance, clean stats each run, no thread leak."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([])
+    threads_before = threading.active_count()
+    for _ in range(6):
+        client.post("/api/v1/recognition/start")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
+        client.post("/api/v1/recognition/stop")
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "stopped")
+    assert len(service._providers) <= 1  # type: ignore[attr-defined]
+    assert threading.active_count() <= threads_before + 1
+    # a fresh run starts with reset counters — no accumulation across generations
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["sessions"] == 0 and status["results"] == 0 and status["audio_restarts"] == 0
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_concurrent_recognition_config_and_event_publishing(client: TestClient, fake_provider: type) -> None:
+    """Recognition keeps working while config updates and event publishes race it."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    fake_provider.script.extend(["turn on the kitchen light"] * 2)
+    service._source_factory = lambda settings: ScriptedSource(list(COMMAND))
+    client.post("/api/v1/recognition/start")
+    errors: list[Exception] = []
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "running")
+
+        def writer() -> None:
+            try:
+                for _ in range(5):
+                    patch_settings(client, cooldown_ms="1500")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def publisher() -> None:
+            try:
+                for _ in range(10):
+                    service.event_publisher.publish("test.topic", {"i": 1})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer), threading.Thread(target=publisher)]
+        for t in threads:
+            t.start()
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["results"] >= 1, timeout=15)
+        for t in threads:
+            t.join(timeout=15)
+        assert not errors
+    finally:
+        client.post("/api/v1/recognition/stop")
+
+
+def test_reaction_dispatch_after_close_returns_zero(service) -> None:
+    """Post-shutdown local dispatch is a no-op: nothing is queued that a dead worker would never run."""
+    runner = service._reaction_runner  # type: ignore[attr-defined]
+    runner.close()
+    assert runner.dispatch({"intent_name": "x", "session_id": "s"}) == 0
+
+
+# --- dispatch sequencer serialization -------------------------------------------------------------
+
+
+def test_sequencer_executes_callbacks_in_capture_order_under_concurrency() -> None:
+    """complete() calls from many threads in arbitrary order still execute callbacks in
+    capture-sequence order — collecting and executing are serialized under one lock."""
+    from opal_listener.service.listener_service import _DispatchSequencer
+
+    seq = _DispatchSequencer()
+    tickets = [seq.assign() for _ in range(24)]
+    executed: list[int] = []
+    errors: list[Exception] = []
+
+    def worker(ticket: int, delay_ms: int) -> None:
+        try:
+            time.sleep(delay_ms / 1000)
+            seq.complete(ticket, lambda t=ticket: executed.append(t))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    # later tickets complete *first* in wall-clock time — order must still hold
+    threads = [threading.Thread(target=worker, args=(ticket, (len(tickets) - ticket))) for ticket in tickets]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not errors
+    assert executed == sorted(executed) == tickets
+
+
+def test_sequencer_callback_exception_does_not_stall_later_dispatches() -> None:
+    """A raising dispatch callback is logged and skipped: the exception can neither stall the
+    gate nor silently drop later callbacks already collected."""
+    from opal_listener.service.listener_service import _DispatchSequencer
+
+    seq = _DispatchSequencer()
+    t1, t2, t3 = seq.assign(), seq.assign(), seq.assign()
+    executed: list[int] = []
+
+    def boom() -> None:
+        raise RuntimeError("publisher exploded")
+
+    seq.complete(t2, lambda: executed.append(2))  # parks behind t1
+    seq.complete(t1, boom)  # raises internally; must not propagate or drop t2
+    seq.complete(t3, lambda: executed.append(3))
+    assert executed == [2, 3]

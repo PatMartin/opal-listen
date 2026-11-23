@@ -20,7 +20,10 @@ SETTINGS = "/api/v1/setting/"
 
 wakewords_app = typer.Typer(help="Manage wakewords.", no_args_is_help=True)
 intents_app = typer.Typer(help="Manage intents and training phrases.", no_args_is_help=True)
+phrases_app = typer.Typer(help="Manage intent training phrases.", no_args_is_help=True)
 slots_app = typer.Typer(help="Manage slots, slot values and aliases.", no_args_is_help=True)
+slot_values_app = typer.Typer(help="Manage slot values.", no_args_is_help=True)
+slots_app.add_typer(slot_values_app, name="value")
 profiles_app = typer.Typer(help="Manage recognition profiles.", no_args_is_help=True)
 
 
@@ -53,8 +56,8 @@ def wakewords_list(ctx: typer.Context) -> None:
     render(ctx, state(ctx).api.get(WAKEWORDS), WAKEWORD_COLUMNS, "Wakewords")
 
 
-@wakewords_app.command("get")
-def wakewords_get(ctx: typer.Context, wakeword: str = typer.Argument(..., help="Name or id")) -> None:
+@wakewords_app.command("show")
+def wakewords_show(ctx: typer.Context, wakeword: str = typer.Argument(..., help="Name or id")) -> None:
     """Show one wakeword."""
     api = state(ctx).api
     render_kv(ctx, api.get(f"{WAKEWORDS}{api.resolve(WAKEWORDS, wakeword)['id']}"))
@@ -112,8 +115,8 @@ def intents_list(ctx: typer.Context) -> None:
     render(ctx, items, INTENT_COLUMNS, "Intents")
 
 
-@intents_app.command("get")
-def intents_get(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
+@intents_app.command("show")
+def intents_show(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
     """Show an intent with its phrases."""
     api = state(ctx).api
     item = api.get(f"{INTENTS}{api.resolve(INTENTS, intent)['id']}")
@@ -171,8 +174,8 @@ def intents_remove(ctx: typer.Context, intent: str = typer.Argument(..., help="N
     done(ctx, f"intent '{item['name']}' removed")
 
 
-@intents_app.command("phrases")
-def intents_phrases(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
+@phrases_app.command("list")
+def phrases_list(ctx: typer.Context, intent: str = typer.Argument(..., help="Name or id")) -> None:
     """List training phrases of an intent."""
     api = state(ctx).api
     item = api.resolve(INTENTS, intent)
@@ -184,8 +187,8 @@ def intents_phrases(ctx: typer.Context, intent: str = typer.Argument(..., help="
     )
 
 
-@intents_app.command("add-phrase")
-def intents_add_phrase(
+@phrases_app.command("add")
+def phrases_add(
     ctx: typer.Context,
     intent: str = typer.Argument(..., help="Name or id"),
     phrase: str = typer.Argument(..., help="e.g. 'turn on [the] {room_name} light'"),
@@ -197,8 +200,8 @@ def intents_add_phrase(
     done(ctx, f"phrase added to '{item['name']}' (id {created['id']})", created)
 
 
-@intents_app.command("remove-phrase")
-def intents_remove_phrase(
+@phrases_app.command("remove")
+def phrases_remove(
     ctx: typer.Context,
     intent: str = typer.Argument(..., help="Name or id"),
     phrase: str = typer.Argument(..., help="Phrase id or exact text"),
@@ -238,8 +241,8 @@ def slots_list(ctx: typer.Context) -> None:
     render(ctx, items, ("id", "name", "slot_type", "values", "description"), "Slots")
 
 
-@slots_app.command("get")
-def slots_get(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
+@slots_app.command("show")
+def slots_show(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
     """Show a slot."""
     api = state(ctx).api
     render(ctx, api.get(f"{SLOTS}{api.resolve(SLOTS, slot)['id']}"))
@@ -287,8 +290,8 @@ def slots_remove(ctx: typer.Context, slot: str = typer.Argument(..., help="Name 
     done(ctx, f"slot '{item['name']}' removed")
 
 
-@slots_app.command("values")
-def slots_values(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
+@slot_values_app.command("list")
+def slot_values_list(ctx: typer.Context, slot: str = typer.Argument(..., help="Name or id")) -> None:
     """List the values of a slot with aliases."""
     api = state(ctx).api
     item = api.resolve(SLOTS, slot)
@@ -298,8 +301,8 @@ def slots_values(ctx: typer.Context, slot: str = typer.Argument(..., help="Name 
     render(ctx, values, ("id", "value", "aliases"), f"{item['name']} values")
 
 
-@slots_app.command("add-value")
-def slots_add_value(
+@slot_values_app.command("add")
+def slot_values_add(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Canonical value"),
@@ -314,8 +317,8 @@ def slots_add_value(
     done(ctx, f"value '{created['value']}' added to '{item['name']}'", created)
 
 
-@slots_app.command("remove-value")
-def slots_remove_value(
+@slot_values_app.command("remove")
+def slot_values_remove(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Value or value id"),
@@ -439,8 +442,8 @@ def profiles_list(ctx: typer.Context) -> None:
     render(ctx, state(ctx).api.get(PROFILES), PROFILE_COLUMNS, "Profiles")
 
 
-@profiles_app.command("get")
-def profiles_get(ctx: typer.Context, profile: str = typer.Argument(..., help="Name or id")) -> None:
+@profiles_app.command("show")
+def profiles_show(ctx: typer.Context, profile: str = typer.Argument(..., help="Name or id")) -> None:
     """Show a profile."""
     api = state(ctx).api
     render_kv(ctx, api.get(f"{PROFILES}{api.resolve(PROFILES, profile)['id']}"))
@@ -450,7 +453,9 @@ def profiles_get(ctx: typer.Context, profile: str = typer.Argument(..., help="Na
 def profiles_add(
     ctx: typer.Context,
     name: str | None = typer.Argument(None),
-    doc: Path | None = typer.Option(None, "--in", help="Whole portable profile document (JSON/YAML); exclusive with --name/--shared/--module"),
+    doc: Path | None = typer.Option(
+        None, "--in", help="Whole portable profile document (JSON/YAML); exclusive with --name/--shared/--module"
+    ),
     shared: Path | None = typer.Option(None, "--shared", help="Shared-values object file merged into the document"),
     module: Path | None = typer.Option(None, "--module", help="opal-listen compartment file"),
     opt_name: str | None = typer.Option(None, "--name"),
@@ -492,7 +497,9 @@ def profiles_add(
 def profiles_update(
     ctx: typer.Context,
     profile: str = typer.Argument(..., help="Name or id"),
-    doc: Path | None = typer.Option(None, "--in", help="Patch document (JSON/YAML); exclusive with --name/--shared/--module"),
+    doc: Path | None = typer.Option(
+        None, "--in", help="Patch document (JSON/YAML); exclusive with --name/--shared/--module"
+    ),
     shared: Path | None = typer.Option(None, "--shared", help="Shared-values object file"),
     module: Path | None = typer.Option(None, "--module", help="opal-listen compartment patch file"),
     name: str | None = typer.Option(None, "--name"),
@@ -607,8 +614,8 @@ def personas_list(
     render(ctx, state(ctx).api.get(PERSONAS, params=params), PERSONA_COLUMNS, "Personas")
 
 
-@personas_app.command("get")
-def personas_get(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
+@personas_app.command("show")
+def personas_show(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
     """Show one persona."""
     api = state(ctx).api
     render_kv(ctx, api.get(f"{PERSONAS}{_persona_id(api, persona)}"))

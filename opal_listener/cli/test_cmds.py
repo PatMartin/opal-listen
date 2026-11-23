@@ -9,50 +9,12 @@ from typing import Any
 import typer
 
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import console, done, escape, print_json, render, render_kv, state, summarize_result
+from opal_listener.cli.output import console, done, print_json, render_kv, state, summarize_result
 
 RECOGNITION = "/api/v1/recognition"
 
-test_app = typer.Typer(
-    help="Test recognition with text, audio files or the microphone.", no_args_is_help=True
-)
+test_app = typer.Typer(help="Test recognition with text, audio files or the microphone.", no_args_is_help=True)
 pipeline_app = typer.Typer(help="Control the live microphone pipeline.", no_args_is_help=True)
-recognition_app = typer.Typer(
-    help="Run recognition tests and control live recognition.", no_args_is_help=True
-)
-
-
-@recognition_app.command("test")
-def recognition_test(
-    ctx: typer.Context,
-    text: str | None = typer.Option(None, "--text", help="Utterance text, e.g. 'computer, turn on the light'"),
-    audio: Path | None = typer.Option(
-        None, "--audio", exists=True, dir_okay=False, readable=True, help="16-bit PCM .wav file"
-    ),
-    save: bool = typer.Option(True, "--save/--no-save", help="Store in recognition logs"),
-    require_wakeword: bool = typer.Option(
-        False, "--require-wakeword", help="no_match unless a wakeword is heard (audio only)"
-    ),
-    expect_intent: str | None = typer.Option(None, "--expect-intent", help="Exit 1 if the intent differs"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show the full result"),
-) -> None:
-    """One recognition test: --text or --audio (exactly one). Same operations as
-    `test text`/`test audio`, which remain available."""
-    if (text is None) == (audio is None):
-        raise CliError("pass exactly one of --text or --audio")
-    if require_wakeword and audio is None:
-        raise CliError("--require-wakeword only applies to --audio")
-    if text is not None:
-        result = state(ctx).api.post(f"{RECOGNITION}/test_text", json={"text": text}, params={"save_log": save})
-    else:
-        with audio.open("rb") as fh:
-            result = state(ctx).api.post(
-                f"{RECOGNITION}/test_audio",
-                files={"file": (audio.name, fh, "audio/wav")},
-                params={"save_log": save, "require_wakeword": require_wakeword},
-            )
-    _show_result(ctx, result, verbose)
-    _check_expectation(result, expect_intent)
 
 
 def _show_result(ctx: typer.Context, result: dict[str, Any], verbose: bool) -> None:
@@ -104,12 +66,7 @@ def test_audio(
     _check_expectation(result, expect_intent)
 
 
-def _level_bar(dbfs: float, width: int = 30) -> str:
-    filled = max(0, min(width, int((dbfs + 90) / 90 * width)))
-    return "█" * filled + "·" * (width - filled)
-
-
-def _stream(ctx: typer.Context, debug: bool, count: int, duration: float, start: bool, verbose: bool) -> None:
+def _stream(ctx: typer.Context, count: int, duration: float, start: bool, verbose: bool) -> None:
     api = state(ctx).api
     started_here = False
     if start:
@@ -118,31 +75,16 @@ def _stream(ctx: typer.Context, debug: bool, count: int, duration: float, start:
             console.print("[dim]listening... say the wakeword (Ctrl-C to stop)[/dim]")
     results = 0
     deadline = time.monotonic() + duration if duration > 0 else None
-    params = {"debug": debug}
     try:
-        for event, data in api.stream_events(
-            f"{RECOGNITION}/stream", params=params, idle_timeout=duration if duration > 0 else None
-        ):
+        for event, data in api.stream_events(f"{RECOGNITION}/stream", idle_timeout=duration if duration > 0 else None):
             if deadline and time.monotonic() > deadline:
                 break
-            if event == "result":
-                results += 1
-                _show_result(ctx, data, verbose)
-                if count and results >= count:
-                    break
-            elif not debug:
+            if event != "result":
                 continue
-            elif state(ctx).json_output:
-                print_json({"event": event, "data": data})
-            elif event == "audio_level":
-                console.print(f"[dim]{data['state']:>9} {_level_bar(data['dbfs'])} {data['dbfs']:6.1f} dBFS[/dim]")
-            elif event == "partial":
-                console.print(f"[cyan]… {escape(str(data['text']))}[/cyan]")
-            elif event == "status":
-                st, last_error = escape(str(data.get("state"))), escape(str(data.get("last_error") or ""))
-                console.print(f"[magenta]status: {st} {last_error}[/magenta]")
-            else:
-                console.print(f"[bold]{escape(str(event))}[/bold] {escape(str(data))}")
+            results += 1
+            _show_result(ctx, data, verbose)
+            if count and results >= count:
+                break
     except KeyboardInterrupt:
         pass
     finally:
@@ -159,18 +101,7 @@ def test_listen(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full results"),
 ) -> None:
     """Listen on the microphone and print recognition results."""
-    _stream(ctx, debug=False, count=count, duration=duration, start=start, verbose=verbose)
-
-
-@test_app.command("listen-debug")
-def test_listen_debug(
-    ctx: typer.Context,
-    count: int = typer.Option(0, "--count", "-n", help="Stop after N results (0 = unlimited)"),
-    duration: float = typer.Option(0, "--duration", help="Stop after N seconds (0 = unlimited)"),
-    start: bool = typer.Option(True, "--start/--no-start", help="Start the pipeline if it is not running"),
-) -> None:
-    """Like 'listen' but also shows audio levels, partial transcripts, wakeword and VAD events."""
-    _stream(ctx, debug=True, count=count, duration=duration, start=start, verbose=True)
+    _stream(ctx, count=count, duration=duration, start=start, verbose=verbose)
 
 
 @pipeline_app.command("start")

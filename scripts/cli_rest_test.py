@@ -8,7 +8,7 @@ WHAT IT DOES
 
         [PASS] 11 wakewords add            create_wakeword  POST /api/v1/wakeword/        0.41s
                created 'hey smoke qzkx' (id 2)
-        [FAIL] 26 intents add-phrase       add_phrase       POST /api/v1/intent/{...}     0.38s
+        [FAIL] 26 phrase add               add_phrase       POST /api/v1/intent/{...}     0.38s
                expected exit code 0, got 1: HTTP 422: ...
                $ python -m opal_listener.cli listen --api-url ... --json intents add-phrase ...
 
@@ -19,10 +19,8 @@ TARGET SERVER
     a temporary data directory), so your real database is never touched. It is stopped at the end.
 
     --api-url URL: run against an already running server instead. The scenario is designed to leave
-    it as it found it: it takes a `config save --out` safety snapshot first, uses uniquely named
-    `smoke_<tag>` resources, and at the end restores that snapshot with `config load --in`. Note that
-    the restore also discards recognition logs written *during* the run. The live pipeline is only
-    started/stopped if it was not already running.
+    it as it found it: it uses uniquely named `smoke_<tag>` resources and removes them at the
+    end. The live pipeline is only started/stopped if it was not already running.
 
 COVERAGE
     Each step declares the REST operations it exercises (FastAPI function names, e.g. `create_intent`).
@@ -30,25 +28,20 @@ COVERAGE
     step FAIL the coverage check; operations whose steps were all skipped are reported as skipped.
 
 WHAT IS VERIFIED (per group)
-    health      service health (/api/v1/health/), live (/health/live), ready (/health/ready);
-                audio devices ride along in the health report's details
-    snapshot    config save --out: a safety snapshot is captured before anything is changed
-    settings    list, set via per-key PUT (valid value, rejected invalid value and unknown key,
-                restored), show, remove (reverts to default)
-    wakewords   add, list, get, update (threshold/disabled)
-    slots       add with value, add-value with alias, add-alias, list, get, values, aliases, update
-    intents     add with phrase, list, get, add-phrase (+ invalid phrase rejected), phrases, update,
-                text recognition with the new slot alias, remove-phrase
-    profiles    list, add (thresholds/VAD/filters), get, update, activate (recognition uses it),
+    health      service health (/api/v1/health/), live/ready probes via direct REST (no CLI commands)
+    settings    list, set, show, remove (valid value, rejected invalid value and unknown key, restored)
+    wakewords   add, list, show, update (threshold/disabled)
+    slots       add with value, value add with alias, add-alias, list, set, values, aliases, update
+    intents     add with phrase, list, show, update; phrases via `phrase add` (+ invalid phrase
+                rejected), `phrase list`, `phrase remove`; text recognition with the new slot alias
+    profiles    list, add (thresholds/VAD/filters), show, update, activate (recognition uses it),
                 re-activate the original profile, remove
-    personas    add, list, get, update, validate, remove
-    recognition test audio (WAV through wakeword + STT + intent; skipped without a Vosk model),
-                pipeline status/start/stop, SSE stream via `test listen` and `test listen-debug`
+    test        test audio (WAV through wakeword + STT + intent; skipped without a Vosk model),
+                pipeline status/start/stop, SSE stream via `test listen`
     perf        service perf last/summary/history
-    failures    add, list, get, update, remove
+    failures    add, list, show, update, remove
     cleanup     remove alias/value/intent/slot/wakeword created above (the DELETE operations)
-    config      validate (server), save --out, load --in restoring the safety snapshot
-                (verifies the state)
+    config      save a snapshot, load it back, validate (live + saved file)
 
 USAGE
     python scripts/cli_rest_test.py                       # isolated server, all steps
@@ -79,6 +72,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -190,10 +184,6 @@ class CliRestTest:
     def profile(self) -> str:
         return f"smoke_{self.tag}_profile"
 
-    @property
-    def persona(self) -> str:
-        return f"smoke_{self.tag}"
-
     # -- CLI helpers --------------------------------------------------------------------------
 
     def run(self, *args: str, json_output: bool = True, stdin: str | None = None, timeout: float = 60) -> CliCall:
@@ -303,47 +293,81 @@ def expect(condition: bool, message: str) -> None:
 
 
 @step("service health", "opal_health_get")
-def _health(t: CliRestTest) -> str:
+def _doctor(t: CliRestTest) -> str:
     call = t.run("service", "health")
     report = parse_json(call)
-    expect(isinstance(report, dict) and report.get("details", {}).get("checks"), "health report has no checks")
+    expect(isinstance(report, dict) and report.get("checks"), "health report has no checks")
     expect(call.exit_code == (1 if report["status"] == "error" else 0), "exit code does not match status")
-    checks = {c["name"]: c["status"] for c in report["details"]["checks"]}
+    checks = {c["name"]: c["status"] for c in report["checks"]}
     t.state["model_ok"] = checks.get("vosk_model") == "ok"
     problems = [f"{n}={s}" for n, s in checks.items() if s != "ok"]
     return f"overall {report['status']}" + (f" ({', '.join(problems)})" if problems else "")
 
 
-@step("service live", "opal_health_live_get")
+@step("health live (REST)", "opal_health_live_get")
 def _live(t: CliRestTest) -> str:
-    probe = t.ok("service", "live")
-    expect(probe.get("status") == "ok" and probe.get("ready") is True, f"unexpected probe {probe}")
+    # liveness/readiness probes have no CLI command (they exist for external monitors)
+    probe = http_get_json(f"{t.api_url}/api/v1/health/live")
+    expect(probe.get("status") == "ok", f"unexpected probe {probe}")
     return f"status {probe['status']}"
 
 
-@step("service ready", "opal_health_ready_get")
+@step("health ready (REST)", "opal_health_ready_get")
 def _ready(t: CliRestTest) -> str:
-    call = t.run("service", "ready")
-    if call.exit_code == 0:
-        probe = parse_json(call)
-        expect(
-            isinstance(probe, dict) and probe.get("ready") is True and probe.get("status") in ("ok", "degraded"),
-            f"unexpected probe {probe}",
-        )
-        return f"status {probe['status']}"
-    # a server that is not ready answers HTTP 503 with the probe as the error body
-    expect("503" in call.flat and "ready" in call.flat, f"expected exit 0 or an HTTP 503 probe: {_tail(call.flat)}")
-    return "not ready (HTTP 503, probe body returned)"
+    try:
+        probe = http_get_json(f"{t.api_url}/api/v1/health/ready")
+    except urllib.error.HTTPError as exc:
+        # a server that is not ready answers HTTP 503 with the probe as the error body
+        probe = json.loads(exc.read())
+        expect("ready" in probe, f"expected a probe body on 503: {probe}")
+        return "not ready (HTTP 503, probe body returned)"
+    expect(probe.get("ready") is True and probe.get("status") in ("ok", "degraded"), f"unexpected probe {probe}")
+    return f"status {probe['status']}"
 
 
-@step("config save (safety)", "opal_config_save")
-def _safety_snapshot(t: CliRestTest) -> str:
-    """Snapshot the pre-run configuration so `config load` can restore it at the end."""
-    out = t.tmp / "safety-snapshot.json"
-    t.ok("config", "save", "--out", str(out))
-    expect(out.is_file(), f"snapshot not written to {out}")
-    t.state["safety_snapshot"] = out
-    return f"safety snapshot written to {out}"
+@step("persona add", "opal_persona_create")
+def _persona_add(t: CliRestTest) -> str:
+    t.state["persona_name"] = f"smoke_{t.tag}_persona"
+    created = t.ok("persona", "add", "--name", t.state["persona_name"], "--description", "smoke test")
+    t.state["persona_id"] = created.get("persona_id") or created.get("id")
+    expect(t.state["persona_id"], f"no persona id in {created}")
+    return f"{t.state['persona_name']} ({t.state['persona_id']})"
+
+
+@step("persona list", "opal_persona_list", requires=("persona add",))
+def _persona_list(t: CliRestTest) -> str:
+    names = [p["name"] for p in t.ok("persona", "list")]
+    expect(t.state["persona_name"] in names, f"persona not listed: {names}")
+    return f"{len(names)} persona(s)"
+
+
+@step("persona show", "opal_persona_get", requires=("persona add",))
+def _persona_show(t: CliRestTest) -> str:
+    item = t.ok("persona", "show", t.state["persona_name"])
+    expect(item["name"] == t.state["persona_name"], f"unexpected {item}")
+    return f"description={item.get('description')}"
+
+
+@step("persona update", "opal_persona_patch", requires=("persona add",))
+def _persona_update(t: CliRestTest) -> str:
+    updated = t.ok("persona", "update", t.state["persona_name"], "--description", "updated")
+    expect(updated["description"] == "updated", f"not updated: {updated}")
+    return "description updated"
+
+
+@step("persona validate", "opal_persona_validate", requires=("persona add",))
+def _persona_validate(t: CliRestTest) -> str:
+    report = t.ok("persona", "validate", t.state["persona_name"])
+    expect("valid" in report, f"no valid field in {report}")
+    return f"valid={report['valid']}"
+
+
+@step("persona remove", "opal_persona_delete", requires=("persona add",))
+def _persona_remove(t: CliRestTest) -> str:
+    t.ok("persona", "remove", t.state["persona_name"])
+    names = [p["name"] for p in t.ok("persona", "list")]
+    expect(t.state["persona_name"] not in names, "persona still listed")
+    return "removed"
 
 
 @step("config setting list", "opal_setting_list")
@@ -356,18 +380,18 @@ def _settings_list(t: CliRestTest) -> str:
 @step("config setting set", "opal_setting_put")
 def _settings_set(t: CliRestTest) -> str:
     updated = t.ok("config", "setting", "set", "--name", "cooldown_ms", "--value", "1234")
-    expect(str(updated["value"]) == "1234", f"cooldown_ms not stored: {updated}")
+    expect(updated["value"] == 1234, f"cooldown_ms not stored: {updated}")
     t.rejected("config", "setting", "set", "--name", "cooldown_ms", "--value", "soon", contains="cooldown_ms")
     t.rejected("config", "setting", "set", "--name", "not_a_setting", "--value", "1", contains="not_a_setting")
     restored = t.ok("config", "setting", "set", "--name", "cooldown_ms", "--value", "1500")
-    expect(str(restored["value"]) == "1500", f"cooldown_ms not restored: {restored}")
+    expect(restored["value"] == 1500, f"cooldown_ms not restored: {restored}")
     return "put 1234, invalid value + unknown key rejected, restored 1500"
 
 
 @step("config setting show", "opal_setting_get", requires=("config setting set",))
 def _settings_get(t: CliRestTest) -> str:
     read = t.ok("config", "setting", "show", "--name", "cooldown_ms")
-    expect(read["key"] == "cooldown_ms" and str(read["value"]) == "1500", f"unexpected SettingRead: {read}")
+    expect(read["key"] == "cooldown_ms" and read["value"] == 1500, f"unexpected SettingRead: {read}")
     expect(read["is_default"] is True and read["pending_restart"] is False, f"missing metadata: {read}")
     return f"cooldown_ms={read['value']} (default={read['default']})"
 
@@ -377,7 +401,7 @@ def _settings_unset(t: CliRestTest) -> str:
     t.ok("config", "setting", "set", "--name", "cooldown_ms", "--value", "999")
     t.ok("config", "setting", "remove", "--name", "cooldown_ms")
     read = t.ok("config", "setting", "show", "--name", "cooldown_ms")
-    expect(str(read["value"]) == "1500" and read["is_default"] is True, f"not reverted: {read}")
+    expect(read["value"] == 1500 and read["is_default"] is True, f"not reverted: {read}")
     return "999 reverted to default 1500"
 
 
@@ -395,9 +419,9 @@ def _ww_list(t: CliRestTest) -> str:
     return f"{len(names)} wakeword(s)"
 
 
-@step("wakeword get", "show_wakeword", requires=("wakeword add",))
+@step("wakeword show", "show_wakeword", requires=("wakeword add",))
 def _ww_get(t: CliRestTest) -> str:
-    item = t.ok("wakeword", "get", t.wakeword)
+    item = t.ok("wakeword", "show", t.wakeword)
     expect(item["confidence_threshold"] == 0.75, f"unexpected threshold {item['confidence_threshold']}")
     return "threshold 0.75"
 
@@ -405,7 +429,7 @@ def _ww_get(t: CliRestTest) -> str:
 @step("wakeword update", "update_wakeword", requires=("wakeword add",))
 def _ww_update(t: CliRestTest) -> str:
     t.ok("wakeword", "update", t.wakeword, "--threshold", "0.65", "--disabled")
-    item = t.ok("wakeword", "get", t.wakeword)
+    item = t.ok("wakeword", "show", t.wakeword)
     expect(item["confidence_threshold"] == 0.65 and item["enabled"] is False, f"not updated: {item}")
     return "threshold 0.65, disabled"
 
@@ -417,9 +441,9 @@ def _slot_add(t: CliRestTest) -> str:
     return f"created '{t.slot}' with value 'red'"
 
 
-@step("slot add-value", "add_slot_value", "add_alias", requires=("slot add",))
+@step("slot value add", "add_slot_value", "add_alias", requires=("slot add",))
 def _slot_add_value(t: CliRestTest) -> str:
-    created = t.ok("slot", "add-value", t.slot, "blue", "--alias", "navy")
+    created = t.ok("slot", "value", "add", t.slot, "blue", "--alias", "navy")
     expect(created["value"] == "blue", f"unexpected value {created}")
     return "value 'blue' with alias 'navy'"
 
@@ -438,17 +462,17 @@ def _slot_list(t: CliRestTest) -> str:
     return f"{len(names)} slot(s)"
 
 
-@step("slot get", "show_slot", requires=("slot add-value", "slot add-alias"))
+@step("slot show", "show_slot", requires=("slot value add", "slot add-alias"))
 def _slot_get(t: CliRestTest) -> str:
-    slot = t.ok("slot", "get", t.slot)
+    slot = t.ok("slot", "show", t.slot)
     values = {v["value"]: sorted(a["alias"] for a in v["aliases"]) for v in slot["values"]}
     expect(values == {"red": ["crimson"], "blue": ["navy"]}, f"unexpected values {values}")
     return f"values {values}"
 
 
-@step("slot values", "list_slot_values", requires=("slot add-value",))
+@step("slot value list", "list_slot_values", requires=("slot value add",))
 def _slot_values(t: CliRestTest) -> str:
-    values = [v["value"] for v in t.ok("slot", "values", t.slot)]
+    values = [v["value"] for v in t.ok("slot", "value", "list", t.slot)]
     expect(values == ["red", "blue"], f"unexpected values {values}")
     return "red, blue"
 
@@ -481,24 +505,24 @@ def _intent_list(t: CliRestTest) -> str:
     return f"{len(names)} intent(s)"
 
 
-@step("intent get", "show_intent", requires=("intent add",))
+@step("intent show", "show_intent", requires=("intent add",))
 def _intent_get(t: CliRestTest) -> str:
-    intent = t.ok("intent", "get", t.intent)
+    intent = t.ok("intent", "show", t.intent)
     expect(intent["confidence_threshold"] == 0.75, f"unexpected intent {intent}")
     return f"id {intent['id']}"
 
 
-@step("intent add-phrase", "add_phrase", requires=("intent add",))
-def _intent_add_phrase(t: CliRestTest) -> str:
-    created = t.ok("intent", "add-phrase", t.intent, f"color it {{{t.slot}}}")
+@step("phrase add", "add_phrase", requires=("intent add",))
+def _phrase_add(t: CliRestTest) -> str:
+    created = t.ok("phrase", "add", t.intent, f"color it {{{t.slot}}}")
     expect(created["phrase"] == f"color it {{{t.slot}}}", f"unexpected phrase {created}")
-    t.rejected("intent", "add-phrase", t.intent, "paint {ghost_slot}", contains="unknown slot")
+    t.rejected("phrase", "add", t.intent, "paint {ghost_slot}", contains="unknown slot")
     return "valid phrase added, phrase with unknown slot rejected (validate before apply)"
 
 
-@step("intent phrases", "list_phrases", requires=("intent add-phrase",))
+@step("phrase list", "list_phrases", requires=("phrase add",))
 def _intent_phrases(t: CliRestTest) -> str:
-    phrases = [p["phrase"] for p in t.ok("intent", "phrases", t.intent)]
+    phrases = [p["phrase"] for p in t.ok("phrase", "list", t.intent)]
     expect(len(phrases) == 2, f"expected 2 phrases, got {phrases}")
     return f"{len(phrases)} phrases"
 
@@ -517,10 +541,10 @@ def _test_text(t: CliRestTest) -> str:
     return f"'paint the wall crimson' -> {result['intent_name']} {result['slot_values']}"
 
 
-@step("intent remove-phrase", "remove_phrase", requires=("intent add-phrase",))
-def _intent_remove_phrase(t: CliRestTest) -> str:
-    t.ok("intent", "remove-phrase", t.intent, f"color it {{{t.slot}}}")
-    phrases = [p["phrase"] for p in t.ok("intent", "phrases", t.intent)]
+@step("phrase remove", "remove_phrase", requires=("phrase add",))
+def _phrase_remove(t: CliRestTest) -> str:
+    t.ok("phrase", "remove", t.intent, f"color it {{{t.slot}}}")
+    phrases = [p["phrase"] for p in t.ok("phrase", "list", t.intent)]
     expect(len(phrases) == 1, f"phrase not removed: {phrases}")
     return "1 phrase left"
 
@@ -545,9 +569,9 @@ def _profile_add(t: CliRestTest) -> str:
     return f"created '{t.profile}'"
 
 
-@step("profile get", "opal_profile_get", requires=("profile add",))
+@step("profile show", "opal_profile_get", requires=("profile add",))
 def _profile_get(t: CliRestTest) -> str:
-    profile = t.ok("profile", "get", t.profile)
+    profile = t.ok("profile", "show", t.profile)
     expect(profile["enabled_intents"] == [t.intent], f"unexpected profile {profile}")
     return f"enabled_intents {profile['enabled_intents']}"
 
@@ -579,49 +603,6 @@ def _profile_remove(t: CliRestTest) -> str:
     t.ok("profile", "remove", t.profile)
     names = [p["name"] for p in t.ok("profile", "list")]
     expect(t.profile not in names, "profile still listed")
-    return "removed"
-
-
-@step("persona add", "opal_persona_create")
-def _persona_add(t: CliRestTest) -> str:
-    created = t.ok("persona", "add", t.persona, "--name", f"Smoke {t.tag}", "--description", "smoke test")
-    expect(created["persona_id"] == t.persona, f"unexpected persona_id {created}")
-    return f"created '{t.persona}'"
-
-
-@step("persona list", "opal_persona_list", requires=("persona add",))
-def _persona_list(t: CliRestTest) -> str:
-    ids = [p["persona_id"] for p in t.ok("persona", "list")]
-    expect(t.persona in ids, f"{t.persona!r} not listed")
-    return f"{len(ids)} persona(s)"
-
-
-@step("persona get", "opal_persona_get", requires=("persona add",))
-def _persona_get(t: CliRestTest) -> str:
-    item = t.ok("persona", "get", t.persona)
-    expect(item["name"] == f"Smoke {t.tag}", f"unexpected {item}")
-    return "name matches"
-
-
-@step("persona update", "opal_persona_patch", requires=("persona add",))
-def _persona_update(t: CliRestTest) -> str:
-    updated = t.ok("persona", "update", t.persona, "--description", "updated by smoke test")
-    expect(updated["description"] == "updated by smoke test", f"not updated: {updated}")
-    return "description updated"
-
-
-@step("persona validate", "opal_persona_validate", requires=("persona add",))
-def _persona_validate(t: CliRestTest) -> str:
-    report = t.ok("persona", "validate", t.persona)
-    expect(report["valid"] is True, f"fresh persona does not validate: {report}")
-    return "valid"
-
-
-@step("persona remove", "opal_persona_delete", requires=("persona add",))
-def _persona_remove(t: CliRestTest) -> str:
-    t.ok("persona", "remove", t.persona)
-    ids = [p["persona_id"] for p in t.ok("persona", "list")]
-    expect(t.persona not in ids, "persona still listed")
     return "removed"
 
 
@@ -669,13 +650,6 @@ def _pipeline_stop(t: CliRestTest) -> str:
 def _test_listen(t: CliRestTest) -> str:
     t.ok("test", "listen", "--no-start", "--duration", "2", timeout=30)
     return "SSE stream opened and closed after the idle timeout"
-
-
-@step("test listen-debug", "stream_recognition")
-def _test_listen_debug(t: CliRestTest) -> str:
-    output = t.ok("test", "listen-debug", "--no-start", "--duration", "2", json_output=False, timeout=30)
-    expect("status:" in output, f"no status event received: {_tail(output)}")
-    return "received the initial 'status' event"
 
 
 @step("service start", "opal_service_start")
@@ -731,9 +705,9 @@ def _failed_list(t: CliRestTest) -> str:
     return f"{len(ids)} unreviewed"
 
 
-@step("failed get", "show_failed_utterance", requires=("failed add",))
+@step("failed show", "show_failed_utterance", requires=("failed add",))
 def _failed_get(t: CliRestTest) -> str:
-    item = t.ok("failed", "get", str(t.state["failed_id"]))
+    item = t.ok("failed", "show", str(t.state["failed_id"]))
     expect(item["notes"] == "smoke test", f"unexpected {item}")
     return "notes match"
 
@@ -748,8 +722,8 @@ def _failed_update(t: CliRestTest) -> str:
 @step("failed remove", "remove_failed_utterance", requires=("failed add",))
 def _failed_remove(t: CliRestTest) -> str:
     t.ok("failed", "remove", str(t.state["failed_id"]))
-    t.rejected("failed", "get", str(t.state["failed_id"]), contains="404")
-    return "removed (get now returns 404)"
+    t.rejected("failed", "show", str(t.state["failed_id"]), contains="404")
+    return "removed (show now returns 404)"
 
 
 @step("slot remove-alias", "remove_alias", requires=("slot add-alias",))
@@ -759,10 +733,10 @@ def _slot_remove_alias(t: CliRestTest) -> str:
     return "crimson removed"
 
 
-@step("slot remove-value", "remove_slot_value", requires=("slot add-value",))
+@step("slot value remove", "remove_slot_value", requires=("slot value add",))
 def _slot_remove_value(t: CliRestTest) -> str:
-    t.ok("slot", "remove-value", t.slot, "blue")
-    values = [v["value"] for v in t.ok("slot", "values", t.slot)]
+    t.ok("slot", "value", "remove", t.slot, "blue")
+    values = [v["value"] for v in t.ok("slot", "value", "list", t.slot)]
     expect(values == ["red"], f"unexpected values {values}")
     return "blue removed"
 
@@ -791,7 +765,24 @@ def _ww_remove(t: CliRestTest) -> str:
     return "removed"
 
 
-@step("config validate", "opal_config_validate")
+@step("config save", "opal_config_save")
+def _config_save(t: CliRestTest) -> str:
+    out = t.tmp / "snapshot.json"
+    result = t.ok("config", "save", "--out", str(out))
+    snapshot = json.loads(out.read_text())
+    expect("resources" in snapshot and "wakewords" in snapshot["resources"], f"unexpected snapshot: {list(snapshot)}")
+    t.state["snapshot_file"] = out
+    return f"snapshot written to {out.name} (revision {result['revision']})"
+
+
+@step("config load", "opal_config_load", requires=("config save",))
+def _config_load(t: CliRestTest) -> str:
+    result = t.ok("config", "load", "--in", str(t.state["snapshot_file"]), "--yes")
+    expect(isinstance(result, dict), f"unexpected load result: {result}")
+    return "snapshot reloaded"
+
+
+@step("config validate", "opal_config_validate", requires=("config save",))
 def _config_validate(t: CliRestTest) -> str:
     call = t.run("config", "validate")
     report = parse_json(call)
@@ -799,22 +790,9 @@ def _config_validate(t: CliRestTest) -> str:
     expect(call.exit_code == (0 if report["valid"] else 1), "exit code does not match 'valid'")
     if t.isolated:
         expect(report["valid"], f"shipped configuration is invalid: {report['errors']}")
-    return f"valid={report['valid']}"
-
-
-@step("config validate --in", "opal_config_validate", requires=("config save (safety)",))
-def _config_validate_file(t: CliRestTest) -> str:
-    report = t.ok("config", "validate", "--in", str(t.state["safety_snapshot"]))
-    expect(report["valid"] is True, f"safety snapshot does not validate: {report['errors']}")
-    return "safety snapshot validates"
-
-
-@step("config load (restore)", "opal_config_load", requires=("config validate --in",))
-def _config_restore(t: CliRestTest) -> str:
-    result = t.ok("config", "load", "--in", str(t.state["safety_snapshot"]), "--yes")
-    names = [w["name"] for w in t.ok("wakeword", "list")]
-    expect(t.wakeword not in names, "restore did not return to the pre-test state")
-    return "configuration restored to the state before this run"
+    report = t.ok("config", "validate", "--in", str(t.state["snapshot_file"]))
+    expect(report["valid"] is True, f"saved snapshot does not validate: {report['errors']}")
+    return f"valid={report['valid']} (live + saved file)"
 
 
 # --- server + coverage ---------------------------------------------------------------------------

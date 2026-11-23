@@ -1,7 +1,7 @@
 """ZeroMQ event-bus publisher used by the server to announce recognition events (e.g. intent matches).
 
 This is independent of the SSE `EventBus` in events.py: it publishes onto an external ZeroMQ PUB/SUB
-(or XPUB/XSUB broker) endpoint, the same bus `opal listen event publish` writes to from the CLI.
+(or XPUB/XSUB broker) endpoint shared with other OPAL suite services.
 
 Wire protocol (opal-event `zeromq_protocol.md`): every message is exactly two frames — the UTF-8
 topic (matching `TOPIC_PATTERN`) and a UTF-8 JSON event envelope whose `topic` equals frame 1 and
@@ -31,6 +31,21 @@ class EventPublisher(Protocol):
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None: ...
 
+    def _record_failure(self, message: str) -> None:
+        with self._lock:
+            self.delivery_failures += 1
+            self.last_error = message
+        log.warning(message)
+
+    def stats(self) -> dict[str, float]:
+        """Delivery accounting surfaced in PipelineStatus.metrics (PUB is fire-and-forget;
+        `events_delivered` counts frames accepted by the socket, not confirmed receipts)."""
+        return {
+            "events_accepted": float(self.accepted),
+            "events_delivered": float(self.delivered),
+            "event_delivery_failures": float(self.delivery_failures),
+        }
+
     def close(self) -> None: ...
 
 
@@ -51,14 +66,18 @@ class ZmqEventPublisher:
         self._lock = threading.Lock()
         self._context: Any = None
         self._socket: Any = None
-        # ZMQ is fire-and-forget: `delivered` means frames were handed to the socket, not
-        # that a subscriber received them; failures cover oversize drops and socket errors.
+        # Observable delivery accounting. ZMQ PUB is fire-and-forget: 'delivered' means the
+        # frames were handed to the socket, not that a subscriber received them.
         self.accepted = 0
         self.delivered = 0
         self.delivery_failures = 0
+        self.last_error: str | None = None
+        self._closed = False
 
     def connect(self) -> None:
         with self._lock:
+            if self._closed:
+                return
             self._ensure_socket()
 
     def _ensure_socket(self) -> Any:
@@ -75,21 +94,42 @@ class ZmqEventPublisher:
             envelope = build_event_envelope(topic, payload)
             frames = [topic.encode("utf-8"), json.dumps(envelope, default=str).encode("utf-8")]
             if sum(len(frame) for frame in frames) > MAX_EVENT_BYTES:
-                self.delivery_failures += 1
-                log.warning("dropping event '%s': exceeds %d bytes", topic, MAX_EVENT_BYTES)
+                self._record_failure(f"dropping event '{topic}': exceeds {MAX_EVENT_BYTES} bytes")
                 return
             with self._lock:
+                if self._closed:
+                    # post-shutdown publish: count the drop, never recreate the socket
+                    # (inline accounting — _record_failure would re-take this non-reentrant lock)
+                    self.delivery_failures += 1
+                    self.last_error = f"publisher closed; dropped event '{topic}'"
+                    log.debug(self.last_error)
+                    return
                 socket = self._ensure_socket()
                 log.info("sending ZeroMQ event to topic '%s' via %s: %s", topic, self._xpub_url, envelope)
-                socket.send_multipart(frames)
                 self.accepted += 1
-                self.delivered += 1
-        except Exception:  # noqa: BLE001 - event delivery must never break recognition
+                socket.send_multipart(frames)
+                self.delivered += 1  # handed to the socket; subscriber receipt is unverifiable
+        except Exception as exc:  # noqa: BLE001 - event delivery must never break recognition
+            self._record_failure(f"failed to publish event '{topic}' to {self._xpub_url}: {exc!r}")
+
+    def _record_failure(self, message: str) -> None:
+        with self._lock:
             self.delivery_failures += 1
-            log.warning("failed to publish event '%s' to %s", topic, self._xpub_url, exc_info=True)
+            self.last_error = message
+        log.warning(message)
+
+    def stats(self) -> dict[str, float]:
+        """Delivery accounting surfaced in PipelineStatus.metrics (PUB is fire-and-forget;
+        `events_delivered` counts frames accepted by the socket, not confirmed receipts)."""
+        return {
+            "events_accepted": float(self.accepted),
+            "events_delivered": float(self.delivered),
+            "event_delivery_failures": float(self.delivery_failures),
+        }
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             if self._socket is not None:
                 self._socket.close(linger=0)
                 self._socket = None
