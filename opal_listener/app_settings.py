@@ -22,6 +22,11 @@ class AppSettings(BaseSettings):
     vosk_model_path: str = "/resources/vosk/models/vosk-model-small-en-us-0.15"
     host: str = "0.0.0.0"
     port: int = 8000
+    # When set (e.g. "/say") and the opal-say package is importable, mount the
+    # OPAL Say ASGI app in-process at this prefix — one process serves both APIs
+    # (say lives at <prefix>/api/v1/...). Empty disables the mount; listen then
+    # runs standalone and say can be a separate service or absent entirely.
+    say_mount_path: str = ""
     # NoDecode: pydantic-settings would otherwise require a JSON array from the environment,
     # while generated .env files write a plain comma-separated list — both forms are accepted.
     cors_origins: Annotated[list[str], NoDecode] = ["*"]
@@ -90,6 +95,7 @@ def dotenv_baseline() -> dict[str, object]:
         "OPAL_LISTENER_VOSK_MODEL_PATH": defaults.vosk_model_path,
         "OPAL_LISTENER_HOST": defaults.host,
         "OPAL_LISTENER_PORT": defaults.port,
+        "OPAL_LISTENER_SAY_MOUNT_PATH": defaults.say_mount_path,
         "OPAL_LISTENER_CORS_ORIGINS": ",".join(defaults.cors_origins),
         "OPAL_LISTENER_MAX_UPLOAD_BYTES": defaults.max_upload_bytes,
         "OPAL_LISTENER_REACTION_LOG_MAX_BYTES": defaults.reaction_log_max_bytes,

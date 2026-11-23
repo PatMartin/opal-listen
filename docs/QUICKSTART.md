@@ -221,7 +221,7 @@ Expect the defaults listed above, `configuration is valid`, and a local
 written and can be read back. Validation checks configuration, not microphone
 availability or successful model loading.
 
-Snapshots contain desired settings overrides, profiles, personas, wakewords,
+Snapshots contain desired settings overrides, profiles, wakewords,
 intents and slots. They exclude secrets, audio/models,
 recognition history and the separate reactions file. Without `--out`, `config
 save` replaces the server's single managed snapshot in the data directory,
@@ -237,7 +237,7 @@ opal listen intent add quickstart_music \
   --description "Quickstart music request" --phrase "play some music"
 opal listen phrase list quickstart_music
 opal listen test text "computer, play some music" --expect-intent quickstart_music
-opal listen slot add-alias room_name office "the den"
+opal listen slot alias add room_name office "the den"
 opal listen test text "computer, turn on the den light" \
   --expect-intent light_turn_on
 ```
@@ -498,15 +498,14 @@ Discover more supported operations without guessing commands:
 ```bash
 opal listen tree --ascii
 opal listen failed --help
-opal listen persona --help
+opal listen slot alias --help
 opal listen service perf summary
 ```
 
 The tree is generated from the installed CLI. Failed-utterance review supports
 manual records and promotion to phrases. Text `no_match`
 diagnostics are **not** automatically added to the failed-utterance queue;
-audio/live failures can be. Personas provide optional local identity metadata
-and do not require another module for local CRUD.
+audio/live failures can be.
 
 ## Stopping and restarting
 
@@ -584,7 +583,7 @@ and a fresh Git clone were not rerun.
   [speech settings](../opal_listener/config/stt.yaml).
 - [Cookbook](COOKBOOK.md): more standalone and cross-module recipes.
 - [Architecture](USER_GUIDE.md#3-architecture) and
-  [OpenAPI contract](../openapi/opal_listen_v0.5.0.yaml), including the
+  [OpenAPI contract](../openapi/opal_listen_v0.6.0.yaml), including the
   [shared OPAL kernel](../openapi/shared/opal_kernel.yaml).
 - [Docker deployment notes](USER_GUIDE.md#29-docker),
   [Dockerfile](../Dockerfile) and

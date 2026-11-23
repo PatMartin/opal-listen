@@ -691,15 +691,6 @@ class AudioDevice(BaseModel):
     is_default: bool
 
 
-class OpalValidationReport(BaseModel):
-    """Kernel OpalValidationReport; valid is the only normative member."""
-
-    valid: bool
-    errors: list[str | dict[str, Any]] = []
-    warnings: list[str | dict[str, Any]] = []
-    sources: dict[str, bool] = {}
-
-
 # --- service lifecycle -----------------------------------------------------------------------
 
 
@@ -729,54 +720,3 @@ class OpalServiceLogTail(BaseModel):
 
     log_file: str | None = None
     lines: list[str]
-
-
-# --- personas --------------------------------------------------------------------------------
-
-PERSONA_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
-
-
-class PersonaBase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=200)
-    description: str | None = Field(default=None, max_length=1000)
-    voice_id: str | None = Field(default=None, min_length=1)
-    enabled: bool = True
-
-
-class OpalPersonaCreate(PersonaBase):
-    """Kernel OpalPersonaCreate (contract `PersonaCreate` is a $ref alias of it)."""
-
-    persona_id: str = Field(min_length=1, max_length=200, pattern=PERSONA_ID_PATTERN)
-
-
-class OpalPersonaUpdate(BaseModel):
-    """Kernel OpalPersonaUpdate: partial persona update; minProperties: 1 per the contract."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = Field(default=None, max_length=1000)
-    voice_id: str | None = Field(default=None, min_length=1)
-    enabled: bool | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _at_least_one_field(cls, data: Any) -> Any:
-        if isinstance(data, dict) and not data:
-            raise ValueError("at least one field must be provided")
-        return data
-
-
-class OpalPersonaRead(_Read):
-    """Kernel OpalPersonaRead; `origin` marks provenance (owner-sync is not implemented yet)."""
-
-    persona_id: str
-    name: str
-    description: str | None = None
-    voice_id: str | None = None
-    enabled: bool
-    origin: Literal["local", "owner"] = "local"
-    created_at: datetime
-    updated_at: datetime

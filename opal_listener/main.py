@@ -40,14 +40,6 @@ from opal_listener.view.opal_middleware import OpalContextMiddleware
 log = logging.getLogger(__name__)
 STATIC_DIR = PACKAGE_DIR / "view" / "static"
 
-# Contract schema entries that are bare $refs to kernel components: the generated
-# spec must carry the same alias names pointing at the kernel-named schemas.
-_ORPHAN_SCHEMA_REFS: dict[str, str] = {
-    "PersonaCreate": "OpalPersonaCreate",
-    "PersonaUpdate": "OpalPersonaUpdate",
-    "PersonaRead": "OpalPersonaRead",
-}
-
 # The contract pins this v1-era generated multipart-body schema name; the canonical
 # operationId makes FastAPI emit it under the operation-derived name, so copy it over.
 _ORPHAN_SCHEMA_COPIES: dict[str, str] = {
@@ -113,17 +105,16 @@ _ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
     "list_intents": _COLLECTION_ETAG,
     "list_slots": _COLLECTION_ETAG,
     "opal_profile_list": _COLLECTION_ETAG,
-    "opal_persona_list": _COLLECTION_ETAG,
     "show_wakeword": _ITEM_ETAG,
     "show_intent": _ITEM_ETAG,
     "show_slot": _ITEM_ETAG,
     "opal_profile_get": _ITEM_ETAG,
     "opal_profile_patch": _ITEM_ETAG,
-    "opal_persona_get": _ITEM_ETAG,
-    "opal_persona_patch": _ITEM_ETAG,
     "list_phrases": _MEMBER_ETAG,
     "list_slot_values": _MEMBER_ETAG,
-    "list_aliases": _MEMBER_ETAG,
+    "list_slot_aliases": _MEMBER_ETAG,
+    "show_slot_value": _ITEM_ETAG,
+    "show_slot_alias": _ITEM_ETAG,
     "opal_setting_list": _SETTINGS_ETAG,
     "opal_setting_get": _SETTINGS_ETAG,
     "opal_setting_put": _SETTINGS_ETAG,
@@ -134,11 +125,7 @@ _ETAG_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
 # Operations whose only documented ETag rides on a 204 response.
 _ETAG_204_OPERATIONS: dict[str, dict[str, Any]] = {
     "opal_setting_delete": _SETTINGS_ETAG,
-    "opal_persona_delete": _COLLECTION_ETAG,
 }
-
-# Operations that document an ETag on their 201 response alongside Location.
-_ETAG_201_OPERATIONS: dict[str, dict[str, Any]] = {"opal_persona_create": _ITEM_ETAG}
 
 # Operations that set a Location header on their 201 responses.
 _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
@@ -149,9 +136,8 @@ _LOCATION_OPERATION_HEADERS: dict[str, dict[str, Any]] = {
         "add_phrase",
         "create_slot",
         "add_slot_value",
-        "add_alias",
+        "add_slot_alias",
         "opal_profile_create",
-        "opal_persona_create",
         "create_failed_utterance",
     )
 }
@@ -244,8 +230,6 @@ def _inject_documented_response_headers(schema: dict[str, Any]) -> None:
                     headers["ETag"] = _ETAG_204_OPERATIONS[opid]
                 if status == "201" and opid in _LOCATION_OPERATION_HEADERS:
                     headers["Location"] = _LOCATION_OPERATION_HEADERS[opid]
-                if status == "201" and opid in _ETAG_201_OPERATIONS:
-                    headers["ETag"] = _ETAG_201_OPERATIONS[opid]
 
 
 def _validation_detail(messages: list[str], error_type: str) -> list[dict[str, object]]:
@@ -281,8 +265,6 @@ def _is_missing_if_match(exc: RequestValidationError) -> bool:
 
 def _inject_orphan_schemas(schema: dict[str, Any]) -> None:
     components = schema.setdefault("components", {}).setdefault("schemas", {})
-    for name, target in _ORPHAN_SCHEMA_REFS.items():
-        components.setdefault(name, {"$ref": f"#/components/schemas/{target}"})
     for name, source in _ORPHAN_SCHEMA_COPIES.items():
         if name not in components and source in components:
             components[name] = copy.deepcopy(components[source])
@@ -308,7 +290,7 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
     app = FastAPI(
         title="Voice Intent API",
         description="Wakeword, STT, intent recognition, and slot extraction engine",
-        version="0.5.0",
+        version="0.6.0",
         lifespan=lifespan,
     )
     app.state.listener = service
@@ -384,7 +366,30 @@ def create_app(settings: AppSettings | None = None, service: ListenerService | N
         app.include_router(router)
     app.mount("/ui", StaticFiles(directory=STATIC_DIR), name="ui")
 
+    _mount_opal_say(app, settings)
+
     return app
+
+
+def _mount_opal_say(app: FastAPI, settings: AppSettings) -> None:
+    """In-process OPAL Say: serve its ASGI app at settings.say_mount_path (e.g. /say).
+
+    Boundary elasticity — one process, one port, one credential layer; say's own
+    routes land under <mount>/api/v1/. Skipped silently when the mount is not
+    configured; a configured-but-missing or broken opal_say install fails startup
+    loudly rather than pretending speech is available."""
+    mount = settings.say_mount_path.strip().rstrip("/")
+    if not mount:
+        return
+    try:
+        from opal_say.api.app import create_app as create_say_app
+    except ImportError as exc:
+        raise RuntimeError(
+            "OPAL_LISTENER_SAY_MOUNT_PATH is set but the opal_say package is not installed "
+            "— clear the setting or install opal-say into this environment"
+        ) from exc
+    app.mount(mount, create_say_app(), name="opal-say")
+    log.info("opal-say mounted at %s/api/v1", mount)
 
 
 def app_factory() -> FastAPI:

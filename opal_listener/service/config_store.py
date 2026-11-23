@@ -12,7 +12,6 @@ from opal_listener.models.config_schemas import (
     CONFIG_FILES,
     ConfigBundle,
     IntentSpec,
-    PersonaSpec,
     ProfileSpec,
     SlotSpec,
     SlotValueSpec,
@@ -21,7 +20,6 @@ from opal_listener.models.config_schemas import (
 from opal_listener.models.tables import (
     Intent,
     IntentPhrase,
-    Persona,
     Profile,
     Setting,
     Slot,
@@ -87,16 +85,6 @@ def export_bundle(session: Session) -> ConfigBundle:
             )
             for p in session.exec(select(Profile).order_by(Profile.id)).all()
         ],
-        personas=[
-            PersonaSpec(
-                persona_id=p.persona_id,
-                name=p.name,
-                description=p.description,
-                voice_id=p.voice_id,
-                enabled=p.enabled,
-            )
-            for p in session.exec(select(Persona).order_by(Persona.persona_id)).all()
-        ],
         settings={k: settings[k] for k in keys_in_group("settings")},
     )
 
@@ -114,7 +102,7 @@ def config_etag(session: Session) -> str:
 
 def replace_config(session: Session, bundle: ConfigBundle) -> dict[str, int]:
     """Replace all configuration tables with the bundle contents (caller owns the transaction)."""
-    for model in (SlotAlias, SlotValue, Slot, IntentPhrase, Intent, Wakeword, Profile, Persona):
+    for model in (SlotAlias, SlotValue, Slot, IntentPhrase, Intent, Wakeword, Profile):
         session.exec(delete(model))  # type: ignore[call-overload]
     session.flush()
     now = utc_now()
@@ -152,8 +140,6 @@ def replace_config(session: Session, bundle: ConfigBundle) -> dict[str, int]:
         session.add(slot)
     for p in bundle.profiles:
         session.add(Profile(**p.model_dump(), created_at=now, updated_at=now))
-    for p in bundle.personas:
-        session.add(Persona(**p.model_dump(), created_at=now, updated_at=now))
     existing = {s.key: s for s in session.exec(select(Setting)).all()}
     for key, value in {**bundle.stt, **bundle.settings}.items():
         if key not in SETTINGS:
@@ -170,7 +156,6 @@ def replace_config(session: Session, bundle: ConfigBundle) -> dict[str, int]:
         "slots": len(bundle.slots),
         "slot_values": sum(len(s.values) for s in bundle.slots),
         "profiles": len(bundle.profiles),
-        "personas": len(bundle.personas),
         "settings": len(bundle.stt) + len(bundle.settings),
     }
 

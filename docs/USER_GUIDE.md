@@ -546,7 +546,6 @@ configuration between machines, it can be exported to and imported from seven YA
 | `intents.yaml` | `intent` | list of intents with `phrases` |
 | `slots.yaml` | `slot` | list of slots with `values` and `aliases` |
 | `profiles.yaml` | `profile` | list of profiles |
-| `personas.yaml` | `persona` | list of personas |
 | `stt.yaml` | `stt` | speech/audio settings |
 | `settings.yaml` | `setting` | runtime settings |
 
@@ -815,7 +814,7 @@ A malformed file logs a warning and yields an empty reaction set — it never st
   credentials; they only propagate context (e.g. into server logs).
 - **Optimistic concurrency:** mutable catalog resources (wakewords, intents, phrases, slots, slot values,
   aliases, profiles, settings) return a strong `ETag`; `PATCH`/`DELETE` require a matching `If-Match`
-  (missing/empty → `428`, stale → `412`). See [5.8 Settings](#59-setting--apiv1settings) for a worked
+  (missing/empty → `428`, stale → `412`). See [5.8 Settings](#58-setting--apiv1settings) for a worked
   example.
 
 The examples below use:
@@ -960,7 +959,7 @@ curl -s $API/api/v1/wakeword/2
 #### `PATCH /api/v1/wakeword/{wakeword_id}` — update a wakeword
 
 Send only the fields you want to change. Requires a strong `If-Match` (fetch it from a `GET` first;
-missing → `428`, stale → `412`; see [5.8 Settings](#59-setting--apiv1settings) for the full pattern).
+missing → `428`, stale → `412`; see [5.8 Settings](#58-setting--apiv1settings) for the full pattern).
 
 ```bash
 ETAG=$(curl -si $API/api/v1/wakeword/2 | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
@@ -1178,9 +1177,13 @@ curl -s -X POST $API/api/v1/slot/4/value -H 'Content-Type: application/json' -d 
 {"value": "red", "id": 20, "slot_id": 4, "created_at": "..."}
 ```
 
+#### `GET /api/v1/slot/{slot_id}/value/{value_id}` — get a value
+
+Returns the value (with its aliases) and an item `ETag`.
+
 #### `DELETE /api/v1/slot/{slot_id}/value/{value_id}` — delete a value (and its aliases)
 
-Values have no `GET` of their own; fetch `If-Match` from the parent values list.
+Fetch `If-Match` from the parent values list (member deletes use the collection ETag).
 
 ```bash
 ETAG=$(curl -si $API/api/v1/slot/4/value | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
@@ -1202,9 +1205,13 @@ curl -s -X POST $API/api/v1/slot/4/value/20/alias -H 'Content-Type: application/
   -d '{"alias": "crimson"}'
 ```
 
+#### `GET /api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` — get an alias
+
+Returns the alias and an item `ETag`.
+
 #### `DELETE /api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` — delete an alias
 
-Aliases have no `GET` of their own; fetch `If-Match` from the parent aliases list.
+Fetch `If-Match` from the parent aliases list (member deletes use the collection ETag).
 
 ```bash
 ETAG=$(curl -si $API/api/v1/slot/4/value/20/alias | grep -i '^etag:' | cut -d' ' -f2 | tr -d '\r')
@@ -1291,45 +1298,7 @@ curl -s -X POST $API/api/v1/profile/2/activate | jq '{name, is_active}'
 
 ---
 
-### 5.8 Personas — `/api/v1/persona`
-
-Personas are named speaker identities, each optionally bound to an OPAL Say `voice_id`. The
-collection carries a strong `ETag`; creates and per-item mutations require `If-Match`
-(missing → `428`, stale → `412`). `persona_id` is client-supplied, must match
-`^[A-Za-z0-9][A-Za-z0-9._-]*$` and is immutable after creation.
-
-#### `GET /api/v1/persona/` — list personas
-
-Optional `?enabled=true|false` filter. Returns a collection `ETag`.
-
-#### `POST /api/v1/persona/` — register a persona
-
-```bash
-curl -s -X POST $API/api/v1/persona/ -H 'Content-Type: application/json'   -H "If-Match: $ETAG"   -d '{"persona_id": "amy", "name": "Amy", "voice_id": "en-gb-alan-low"}'
-```
-`201` + `Location`; `409` if the `persona_id` is already registered. `voice_id` names an OPAL Say
-voice — this service records the binding but does not check that the voice exists.
-
-#### `GET /api/v1/persona/{persona_id}` — get a persona
-
-Returns the persona and an item `ETag`.
-
-#### `PATCH /api/v1/persona/{persona_id}` — update a persona
-
-Requires `If-Match` on the item ETag. `name`, `description`, `voice_id` and `enabled` are
-modifiable; `persona_id` is not.
-
-#### `DELETE /api/v1/persona/{persona_id}` — remove a persona
-
-Requires `If-Match` on the item ETag. `204` on success.
-
-#### `POST /api/v1/persona/{persona_id}/validate` — validate a persona
-
-Local checks only: the persona exists, is enabled, and declared bindings (e.g. `voice_id`) are
-well-formed. Returns an `OpalValidationReport` (`valid`, `errors`, `warnings`); `404` when the
-persona does not exist.
-
-### 5.9 Settings — `/api/v1/setting`
+### 5.8 Settings — `/api/v1/setting`
 
 See [4.2 Settings](#42-settings) for all keys. The collection (`GET /api/v1/setting/`) carries a
 strong `ETag` covering the whole settings map — every settings mutation (per-key `PUT`/`DELETE`)
@@ -1396,7 +1365,7 @@ CLI equivalents: `opal listen config setting show --name <key>`, `opal listen co
 
 ---
 
-### 5.10 Recognition — `/api/v1/recognition`
+### 5.9 Recognition — `/api/v1/recognition`
 
 `RecognitionResult` is returned by `test_text`, `test_audio` and SSE `result` events:
 
@@ -1550,7 +1519,7 @@ See [section 6](#6-live-results-server-sent-events).
 
 ---
 
-### 5.11 Service process — `/api/v1/service`
+### 5.10 Service process — `/api/v1/service`
 
 Kernel lifecycle ops act on "the service's server process" — the managed, pidfile-tracked
 detached server (`logs/opal_listen.pid`, `logs/opal_listen.log`). A server started through
@@ -1598,7 +1567,7 @@ Returns `404` when no managed log file exists.
 
 ---
 
-### 5.12 Failed utterances — `/api/v1/failed_utterance`
+### 5.11 Failed utterances — `/api/v1/failed_utterance`
 
 Failed utterance object: `{id, transcript, expected_intent, notes, recognition_log_id, reviewed, created_at}`.
 
@@ -1646,7 +1615,7 @@ curl -s -X PATCH $API/api/v1/failed_utterance/3 -H 'Content-Type: application/js
 curl -s -X DELETE $API/api/v1/failed_utterance/3
 ```
 
-### 5.13 Performance — `/api/v1/performance`
+### 5.12 Performance — `/api/v1/performance`
 
 #### `GET /api/v1/performance/last` — the most recent recognition
 
@@ -1696,7 +1665,7 @@ curl -s "$API/api/v1/performance/history?limit=10" | jq -r '.[] | "\(.id)\t\(.to
 
 ---
 
-### 5.14 Health — `/api/v1/health`
+### 5.13 Health — `/api/v1/health`
 
 #### `GET /api/v1/health/` — run all health checks
 
@@ -1769,7 +1738,7 @@ curl -si $API/api/v1/health/ready   # -i to see the 503 on failure
 
 ---
 
-### 5.15 Configuration snapshots — `/api/v1/config`
+### 5.14 Configuration snapshots — `/api/v1/config`
 
 The v2 contract replaces the old `/api/v1/backup/*` routes with OPAL configuration
 snapshots. A snapshot is one portable envelope:
@@ -1777,8 +1746,7 @@ snapshots. A snapshot is one portable envelope:
 ```json
 {"format_version": "1.0.0", "module": "opal-listen", "created_at": "2026-09-30T09:30:00Z",
  "settings": {"cooldown_ms": 1500, "...": "..."},
- "resources": {"wakewords": [], "intents": [], "slots": [], "profiles": [],
-               "personas": []}}
+ "resources": {"wakewords": [], "intents": [], "slots": [], "profiles": []}}
 ```
 
 It covers **persistent desired configuration only** — no logs, failed utterances,
@@ -2062,25 +2030,27 @@ opal listen intent remove play_music
 | `add NAME [--type list\|number\|text] [--description D] [--value V]...` | Add a slot, optionally with values |
 | `update NAME\|ID [--name] [--type] [--description]` | Update |
 | `remove NAME\|ID` | Remove (fails while phrases use it) |
-`opal listen slot value` manages canonical values; aliases stay on `slot`:
+`opal listen slot value` manages canonical values, `opal listen slot alias` their aliases:
 
 | Command | Description |
 |---|---|
 | `value list SLOT` | List values with aliases |
 | `value add SLOT VALUE [--alias A]...` | Add a value, optionally with aliases |
+| `value show SLOT VALUE\|ID` | Show a value |
 | `value remove SLOT VALUE\|ID` | Remove a value |
-| `aliases SLOT VALUE` | List aliases of a value |
-| `add-alias SLOT VALUE ALIAS` | Add an alias |
-| `remove-alias SLOT VALUE ALIAS\|ID` | Remove an alias |
+| `alias list SLOT VALUE` | List aliases of a value |
+| `alias add SLOT VALUE ALIAS` | Add an alias |
+| `alias show SLOT VALUE ALIAS\|ID` | Show an alias |
+| `alias remove SLOT VALUE ALIAS\|ID` | Remove an alias |
 
 ```bash
 opal listen slot list
 opal listen slot add color --description "Bulb colors" --value red --value blue --value warm_white
 opal listen slot value add color green --alias lime --alias emerald
-opal listen slot add-alias color red crimson
+opal listen slot alias add color red crimson
 opal listen slot value list color
-opal listen slot aliases color red
-opal listen slot remove-alias color red crimson
+opal listen slot alias list color red
+opal listen slot alias remove color red crimson
 opal listen slot value remove color green
 opal listen slot add brightness --type number --description "Percent"
 opal listen slot update brightness --description "Brightness 0-100"
@@ -2129,27 +2099,7 @@ opal listen profile activate default
 opal listen profile remove late_night
 ```
 
-### 7.6 ``persona`
-
-Personas are named speaker identities; an optional `--voice` binds an OPAL Say voice id so
-spoken feedback keeps a consistent voice. They travel in `config save`/`config load` snapshots
-(`resources.personas`).
-
-| Command | Description |
-|---|---|
-| `list [--enabled/--no-enabled]` | List personas |
-| `show ID\|NAME` | Show a persona |
-| `add PERSONA_ID --name N [--description] [--voice V] [--enabled/--disabled]` | Register a persona |
-| `update ID\|NAME [--name] [--description] [--voice V] [--enabled/--disabled]` | Update a persona |
-| `remove ID\|NAME` | Remove a persona |
-| `validate ID\|NAME` | Check the persona is enabled and its bindings are well-formed |
-
-```bash
-opal listen persona add amy --name "Amy" --voice en-gb-alan-low
-opal listen persona validate amy
-```
-
-### 7.7 ``config setting`
+### 7.6 ``config setting`
 
 | Command | Description |
 |---|---|
@@ -2168,7 +2118,7 @@ opal listen config setting set --name auto_start_listener --value true
 opal listen config setting set --name stt_refiner --value faster_whisper     # requires the [whisper] extra
 ```
 
-### 7.8 ``test`
+### 7.7 ``test`
 
 | Command | Description |
 |---|---|
@@ -2223,7 +2173,7 @@ MATCH
 }
 ```
 
-### 7.9 ``pipeline`
+### 7.8 ``pipeline`
 
 ```bash
 opal listen pipeline start
@@ -2231,7 +2181,7 @@ opal listen pipeline status
 opal listen pipeline stop
 ```
 
-### 7.10 `failed`
+### 7.9 `failed`
 
 | Command | Description |
 |---|---|
@@ -2249,7 +2199,7 @@ opal listen failed add "dim the lounge" --expected-intent light_dim --notes "int
 opal listen failed remove 5
 ```
 
-### 7.11 `service` lifecycle
+### 7.10 `service` lifecycle
 
 REST-first (acts on the managed server via `/api/v1/service/*`), with a local fallback when the
 API is unreachable.
@@ -2261,7 +2211,7 @@ opal listen service log --lines 20
 opal listen service stop
 ```
 
-### 7.12 `service perf`
+### 7.11 `service perf`
 
 ```bash
 opal listen service perf last
@@ -2270,7 +2220,7 @@ opal listen service perf summary --limit 1000
 opal listen service perf history --limit 50
 ```
 
-### 7.13 `config`
+### 7.12 `config`
 
 | Command | Description |
 |---|---|
@@ -2291,7 +2241,7 @@ opal listen config load --yes                 # restore the managed snapshot
 > `--in` reads the snapshot file on the **client** machine. Without it, `load` uses the
 > managed snapshot stored on the **server**.
 
-### 7.14 `service`
+### 7.13 `service`
 
 Process lifecycle commands are **local** — they manage a server started on this machine, not the
 remote API. `start` launches `python -m opal_listener` in the background, truncates
@@ -2394,8 +2344,8 @@ Goal: *"computer, make the kitchen lights blue"* → `light_color {room_name: ki
 ```bash
 # 1. the slot, with values and aliases
 opal listen slot add color --description "Bulb colors" --value red --value blue --value warm_white
-opal listen slot add-alias color red crimson
-opal listen slot add-alias color warm_white "soft white"
+opal listen slot alias add color red crimson
+opal listen slot alias add color warm_white "soft white"
 
 # 2. the intent, with phrases that use both slots
 opal listen intent add light_color --threshold 0.75 \
@@ -2810,12 +2760,6 @@ Every REST operation maps to one CLI command (enforced by tests via `OPERATION_C
 | GET | `/api/v1/performance/history` | `get_performance_history` | `service perf history` | Performance |
 | GET | `/api/v1/performance/last` | `get_performance_last` | `service perf last` | Performance |
 | GET | `/api/v1/performance/summary` | `get_performance_summary` | `service perf summary` | Performance |
-| GET | `/api/v1/persona/` | `opal_persona_list` | `persona list` | Personas |
-| POST | `/api/v1/persona/` | `opal_persona_create` | `persona add` | Personas |
-| GET | `/api/v1/persona/{persona_id}` | `opal_persona_get` | `persona show` | Personas |
-| PATCH | `/api/v1/persona/{persona_id}` | `opal_persona_patch` | `persona update` | Personas |
-| DELETE | `/api/v1/persona/{persona_id}` | `opal_persona_delete` | `persona remove` | Personas |
-| POST | `/api/v1/persona/{persona_id}/validate` | `opal_persona_validate` | `persona validate` | Personas |
 | GET | `/api/v1/profile/` | `opal_profile_list` | `profile list` | Profiles |
 | POST | `/api/v1/profile/` | `opal_profile_create` | `profile add` | Profiles |
 | GET | `/api/v1/profile/{profile_id}` | `opal_profile_get` | `profile show` | Profiles |
@@ -2842,10 +2786,12 @@ Every REST operation maps to one CLI command (enforced by tests via `OPERATION_C
 | DELETE | `/api/v1/slot/{slot_id}` | `remove_slot` | `slot remove` | Slots |
 | GET | `/api/v1/slot/{slot_id}/value` | `list_slot_values` | `slot value list` | Slots |
 | POST | `/api/v1/slot/{slot_id}/value` | `add_slot_value` | `slot value add` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value/{value_id}` | `show_slot_value` | `slot value show` | Slots |
 | DELETE | `/api/v1/slot/{slot_id}/value/{value_id}` | `remove_slot_value` | `slot value remove` | Slots |
-| GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `list_aliases` | `slot aliases` | Slots |
-| POST | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `add_alias` | `slot add-alias` | Slots |
-| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `remove_alias` | `slot remove-alias` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `list_slot_aliases` | `slot alias list` | Slots |
+| POST | `/api/v1/slot/{slot_id}/value/{value_id}/alias` | `add_slot_alias` | `slot alias add` | Slots |
+| GET | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `show_slot_alias` | `slot alias show` | Slots |
+| DELETE | `/api/v1/slot/{slot_id}/value/{value_id}/alias/{alias_id}` | `remove_slot_alias` | `slot alias remove` | Slots |
 | GET | `/api/v1/wakeword/` | `list_wakewords` | `wakeword list` | Wakewords |
 | POST | `/api/v1/wakeword/` | `create_wakeword` | `wakeword add` | Wakewords |
 | GET | `/api/v1/wakeword/{wakeword_id}` | `show_wakeword` | `wakeword show` | Wakewords |
@@ -2853,4 +2799,4 @@ Every REST operation maps to one CLI command (enforced by tests via `OPERATION_C
 | DELETE | `/api/v1/wakeword/{wakeword_id}` | `remove_wakeword` | `wakeword remove` | Wakewords |
 
 See also: [QUICKSTART.md](QUICKSTART.md) · [design.md](design.md) · [implementation_plan.md](implementation_plan.md) ·
-REST contract [opal_listen_v0.5.0.yaml](../openapi/opal_listen_v0.5.0.yaml).
+REST contract [opal_listen_v0.6.0.yaml](../openapi/opal_listen_v0.6.0.yaml).

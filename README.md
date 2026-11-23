@@ -218,13 +218,16 @@ opal
     │   ├── update SLOT              [--name NAME] [--type TYPE]
     │   │                            [--description TEXT]
     │   ├── remove SLOT
-    │   ├── aliases SLOT VALUE
-    │   ├── add-alias SLOT VALUE ALIAS
-    │   ├── remove-alias SLOT VALUE ALIAS
-    │   └── value
-    │       ├── list SLOT
-    │       ├── add SLOT VALUE       [--alias ALIAS]...
-    │       └── remove SLOT VALUE
+    │   ├── value
+    │   │   ├── list SLOT
+    │   │   ├── add SLOT VALUE       [--alias ALIAS]...
+    │   │   ├── show SLOT VALUE
+    │   │   └── remove SLOT VALUE
+    │   └── alias
+    │       ├── list SLOT VALUE
+    │       ├── add SLOT VALUE ALIAS
+    │       ├── show SLOT VALUE ALIAS
+    │       └── remove SLOT VALUE ALIAS
     │
     ├── profile
     │   ├── list
@@ -240,14 +243,6 @@ opal
     │   ├── activate PROFILE
     │   └── remove PROFILE
     │
-    ├── persona
-    │   ├── list                     [--enabled/--disabled]
-    │   ├── show PERSONA
-    │   ├── add PERSONA --name NAME  [--voice VOICE] [--description TEXT]
-    │   ├── update PERSONA           [--name NAME] [--description TEXT]
-    │   │                            [--voice VOICE] [--enabled/--disabled]
-    │   ├── validate PERSONA
-    │   └── remove PERSONA
     │
     ├── test
     │   ├── text TEXT                [--save/--no-save]
@@ -384,7 +379,7 @@ opal listen slot add color \
   --description "Colors understood by the light controller" \
   --value red --value blue --value warm_white
 
-opal listen slot add-alias color warm_white cozy
+opal listen slot alias add color warm_white cozy
 opal listen slot value list color
 
 # Reuse the built-in room_name slot.
@@ -435,16 +430,16 @@ Aliases turn messy human phrasing into clean machine values.
 
 ~~~bash
 opal listen slot value list room_name
-opal listen slot aliases room_name living_room
+opal listen slot alias list room_name living_room
 
 # Add another name for the same physical room.
-opal listen slot add-alias room_name living_room "great room"
+opal listen slot alias add room_name living_room "great room"
 
 opal listen test text "computer, turn on the great room light" \
   --expect-intent light_turn_on
 
 # Remove it if it causes collisions:
-opal listen slot remove-alias room_name living_room "great room"
+opal listen slot alias remove room_name living_room "great room"
 ~~~
 
 Other slot types:
@@ -765,7 +760,7 @@ opal listen config save --out ./listener-snapshot.json
 opal listen config validate --in ./listener-snapshot.json
 ~~~
 
-The snapshot envelope holds wakewords, intents, slots, profiles, personas,
+The snapshot envelope holds wakewords, intents, slots, profiles,
 and settings in one versioned JSON document.
 
 When you're ready to apply it:
@@ -886,7 +881,7 @@ opal-listen/
 ├── opal-listen.png                   project artwork
 ├── README.md                         this guide
 ├── pyproject.toml                    package / CLI entry points
-├── openapi/                          OpenAPI reference (opal_listen_v0.5.0.yaml + shared kernel)
+├── openapi/                          OpenAPI reference (opal_listen_v0.6.0.yaml + shared kernel)
 ├── docs/
 │   ├── QUICKSTART.md                 setup walkthrough
 │   ├── CLI.md                        exhaustive CLI reference
@@ -918,7 +913,7 @@ opal-listen/
 - [CLI reference](docs/CLI.md) — all flags, resource commands, outputs, and scripts.
 - [User guide](docs/USER_GUIDE.md) — extensive guidance for running and tuning the listener.
 - [Design](docs/design.md) — internal architecture and tradeoffs.
-- [OpenAPI](openapi/opal_listen_v0.5.0.yaml) — REST interface description.
+- [OpenAPI](openapi/opal_listen_v0.6.0.yaml) — REST interface description.
 - [OPAL Event](https://github.com/PatMartin/opal-event) — turn recognized intents into guarded actions.
 
 ---

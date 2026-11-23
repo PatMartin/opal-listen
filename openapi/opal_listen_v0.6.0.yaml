@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Voice Intent API
-  version: '0.5.0'
+  version: '0.6.0'
   description: "Wakeword, STT, intent recognition, and slot extraction engine\n\n\
     OPAL SUITE STANDARD v2.0.0 (normative; follows the shared kernel version)\nX-Opal-Session-Id is an optional logical\
     \ context identifier; it does not create a server-managed session or grant authorization.\
@@ -891,6 +891,41 @@ paths:
     - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
     - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
     - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+    get:
+      tags:
+      - slots
+      summary: Get Slot Value
+      operationId: show_slot_value
+      responses:
+        '401':
+          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotValueReadWithAliases'
+                title: Response Show Slot Value Api V1 Slot  Slot Id  Value  Value Id  Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of the portable logical configuration; required as If-Match for mutations.
+              schema:
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
+        '422':
+          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
     delete:
       tags:
       - slots
@@ -934,7 +969,7 @@ paths:
       tags:
       - slots
       summary: List Aliases
-      operationId: list_aliases
+      operationId: list_slot_aliases
       responses:
         '401':
           $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
@@ -972,7 +1007,7 @@ paths:
       tags:
       - slots
       summary: Add Alias
-      operationId: add_alias
+      operationId: add_slot_alias
       parameters:
       - $ref: './shared/opal_kernel.yaml#/components/parameters/IfMatch'
       requestBody:
@@ -1030,11 +1065,46 @@ paths:
     - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalTransactionIdParameter'
     - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalRequestIdParameter'
     - $ref: './shared/opal_kernel.yaml#/components/parameters/OpalCausationIdParameter'
+    get:
+      tags:
+      - slots
+      summary: Get Alias
+      operationId: show_slot_alias
+      responses:
+        '401':
+          $ref: './shared/opal_kernel.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './shared/opal_kernel.yaml#/components/responses/Forbidden'
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotAliasRead'
+                title: Response Show Slot Alias Api V1 Slot  Slot Id  Value  Value Id  Alias  Alias Id  Get
+          headers:
+            X-Opal-Session-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalSessionIdHeader'
+            X-Opal-Transaction-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalTransactionIdHeader'
+            X-Opal-Request-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalRequestIdHeader'
+            X-Opal-Causation-Id:
+              $ref: './shared/opal_kernel.yaml#/components/headers/OpalCausationIdHeader'
+            ETag:
+              description: Strong revision of the portable logical configuration; required as If-Match for mutations.
+              schema:
+                type: string
+              example: '"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"'
+        '404':
+          $ref: './shared/opal_kernel.yaml#/components/responses/NotFound'
+        '422':
+          $ref: './shared/opal_kernel.yaml#/components/responses/UnprocessableEntity'
     delete:
       tags:
       - slots
       summary: Delete Alias
-      operationId: remove_alias
+      operationId: remove_slot_alias
       parameters:
       - $ref: './shared/opal_kernel.yaml#/components/parameters/IfMatch'
       responses:
@@ -1697,16 +1767,8 @@ paths:
     $ref: './shared/opal_kernel.yaml#/components/pathItems/service_stop'
   /api/v1/service/log:
     $ref: './shared/opal_kernel.yaml#/components/pathItems/service_log'
-  /api/v1/persona/:
-    $ref: './shared/opal_kernel.yaml#/components/pathItems/persona_collection'
-  /api/v1/persona/{persona_id}/validate:
-    $ref: './shared/opal_kernel.yaml#/components/pathItems/persona_validate'
-  /api/v1/persona/{persona_id}:
-    $ref: './shared/opal_kernel.yaml#/components/pathItems/persona_item'
 components:
   parameters:
-    PersonaId:
-      $ref: './shared/opal_kernel.yaml#/components/parameters/OpalPersonaIdParameter'
     WakewordId:
       name: wakeword_id
       in: path
@@ -2805,7 +2867,6 @@ tags:
 - name: intents
 - name: logs
 - name: performance
-- name: persona
 - name: recognition
 - name: slots
 - name: wakewords
@@ -2870,7 +2931,6 @@ x-opal-snapshot:
   - '1.0.0'
   resources:
   - profiles
-  - personas
   - wakewords
   - intents
   - slots
@@ -2880,4 +2940,4 @@ x-opal-snapshot:
     `OpalConfigSnapshot` envelope and the declared `module` identity and resource
     sections; wrong-module, unsupported-version, and unknown-section snapshots are
     rejected. Snapshots carry persistent desired configuration only:
-    profiles, personas, wakewords, intents, slots; never runtime history, sessions, streams, binaries, or secrets.
+    profiles, wakewords, intents, slots; never runtime history, sessions, streams, binaries, or secrets.

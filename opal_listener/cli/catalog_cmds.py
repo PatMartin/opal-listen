@@ -1,4 +1,4 @@
-"""opal listen wakeword|intent|slot|profile|setting|persona"""
+"""opal listen wakeword|intent|slot|profile|setting"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import typer
 import yaml
 
 from opal_listener.cli.client import CliError
-from opal_listener.cli.output import console, done, escape, render, render_kv, state
+from opal_listener.cli.output import done, render, render_kv, state
 
 WAKEWORDS = "/api/v1/wakeword/"
 INTENTS = "/api/v1/intent/"
@@ -24,6 +24,8 @@ phrases_app = typer.Typer(help="Manage intent training phrases.", no_args_is_hel
 slots_app = typer.Typer(help="Manage slots, slot values and aliases.", no_args_is_help=True)
 slot_values_app = typer.Typer(help="Manage slot values.", no_args_is_help=True)
 slots_app.add_typer(slot_values_app, name="value")
+slot_aliases_app = typer.Typer(help="Manage slot value aliases.", no_args_is_help=True)
+slots_app.add_typer(slot_aliases_app, name="alias")
 profiles_app = typer.Typer(help="Manage recognition profiles.", no_args_is_help=True)
 
 
@@ -317,6 +319,18 @@ def slot_values_add(
     done(ctx, f"value '{created['value']}' added to '{item['name']}'", created)
 
 
+@slot_values_app.command("show")
+def slot_values_show(
+    ctx: typer.Context,
+    slot: str = typer.Argument(..., help="Name or id"),
+    value: str = typer.Argument(..., help="Value or value id"),
+) -> None:
+    """Show a slot value."""
+    api = state(ctx).api
+    item = api.resolve(SLOTS, slot)
+    render_kv(ctx, api.get(f"{SLOTS}{item['id']}/value/{_value(api, item, value)['id']}"))
+
+
 @slot_values_app.command("remove")
 def slot_values_remove(
     ctx: typer.Context,
@@ -332,8 +346,8 @@ def slot_values_remove(
     done(ctx, f"value '{target['value']}' removed from '{item['name']}'")
 
 
-@slots_app.command("aliases")
-def slots_aliases(
+@slot_aliases_app.command("list")
+def slot_aliases_list(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Value or value id"),
@@ -345,8 +359,8 @@ def slots_aliases(
     render(ctx, api.get(f"{SLOTS}{item['id']}/value/{target['id']}/alias"), ("id", "alias"), "Aliases")
 
 
-@slots_app.command("add-alias")
-def slots_add_alias(
+@slot_aliases_app.command("add")
+def slot_aliases_add(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Value or value id"),
@@ -360,8 +374,24 @@ def slots_add_alias(
     done(ctx, f"alias '{alias}' -> '{target['value']}' added", created)
 
 
-@slots_app.command("remove-alias")
-def slots_remove_alias(
+@slot_aliases_app.command("show")
+def slot_aliases_show(
+    ctx: typer.Context,
+    slot: str = typer.Argument(..., help="Name or id"),
+    value: str = typer.Argument(..., help="Value or value id"),
+    alias: str = typer.Argument(..., help="Alias or alias id"),
+) -> None:
+    """Show a slot value alias."""
+    api = state(ctx).api
+    item = api.resolve(SLOTS, slot)
+    target = _value(api, item, value)
+    base = f"{SLOTS}{item['id']}/value/{target['id']}/alias"
+    found = api.resolve(base, alias, key="alias")
+    render_kv(ctx, api.get(f"{base}/{found['id']}"))
+
+
+@slot_aliases_app.command("remove")
+def slot_aliases_remove(
     ctx: typer.Context,
     slot: str = typer.Argument(..., help="Name or id"),
     value: str = typer.Argument(..., help="Value or value id"),
@@ -583,110 +613,6 @@ def _settings_set(
 config_setting_app.command("list")(_settings_list)
 config_setting_app.command("show")(_settings_show)
 config_setting_app.command("set")(_settings_set)
-
-
-# --- personas --------------------------------------------------------------------------------
-
-PERSONAS = "/api/v1/persona/"
-PERSONA_COLUMNS = ("persona_id", "name", "enabled", "voice_id", "description", "updated_at")
-
-personas_app = typer.Typer(
-    help="Manage OPAL personas (speaker identities, optional OPAL Say voice).", no_args_is_help=True
-)
-
-
-def _persona_id(api: Any, ref: str) -> str:
-    """Resolve a persona by persona_id or by human-readable name."""
-    items = api.get(PERSONAS)
-    for item in items:
-        if item["persona_id"] == ref or item["name"] == ref:
-            return item["persona_id"]
-    raise CliError(f"'{ref}' not found in {PERSONAS}")
-
-
-@personas_app.command("list")
-def personas_list(
-    ctx: typer.Context,
-    enabled: bool | None = typer.Option(None, "--enabled/--no-enabled"),
-) -> None:
-    """List personas."""
-    params = {"enabled": enabled} if enabled is not None else {}
-    render(ctx, state(ctx).api.get(PERSONAS, params=params), PERSONA_COLUMNS, "Personas")
-
-
-@personas_app.command("show")
-def personas_show(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
-    """Show one persona."""
-    api = state(ctx).api
-    render_kv(ctx, api.get(f"{PERSONAS}{_persona_id(api, persona)}"))
-
-
-@personas_app.command("add")
-def personas_add(
-    ctx: typer.Context,
-    persona_id: str | None = typer.Argument(None, help="Globally unique persona id, e.g. 'amy'"),
-    name: str = typer.Option(..., "--name", help="Human-readable name"),
-    description: str | None = typer.Option(None, "--description"),
-    voice: str | None = typer.Option(None, "--voice", "--voice-id", help="OPAL Say voice id, e.g. en-gb-alan-low"),
-    enabled: bool = typer.Option(True, "--enabled/--no-enabled"),
-    persona_id_opt: str | None = typer.Option(None, "--persona-id", help="Persona id (alternative to positional)"),
-    if_match: str | None = typer.Option(None, "--if-match", help="Explicit If-Match value (skips the ETag probe)"),
-) -> None:
-    """Register a persona."""
-    pid = persona_id_opt or persona_id
-    if not pid:
-        raise CliError("persona id required (positional or --persona-id)")
-    body = {"persona_id": pid, "name": name, "description": description, "voice_id": voice, "enabled": enabled}
-    api = state(ctx).api
-    if if_match is not None:
-        created = api.post(PERSONAS, json=body, headers={"If-Match": if_match})
-    else:
-        created = api.post_with_etag(PERSONAS, json=body)
-    done(ctx, f"persona '{created['persona_id']}' registered", created)
-
-
-@personas_app.command("update")
-def personas_update(
-    ctx: typer.Context,
-    persona: str = typer.Argument(..., help="Persona id or name"),
-    name: str | None = typer.Option(None, "--name"),
-    description: str | None = typer.Option(None, "--description"),
-    voice: str | None = typer.Option(None, "--voice"),
-    enabled: bool | None = typer.Option(None, "--enabled/--no-enabled"),
-) -> None:
-    """Update a persona."""
-    api = state(ctx).api
-    pid = _persona_id(api, persona)
-    body = _changes(name=name, description=description, voice_id=voice, enabled=enabled)
-    updated = api.patch_with_etag(f"{PERSONAS}{pid}", json=body)
-    done(ctx, f"persona '{updated['persona_id']}' updated", updated)
-
-
-@personas_app.command("remove")
-def personas_remove(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
-    """Remove a persona."""
-    api = state(ctx).api
-    pid = _persona_id(api, persona)
-    api.delete_with_etag(f"{PERSONAS}{pid}")
-    done(ctx, f"persona '{pid}' removed")
-
-
-@personas_app.command("validate")
-def personas_validate(ctx: typer.Context, persona: str = typer.Argument(..., help="Persona id or name")) -> None:
-    """Check that a persona is enabled and its declared bindings are well-formed."""
-    api = state(ctx).api
-    pid = _persona_id(api, persona)
-    report = api.post(f"{PERSONAS}{pid}/validate")
-    if state(ctx).json_output:
-        render(ctx, report)
-        return
-    for error in report["errors"]:
-        console.print(f"[red]error[/red]   {escape(error)}")
-    for warning in report["warnings"]:
-        console.print(f"[yellow]warning[/yellow] {escape(warning)}")
-    console.print("[green]persona is valid[/green]" if report["valid"] else "[red]persona is invalid[/red]")
-    if not report["valid"]:
-        raise CliError("validation failed")
 
 
 def _settings_remove(ctx: typer.Context, name: str = typer.Option(..., "--name")) -> None:

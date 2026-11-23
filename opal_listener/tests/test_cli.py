@@ -35,7 +35,8 @@ def command_paths() -> set[str]:
 REQUIRED_COMMANDS = {
     "wakeword list", "wakeword add", "wakeword remove",
     "intent list", "intent add", "intent remove", "phrase list", "phrase add", "phrase remove",
-    "slot list", "slot add", "slot value list", "slot value add", "slot value remove", "slot add-alias",
+    "slot list", "slot add", "slot value list", "slot value add", "slot value show", "slot value remove",
+    "slot alias list", "slot alias add", "slot alias show", "slot alias remove",
     "profile list", "profile add",
     "config setting list", "config setting show", "config setting set", "config setting remove",
     "test text", "test audio", "test listen",
@@ -87,12 +88,14 @@ def test_intents_commands(cli: CliHarness) -> None:
 def test_slots_commands(cli: CliHarness) -> None:
     assert cli("slot", "add", "color", "--value", "red").exit_code == 0
     assert cli("slot", "value", "add", "color", "blue", "--alias", "navy").exit_code == 0
-    assert cli("slot", "add-alias", "color", "red", "crimson").exit_code == 0
+    assert cli("slot", "alias", "add", "color", "red", "crimson").exit_code == 0
     values = cli.json("slot", "value", "list", "color")
     assert [v["value"] for v in values] == ["red", "blue"]
-    assert [a["alias"] for a in cli.json("slot", "aliases", "color", "red")] == ["crimson"]
+    assert [a["alias"] for a in cli.json("slot", "alias", "list", "color", "red")] == ["crimson"]
+    assert cli.json("slot", "value", "show", "color", "red")["value"] == "red"
+    assert cli.json("slot", "alias", "show", "color", "red", "crimson")["alias"] == "crimson"
     assert cli.json("slot", "show", "color")["values"][1]["aliases"][0]["alias"] == "navy"
-    assert cli("slot", "remove-alias", "color", "red", "crimson").exit_code == 0
+    assert cli("slot", "alias", "remove", "color", "red", "crimson").exit_code == 0
     assert cli("slot", "value", "remove", "color", "blue").exit_code == 0
     assert cli("slot", "update", "color", "--description", "Colours").exit_code == 0
     assert "room_name" in cli("slot", "list").output

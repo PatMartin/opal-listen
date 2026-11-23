@@ -60,7 +60,6 @@ def test_config_save_managed_writes_snapshot_and_keeps_revision(client: TestClie
     assert snap["format_version"] == "1.0.0" and snap["module"] == "opal-listen"
     assert set(snap["resources"]) == {
         "profiles",
-        "personas",
         "wakewords",
         "intents",
         "slots",

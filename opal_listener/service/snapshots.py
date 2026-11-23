@@ -1,7 +1,7 @@
 """OPAL configuration snapshots: build/apply/validate OpalConfigSnapshot envelopes + managed store.
 
 The snapshot carries persistent desired configuration only: settings overrides plus the
-declarative resource collections declared by x-opal-snapshot (profiles, personas, wakewords,
+declarative resource collections declared by x-opal-snapshot (profiles, wakewords,
 intents, slots). Resource identifiers are preserved verbatim across load.
 """
 
@@ -18,7 +18,6 @@ from opal_listener.models import schemas as s
 from opal_listener.models.tables import (
     Intent,
     IntentPhrase,
-    Persona,
     Profile,
     Setting,
     Slot,
@@ -40,7 +39,7 @@ from opal_listener.service.settings_registry import (
 
 SNAPSHOT_FORMAT_VERSION = "1.0.0"
 SNAPSHOT_MODULE = "opal-listen"
-RESOURCE_SECTIONS = ("profiles", "personas", "wakewords", "intents", "slots")
+RESOURCE_SECTIONS = ("profiles", "wakewords", "intents", "slots")
 
 
 def managed_snapshot_path(data_dir: Path) -> Path:
@@ -95,17 +94,6 @@ def build_snapshot(session: Session) -> s.OpalConfigSnapshot:
                     },
                 }
                 for p in session.exec(select(Profile).order_by(Profile.id)).all()
-            ],
-            "personas": [
-                {
-                    "id": p.persona_id,
-                    "persona_id": p.persona_id,
-                    "name": p.name,
-                    "description": p.description,
-                    "voice_id": p.voice_id,
-                    "enabled": p.enabled,
-                }
-                for p in session.exec(select(Persona).order_by(Persona.persona_id)).all()
             ],
             "wakewords": [
                 {"id": str(w.id), "name": w.name, "enabled": w.enabled, "confidence_threshold": w.confidence_threshold}
@@ -171,7 +159,6 @@ def apply_snapshot(session: Session, snapshot: s.OpalConfigSnapshot) -> dict[str
         Intent,
         Wakeword,
         Profile,
-        Persona,
     ):
         session.exec(delete(model))  # type: ignore[call-overload]
     session.flush()
@@ -242,18 +229,6 @@ def apply_snapshot(session: Session, snapshot: s.OpalConfigSnapshot) -> dict[str
                 model_paths=dict(comp.get("model_paths", p.get("model_paths", {}))),
                 shared=dict(p.get("shared", {})),
                 modules=foreign,
-                created_at=now,
-                updated_at=now,
-            )
-        )
-    for p in resources["personas"]:
-        session.add(
-            Persona(
-                persona_id=p["persona_id"],
-                name=p["name"],
-                description=p.get("description"),
-                voice_id=p.get("voice_id"),
-                enabled=p.get("enabled", True),
                 created_at=now,
                 updated_at=now,
             )

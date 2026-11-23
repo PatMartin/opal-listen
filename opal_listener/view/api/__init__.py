@@ -10,7 +10,6 @@ from opal_listener.view.api import (
     health,
     intents,
     performance,
-    personas,
     profiles,
     recognition,
     service,
@@ -30,6 +29,5 @@ ROUTERS: list[APIRouter] = [
     failed_utterances.router,
     performance.router,
     health.router,
-    personas.router,
     service.router,
 ]

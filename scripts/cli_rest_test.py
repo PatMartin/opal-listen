@@ -325,51 +325,6 @@ def _ready(t: CliRestTest) -> str:
     return f"status {probe['status']}"
 
 
-@step("persona add", "opal_persona_create")
-def _persona_add(t: CliRestTest) -> str:
-    t.state["persona_name"] = f"smoke_{t.tag}_persona"
-    created = t.ok("persona", "add", "--name", t.state["persona_name"], "--description", "smoke test")
-    t.state["persona_id"] = created.get("persona_id") or created.get("id")
-    expect(t.state["persona_id"], f"no persona id in {created}")
-    return f"{t.state['persona_name']} ({t.state['persona_id']})"
-
-
-@step("persona list", "opal_persona_list", requires=("persona add",))
-def _persona_list(t: CliRestTest) -> str:
-    names = [p["name"] for p in t.ok("persona", "list")]
-    expect(t.state["persona_name"] in names, f"persona not listed: {names}")
-    return f"{len(names)} persona(s)"
-
-
-@step("persona show", "opal_persona_get", requires=("persona add",))
-def _persona_show(t: CliRestTest) -> str:
-    item = t.ok("persona", "show", t.state["persona_name"])
-    expect(item["name"] == t.state["persona_name"], f"unexpected {item}")
-    return f"description={item.get('description')}"
-
-
-@step("persona update", "opal_persona_patch", requires=("persona add",))
-def _persona_update(t: CliRestTest) -> str:
-    updated = t.ok("persona", "update", t.state["persona_name"], "--description", "updated")
-    expect(updated["description"] == "updated", f"not updated: {updated}")
-    return "description updated"
-
-
-@step("persona validate", "opal_persona_validate", requires=("persona add",))
-def _persona_validate(t: CliRestTest) -> str:
-    report = t.ok("persona", "validate", t.state["persona_name"])
-    expect("valid" in report, f"no valid field in {report}")
-    return f"valid={report['valid']}"
-
-
-@step("persona remove", "opal_persona_delete", requires=("persona add",))
-def _persona_remove(t: CliRestTest) -> str:
-    t.ok("persona", "remove", t.state["persona_name"])
-    names = [p["name"] for p in t.ok("persona", "list")]
-    expect(t.state["persona_name"] not in names, "persona still listed")
-    return "removed"
-
-
 @step("config setting list", "opal_setting_list")
 def _settings_list(t: CliRestTest) -> str:
     settings = t.ok("config", "setting", "list")

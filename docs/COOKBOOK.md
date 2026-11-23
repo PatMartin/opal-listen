@@ -48,7 +48,7 @@ nickname and the slot comes back canonical.
 
 ```bash
 opal listen slot value list room_name
-opal listen slot add-alias room_name office "the den"
+opal listen slot alias add room_name office "the den"
 opal listen test text "computer, turn on the den light" --expect-intent light_turn_on --verbose
 # -> "slot_values": {"room_name": "office"}
 ```
@@ -189,7 +189,7 @@ opal listen config load --in ./before-surgery.json --yes
 ### 12. Keep your whole voice model in git
 
 `config save --out` writes one JSON snapshot envelope (wakewords, intents, slots,
-profiles, personas, settings) as reviewable source. Validate
+profiles, settings) as reviewable source. Validate
 offline, then load — which validates again and applies atomically.
 
 ```bash
@@ -560,7 +560,7 @@ can never ship.
 opal listen config validate
 opal talk backup validate --payload talk.json
 opal event backup validate --file event.json
-spectral lint openapi/opal_listen_v0.5.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
+spectral lint openapi/opal_listen_v0.6.0.yaml   # listen's pinned contract (opal-api: openapi/opal_listen.yaml)
 ```
 
 ### 34. A watchdog that watches the watchdogs

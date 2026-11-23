@@ -3,7 +3,7 @@
 #
 # Not a pass/fail suite (see ../test-cli.sh for that): this runs each command once so the
 # output can be eyeballed. State created by the run (test_slot, test_intent, test_profile,
-# test_persona, test_reaction, failed rows) is removed again at the end.
+# test_reaction, failed rows) is removed again at the end.
 #
 # Notes:
 #   - `reaction` commands edit <config_dir>/reactions.yaml directly (that is how arming
@@ -116,23 +116,6 @@ fi
 #opal listen profile remove --help
 opal listen profile remove test_profile
 opal listen profile list
-
-echo "Testing PERSONAS..."
-#opal listen persona --help
-opal listen persona list
-#opal listen persona add --help
-opal listen persona add test_persona --name "Test Persona" --description "smoke"
-opal listen persona list
-#opal listen persona show --help
-opal listen persona show test_persona
-#opal listen persona validate --help
-opal listen persona validate test_persona
-#opal listen persona update --help
-opal listen persona update test_persona --description "Updated Test Persona"
-opal listen persona show test_persona
-#opal listen persona remove --help
-opal listen persona remove test_persona
-opal listen persona list
 
 echo "Testing SETTINGS..."
 #opal listen config setting --help

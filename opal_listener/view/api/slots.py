@@ -152,6 +152,24 @@ def add_slot_value(
     return result
 
 
+@router.get(
+    "/{slot_id}/value/{value_id}",
+    response_model=SlotValueReadWithAliases,
+    responses=OPAL_404_RESPONSE,
+    operation_id="show_slot_value",
+)
+def show_slot_value(
+    slot_id: IdPath, value_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
+) -> SlotValueReadWithAliases:
+    with svc.db.session() as session:
+        value = catalog.get_slot_value(
+            session, catalog.parse_id(slot_id, "slot"), catalog.parse_id(value_id, "slot value")
+        )
+        item = SlotValueReadWithAliases.model_validate(value)
+    response.headers["ETag"] = item_etag(item)
+    return item
+
+
 @router.delete(
     "/{slot_id}/value/{value_id}",
     status_code=204,
@@ -176,9 +194,9 @@ def remove_slot_value(
     "/{slot_id}/value/{value_id}/alias",
     response_model=list[SlotAliasRead],
     responses=OPAL_404_RESPONSE,
-    operation_id="list_aliases",
+    operation_id="list_slot_aliases",
 )
-def list_aliases(
+def list_slot_aliases(
     slot_id: IdPath, value_id: IdPath, response: Response, svc: ListenerService = Depends(get_service)
 ) -> list[SlotAliasRead]:
     with svc.db.session() as session:
@@ -195,9 +213,9 @@ def list_aliases(
     response_model=SlotAliasRead,
     status_code=201,
     responses={**OPAL_404_RESPONSE, **OPAL_409_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="add_alias",
+    operation_id="add_slot_alias",
 )
-def add_alias(
+def add_slot_alias(
     slot_id: IdPath,
     value_id: IdPath,
     data: SlotAliasCreate,
@@ -220,13 +238,39 @@ def add_alias(
     return result
 
 
+@router.get(
+    "/{slot_id}/value/{value_id}/alias/{alias_id}",
+    response_model=SlotAliasRead,
+    responses=OPAL_404_RESPONSE,
+    operation_id="show_slot_alias",
+)
+def show_slot_alias(
+    slot_id: IdPath,
+    value_id: IdPath,
+    alias_id: IdPath,
+    response: Response,
+    svc: ListenerService = Depends(get_service),
+) -> SlotAliasRead:
+    with svc.db.session() as session:
+        item = SlotAliasRead.model_validate(
+            catalog.get_alias(
+                session,
+                catalog.parse_id(slot_id, "slot"),
+                catalog.parse_id(value_id, "slot value"),
+                catalog.parse_id(alias_id, "alias"),
+            )
+        )
+    response.headers["ETag"] = item_etag(item)
+    return item
+
+
 @router.delete(
     "/{slot_id}/value/{value_id}/alias/{alias_id}",
     status_code=204,
     responses={**OPAL_404_RESPONSE, **OPAL_PRECONDITION_RESPONSES},
-    operation_id="remove_alias",
+    operation_id="remove_slot_alias",
 )
-def remove_alias(
+def remove_slot_alias(
     slot_id: IdPath,
     value_id: IdPath,
     alias_id: IdPath,

@@ -20,21 +20,19 @@ The server must therefore be running, either locally or on another machine.
 6. [`intent`: intents and training phrases](#6-intent--intents-and-training-phrases)
 7. [`slot`: slots, values and aliases](#7-slot--slots-values-and-aliases)
 8. [`profile`: recognition profiles](#8-profile--recognition-profiles)
-9. [`persona`: OPAL personas](#9-persona--opal-personas)
-10. [`setting`: global settings](#10-setting--global-settings)
-11. [`test`: recognition testing](#11-test--recognition-testing)
-12. [`pipeline`: microphone pipeline control](#12-pipeline--microphone-pipeline-control)
-13. [`failed`: failed utterance review](#13-failed--failed-utterance-review)
-14. [Recognition history](#14-recognition-history)
-15. [`service perf`: performance metrics](#15-service-perf--performance-metrics)
-16. [`config`: snapshots — save, load and validate](#16-config-snapshots--save-load-and-validate)
-17. [`service`: health and diagnostics](#17-service--process-lifecycle-health-and-diagnostics)
-18. [`event`: publish ZeroMQ events](#18-event--publish-zeromq-events)
-19. [`reaction`: intent-triggered shell commands](#19-reaction--intent-triggered-shell-commands)
-20. [Walkthroughs](#20-walkthroughs)
-21. [Scripting and automation](#21-scripting-and-automation)
-22. [Troubleshooting](#22-troubleshooting)
-23. [Appendix: CLI ↔ REST mapping](#23-appendix-cli--rest-mapping)
+9. [`setting`: global settings](#9-setting--global-settings)
+10. [`test`: recognition testing](#10-test--recognition-testing)
+11. [`pipeline`: microphone pipeline control](#11-pipeline--microphone-pipeline-control)
+12. [`failed`: failed utterance review](#12-failed--failed-utterance-review)
+13. [Recognition history](#13-recognition-history)
+14. [`service perf`: performance metrics](#14-service-perf--performance-metrics)
+15. [`config`: snapshots — save, load and validate](#15-config-snapshots--save-load-and-validate)
+16. [`service`: health and diagnostics](#16-service--process-lifecycle-health-and-diagnostics)
+17. [`reaction`: intent-triggered shell commands](#17-reaction--intent-triggered-shell-commands)
+18. [Walkthroughs](#18-walkthroughs)
+19. [Scripting and automation](#19-scripting-and-automation)
+20. [Troubleshooting](#20-troubleshooting)
+21. [Appendix: CLI ↔ REST mapping](#21-appendix-cli--rest-mapping)
 
 ---
 
@@ -171,7 +169,7 @@ Child items can also be referenced by their text:
 ```bash
 opal listen phrase remove test_intent "Test intent one"   # by exact text
 opal listen phrase remove test_intent 57                  # by phrase id
-opal listen slot remove-alias room_name living_room lounge       # value and alias by text
+opal listen slot alias remove room_name living_room lounge       # value and alias by text
 ```
 
 Failed utterances and log entries have no name. You always reference them by **id**.
@@ -277,10 +275,10 @@ opal
     ├── wakeword    list | show | add | update | remove
     ├── intent      list | show | add | update | remove
     ├── phrase      list | add | remove
-    ├── slot        list | show | add | update | remove | aliases | add-alias | remove-alias
-    │               └── value   list | add | remove
+    ├── slot        list | show | add | update | remove
+    │               ├── value   list | show | add | remove
+    │               └── alias   list | show | add | remove
     ├── profile     list | show | add | update | activate | remove
-    ├── persona     list | show | add | update | remove | validate
     ├── test        text | audio | listen | reaction
     ├── pipeline    start | stop | status
     ├── failed      list | show | add | update | remove
@@ -483,16 +481,18 @@ spoken as spaces.
 
 ### `slot value`: values and aliases
 
-`opal listen slot value` manages a slot's canonical values; aliases stay on `slot`:
+`opal listen slot value` manages a slot's canonical values, `opal listen slot alias` their aliases:
 
 | Command | Description |
 |---|---|
 | `value list SLOT` | List values with their aliases |
 | `value add SLOT VALUE [--alias A]...` | Add a canonical value, optionally with aliases |
+| `value show SLOT VALUE` | Show a value with its aliases |
 | `value remove SLOT VALUE` | Remove a value (by text or id) and its aliases |
-| `aliases SLOT VALUE` | List the aliases of one value |
-| `add-alias SLOT VALUE ALIAS` | Add an alias to a value |
-| `remove-alias SLOT VALUE ALIAS` | Remove an alias (by text or id) |
+| `alias list SLOT VALUE` | List the aliases of one value |
+| `alias add SLOT VALUE ALIAS` | Add an alias to a value |
+| `alias show SLOT VALUE ALIAS` | Show an alias |
+| `alias remove SLOT VALUE ALIAS` | Remove an alias (by text or id) |
 
 ### Examples: slots
 
@@ -537,13 +537,13 @@ opal listen slot value add color green --alias lime --alias emerald
 opal listen slot value remove test_slot 42
 
 # List the aliases of one value
-opal listen slot aliases room_name living_room
+opal listen slot alias list room_name living_room
 
 # Add an alias: "martin hall" now resolves to living_room
-opal listen slot add-alias room_name living_room martin_hall
+opal listen slot alias add room_name living_room martin_hall
 
 # Remove the alias again
-opal listen slot remove-alias room_name living_room martin_hall
+opal listen slot alias remove room_name living_room martin_hall
 ```
 
 > After you add a value or alias, run `opal listen service health`. The `vocabulary` check warns if a
@@ -666,39 +666,11 @@ opal listen profile remove test_profile
 
 > You can't clear a list (for example, go back to "all intents") with `update`, because an option that
 > is left out means "unchanged". To clear one, use the web GUI or the REST API, or edit the exported YAML
-> and load it via `config save`/`config load` (see [config](#17-config-snapshots--save-load-and-validate)).
+> and load it via `config save`/`config load` (see [config](#15-config-snapshots--save-load-and-validate)).
 
 ---
 
-## 9. `persona`: OPAL personas
-
-A persona is a named speaker identity registered with the service, optionally bound to an
-OPAL Say `voice_id` so spoken feedback keeps a consistent voice. Personas are portable
-configuration: they travel in `config save`/`config load` snapshots (`resources.personas`).
-
-| Command | Description |
-|---|---|
-| `list [--enabled/--no-enabled]` | List personas, optionally filtered by enabled state |
-| `show PERSONA` | Show a persona (persona_id or name) |
-| `add [PERSONA_ID] --name N [--description D] [--voice-id V] [--enabled/--no-enabled] [--persona-id ID] [--if-match ETAG]` | Register a persona |
-| `update PERSONA [--name N] [--description D] [--voice V] [--enabled/--no-enabled]` | Change a persona |
-| `remove PERSONA` | Remove a persona |
-| `validate PERSONA` | Check the persona is enabled and its declared bindings are well-formed |
-
-### Examples
-
-```bash
-opal listen persona add amy --name "Amy" --voice en-gb-alan-low
-opal listen persona list --enabled
-opal listen persona validate amy
-```
-
-`--voice` names a voice in the OPAL Say catalog (e.g. `en-gb-alan-low`); this service only
-checks that a declared voice id is well-formed — existence is OPAL Say's concern.
-
----
-
-## 10. `config setting`: global settings
+## 9. `config setting`: global settings
 
 Settings are typed global key/value pairs. The server validates the type, range and allowed choices on
 every change. Per the OPAL 2.0 standard, the collection `GET /api/v1/setting/` returns the flat map and
@@ -797,7 +769,7 @@ opal listen config setting set --name whisper_model --value tiny.en
 
 ---
 
-## 11. `test`: recognition testing
+## 10. `test`: recognition testing
 
 | Command | Description |
 |---|---|
@@ -959,7 +931,7 @@ into `jq`.
 
 ---
 
-## 12. `pipeline`: microphone pipeline control
+## 11. `pipeline`: microphone pipeline control
 
 | Command | Description |
 |---|---|
@@ -990,7 +962,7 @@ Important `status` fields:
 
 ---
 
-## 13. `failed`: failed utterance review
+## 12. `failed`: failed utterance review
 
 When `auto_capture_failures` is `true` (the default), every `no_match` from the microphone or an audio
 file is stored as a **failed utterance**. You review and annotate these.
@@ -1031,7 +1003,7 @@ opal listen failed remove 5
 
 ---
 
-## 14. Recognition history
+## 13. Recognition history
 
 Every recognition (microphone, audio file, or text with `--save`) is stored in the database as a
 recognition-log row; `max_recognition_logs` limits how many rows are kept and
@@ -1052,7 +1024,7 @@ opal listen failed list --unreviewed
 
 ---
 
-## 15. `service perf`: performance metrics
+## 14. `service perf`: performance metrics
 
 | Command | Description |
 |---|---|
@@ -1094,11 +1066,11 @@ Example `summary` output (abbreviated):
 
 ---
 
-## 16. `config`: snapshots — save, load and validate
+## 15. `config`: snapshots — save, load and validate
 
 The v2 contract replaces the old backup/export/import routes with OPAL configuration
 snapshots: one portable envelope (`format_version`, `module`, `created_at`, `settings`,
-`resources`) covering wakewords, intents, slots, profiles, personas and
+`resources`) covering wakewords, intents, slots, profiles and
 settings.
 
 | Command | Description |
@@ -1132,7 +1104,7 @@ opal listen config save --out ./before-change.json
 # Check it, then load it back. The load is atomic: a failed apply rolls everything back.
 opal listen config validate --in ./before-change.json
 opal listen config load --in ./before-change.json
-# Replace wakewords, intents, slots, profiles, personas and settings? [y/N]: y
+# Replace wakewords, intents, slots, profiles and settings? [y/N]: y
 
 # Same, without the prompt (for scripts)
 opal listen config load --in ./before-change.json --yes
@@ -1149,12 +1121,12 @@ anything is touched.
 > `--in` reads the snapshot on the **client** machine. Without it, `load` uses the managed
 > snapshot stored on the **server** (`config save` without `--out` refreshes it).
 
-> `load` **replaces** wakewords, intents, slots, profiles, personas and settings. Items that
+> `load` **replaces** wakewords, intents, slots, profiles and settings. Items that
 > are not in the snapshot are deleted.
 
 ---
 
-## 17. `service`: process lifecycle, health and diagnostics
+## 16. `service`: process lifecycle, health and diagnostics
 
 `start`/`stop`/`log` are REST-first: they call the `/api/v1/service/*` ops on a running server (which
 can therefore stop or restart *itself*, still returning the status first). When the API is unreachable
@@ -1167,7 +1139,7 @@ they fall back to the same local pidfile/log management the server-side ops use 
 | `start [--host H] [--port P] [--data-dir DIR] [--append]` | Start the managed server (replaces a running one). `--append` appends to `logs/opal_listen.log` instead of truncating. Returns immediately. |
 | `stop` | Stop the managed server, if it is running |
 | `log [--lines N]` | Show the last N lines of the managed server's log (default 10) |
-| `perf last\|summary\|history` | Performance metrics sub-group (see [§16](#16-service-perf--performance-metrics)) |
+| `perf last\|summary\|history` | Performance metrics sub-group (see [§16](#14-service-perf--performance-metrics)) |
 
 ```bash
 # Run the server in the background, check it, stop it
@@ -1207,7 +1179,7 @@ tests work without a microphone. A missing model is an error.
 
 ---
 
-## 18. `reaction`: intent-triggered shell commands
+## 17. `reaction`: intent-triggered shell commands
 
 Reactions run shell commands when a live-mic recognition matches an intent (see the User Guide §4.5
 for the full model: gating, condition grammar, stdin contract).
@@ -1282,7 +1254,7 @@ at runtime without editing files.
 
 ---
 
-## 19. Walkthroughs
+## 18. Walkthroughs
 
 ### 20.1 Full CRUD tour (based on `scripts/test-cli.sh`)
 
@@ -1315,10 +1287,10 @@ opal listen slot update test_slot --description "Updated test slot"
 opal listen slot value add test_slot 42
 opal listen slot value list test_slot
 opal listen slot value remove test_slot 42
-opal listen slot aliases room_name living_room
-opal listen slot add-alias room_name living_room martin_hall
-opal listen slot aliases room_name living_room                # now includes martin_hall
-opal listen slot remove-alias room_name living_room martin_hall
+opal listen slot alias list room_name living_room
+opal listen slot alias add room_name living_room martin_hall
+opal listen slot alias list room_name living_room                # now includes martin_hall
+opal listen slot alias remove room_name living_room martin_hall
 
 # --- profiles -----------------------------------------------------------------------------
 opal listen --json profile add test_profile \
@@ -1360,7 +1332,7 @@ opal listen wakeword remove nabu
 ```bash
 # 1. Create the slot and its values
 opal listen slot add color --description "Bulb colors" --value red --value blue --value warm_white
-opal listen slot add-alias color warm_white cozy
+opal listen slot alias add color warm_white cozy
 
 # 2. Create the intent with phrases that use the slot
 opal listen intent add light_color \
@@ -1427,7 +1399,7 @@ opal listen config load --in ./opal-config/snapshot.json --yes
 
 ---
 
-## 20. Scripting and automation
+## 19. Scripting and automation
 
 ### JSON output with `jq`
 
@@ -1497,7 +1469,7 @@ opal listen --json intent list \
 
 ---
 
-## 21. Troubleshooting
+## 20. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
@@ -1518,11 +1490,11 @@ opal listen --json intent list \
 
 ---
 
-## 22. Appendix: CLI ↔ REST mapping
+## 21. Appendix: CLI ↔ REST mapping
 
 All paths are relative to the API base URL. Commands that take a name or id first resolve it with a
 `GET` on the collection. Per the OPAL v3.0.0 standard, every `PATCH`/`DELETE` below on wakewords, intents,
-phrases, slots, slot values, aliases, profiles, personas and settings requires a strong `If-Match`; the CLI fetches
+phrases, slots, slot values, aliases, profiles and settings requires a strong `If-Match`; the CLI fetches
 the current `ETag` automatically before sending the mutation (missing precondition → `428`, stale → `412`).
 
 | CLI (`opal listen ...`) | REST |
@@ -1547,22 +1519,18 @@ the current `ETag` automatically before sending the mutation (missing preconditi
 | `slot remove` | `DELETE /api/v1/slot/{id}` (If-Match) |
 | `slot value list` | `GET /api/v1/slot/{id}/value` |
 | `slot value add` | `POST /api/v1/slot/{id}/value` (+ `POST .../alias` per `--alias`) |
+| `slot value show` | `GET /api/v1/slot/{id}/value/{value_id}` |
 | `slot value remove` | `DELETE /api/v1/slot/{id}/value/{value_id}` (If-Match) |
-| `slot aliases` | `GET /api/v1/slot/{id}/value/{value_id}/alias` |
-| `slot add-alias` | `POST /api/v1/slot/{id}/value/{value_id}/alias` |
-| `slot remove-alias` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |
+| `slot alias list` | `GET /api/v1/slot/{id}/value/{value_id}/alias` |
+| `slot alias add` | `POST /api/v1/slot/{id}/value/{value_id}/alias` |
+| `slot alias show` | `GET /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` |
+| `slot alias remove` | `DELETE /api/v1/slot/{id}/value/{value_id}/alias/{alias_id}` (If-Match) |
 | `profile list` | `GET /api/v1/profile/` |
 | `profile add` | `POST /api/v1/profile/` |
 | `profile show` | `GET /api/v1/profile/{id}` |
 | `profile update` | `PATCH /api/v1/profile/{id}` (If-Match) |
 | `profile remove` | `DELETE /api/v1/profile/{id}` (If-Match) |
 | `profile activate` | `POST /api/v1/profile/{id}/activate` |
-| `persona list` | `GET /api/v1/persona/` |
-| `persona add` | `POST /api/v1/persona/` |
-| `persona show` | `GET /api/v1/persona/{persona_id}` |
-| `persona update` | `PATCH /api/v1/persona/{persona_id}` (If-Match) |
-| `persona remove` | `DELETE /api/v1/persona/{persona_id}` (If-Match) |
-| `persona validate` | `POST /api/v1/persona/{persona_id}/validate` |
 | `config setting list` | `GET /api/v1/setting/` |
 | `config setting show` | `GET /api/v1/setting/{key}` |
 | `config setting set` | `PUT /api/v1/setting/{key}` (If-Match) |

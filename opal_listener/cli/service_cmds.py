@@ -86,7 +86,7 @@ def config_load(
     body: dict[str, Any] = {}
     if in_file is not None:
         body = {"snapshot": _read_snapshot(in_file)}
-    _confirm(ctx, yes, "Replace wakewords, intents, slots, profiles, personas and settings?")
+    _confirm(ctx, yes, "Replace wakewords, intents, slots, profiles and settings?")
     result = api.post(f"{CONFIG}/load", json=body, headers={"If-Match": _config_revision(api)})
     if state(ctx).json_output:
         print_json(result)
