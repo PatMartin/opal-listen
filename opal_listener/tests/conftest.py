@@ -28,12 +28,18 @@ class RecordingEventPublisher:
         self.events: list[tuple[str, dict[str, Any]]] = []
         self.connected = False
         self.closed = False
+        # same accounting surface as HttpEventPublisher/ZmqEventPublisher
+        self.accepted = 0
+        self.delivered = 0
+        self.delivery_failures = 0
 
     def connect(self) -> None:
         self.connected = True
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         self.events.append((topic, payload))
+        self.accepted += 1
+        self.delivered += 1
 
     def close(self) -> None:
         self.closed = True

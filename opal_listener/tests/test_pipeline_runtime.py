@@ -398,6 +398,35 @@ def test_runtime_recovers_when_device_returns(client: TestClient, fake_provider:
     assert status["audio_restarts"] == 1
 
 
+def test_status_reports_recovering_during_retry_backoff(client: TestClient, fake_provider: type) -> None:
+    """v0.5.0: a live worker retrying after a failed start reports `recovering` (not `error`)
+    with the recovery-episode fields populated."""
+    service = client.app.state.listener  # type: ignore[attr-defined]
+    service._source_factory = lambda settings: ScriptedSource([], fail_start=True)
+    client.post("/api/v1/recognition/start")
+    try:
+        wait_for(lambda: client.get("/api/v1/recognition/status").json()["state"] == "recovering")
+        status = client.get("/api/v1/recognition/status").json()
+        assert status["recovery_attempts"] >= 1
+        assert status["recovery_retry_delay_s"] is not None
+        assert status["last_recovery_reason"]
+    finally:
+        client.post("/api/v1/recognition/stop")
+    assert client.get("/api/v1/recognition/status").json()["state"] == "stopped"
+
+
+def test_status_exposes_recovery_and_event_delivery_fields(client: TestClient) -> None:
+    """v0.5.0 PipelineStatus additions are present even while stopped, and the metrics
+    vocabulary uses the contract's event-delivery counter names."""
+    status = client.get("/api/v1/recognition/status").json()
+    for field in ("recovery_attempts", "recovery_retry_delay_s", "last_recovery_reason", "last_capture_at"):
+        assert field in status
+    assert status["recovery_attempts"] == 0
+    metrics = status["metrics"]
+    for key in ("events_accepted", "events_delivered", "event_delivery_failures", "sse_dropped_events"):
+        assert metrics[key] == 0.0
+
+
 def test_config_change_applies_to_running_pipeline(client: TestClient, fake_provider: type) -> None:
     service = client.app.state.listener  # type: ignore[attr-defined]
     service._source_factory = lambda settings: ScriptedSource([])

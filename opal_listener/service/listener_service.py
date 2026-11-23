@@ -144,6 +144,11 @@ class _RuntimeStats:
     last_result_at: datetime | None = None
     last_error: str | None = None
     last_recovery_reason: str | None = None
+    # consecutive failed attempts in the current recovery episode; reset to 0 once frames flow
+    recovery_attempts: int = 0
+    # backoff delay currently in effect while `recovering`
+    recovery_retry_delay_s: float | None = None
+    last_capture_at: datetime | None = None
     audio_device: str | None = None
     capture_sample_rate: int | None = None
     # capture signature (device, rate, block_ms) the running source was opened with; differs
@@ -618,15 +623,22 @@ class ListenerService:
             return {"status": "stopped"}
 
     # internal run-state vocabulary -> contract PipelineStatus.state enum
-    _STATUS_STATES = {"listening": "running", "capturing": "running", "recovering": "error"}
+    _STATUS_STATES = {"listening": "running", "capturing": "running"}
 
     def status(self) -> s.PipelineStatus:
         st = self._stats
         snap = self._snapshot
-        state = self._STATUS_STATES.get(st.state, st.state)
+        if self.running:
+            state = self._STATUS_STATES.get(st.state, st.state)
+        elif st.state == "stopped" or self._stop.is_set():
+            state = "stopped"
+        else:
+            # worker gone while stats say it was mid-run (e.g. recovering): it terminated
+            # without a stop request — inspect last_error
+            state = "error"
         return s.PipelineStatus(
             running=self.running,
-            state=state if self.running or state == "error" else "stopped",
+            state=state,
             provider=snap.provider_name if snap else "unknown",
             profile_name=snap.profile_name if snap else None,
             audio_device=st.audio_device,
@@ -643,6 +655,10 @@ class ListenerService:
             last_audio_level=st.last_audio_level,
             last_result_at=st.last_result_at,
             last_error=st.last_error,
+            recovery_attempts=st.recovery_attempts,
+            recovery_retry_delay_s=st.recovery_retry_delay_s,
+            last_recovery_reason=st.last_recovery_reason,
+            last_capture_at=st.last_capture_at,
             metrics=self._metrics(),
         )
 
@@ -679,6 +695,13 @@ class ListenerService:
             "dispatched_local": float(st.dispatched_local),
             "dispatched_event": float(st.dispatched_event),
             "dispatch_suppressed": float(st.dispatch_suppressed),
+            # event-delivery pipeline: accepted = taken by the publisher queue/socket,
+            # delivered = confirmed (HTTP 2xx / ZMQ frame handed to the socket),
+            # failures = queue-full drops + transport errors; selection never implies delivery
+            "events_accepted": float(getattr(self.event_publisher, "accepted", 0)),
+            "events_delivered": float(getattr(self.event_publisher, "delivered", 0)),
+            "event_delivery_failures": float(getattr(self.event_publisher, "delivery_failures", 0)),
+            "sse_dropped_events": float(self.bus.dropped_events),
             "recoveries": float(st.audio_restarts),
             "stt_latency_ms": st.stt_latency_ms or 0.0,
             "refine_latency_ms": st.refine_latency_ms or 0.0,
@@ -725,6 +748,7 @@ class ListenerService:
                     if self._active_source is source:
                         self._active_source = None
             if not self._stop.is_set() and self._stats.state == "recovering":
+                self._stats.recovery_retry_delay_s = backoff
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)
 
@@ -733,6 +757,7 @@ class ListenerService:
         self._stats.last_error = message
         self._stats.last_recovery_reason = message
         self._stats.audio_restarts += 1
+        self._stats.recovery_attempts += 1
         self._set_state("recovering")
 
     def _reopen_source(self, source: AudioSource, snapshot: RuntimeSnapshot) -> AudioSource:
@@ -800,6 +825,12 @@ class ListenerService:
                     continue
                 last_frame = time.monotonic()
                 self._stats.frames_processed += 1
+                self._stats.last_capture_at = utc_now()
+                if self._stats.state == "recovering":
+                    # frames are flowing again — the recovery episode is over
+                    self._stats.recovery_attempts = 0
+                    self._stats.recovery_retry_delay_s = None
+                    self._set_state("listening")
                 events = pipeline.feed(frame.pcm, frame.captured_at)
                 self._stats.last_audio_level = pipeline.last_level
                 for event in events:

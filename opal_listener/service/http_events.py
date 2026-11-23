@@ -57,7 +57,10 @@ class HttpEventPublisher:
         self._client: httpx.Client | None = None
         self._lock = threading.Lock()
         self._stopped = threading.Event()
-        # Observable delivery accounting: failures are counted and the last one kept for inspection.
+        # Observable delivery accounting: accepted = queued for delivery, delivered = HTTP 2xx,
+        # failures = queue-full drops + transport errors; the last failure is kept for inspection.
+        self.accepted = 0
+        self.delivered = 0
         self.delivery_failures = 0
         self.last_error: str | None = None
 
@@ -92,6 +95,7 @@ class HttpEventPublisher:
             self._start_worker_locked()
             try:
                 self._queue.put_nowait((topic, payload))
+                self.accepted += 1
             except queue.Full:
                 # drop_newest policy: count, warn and drop to never block audio/recognition
                 self.delivery_failures += 1
@@ -160,6 +164,9 @@ class HttpEventPublisher:
             self._record_failure(
                 f"opal-event POST /api/v1/event/ returned status {response.status_code}: {response.text[:200]}"
             )
+        else:
+            with self._lock:
+                self.delivered += 1
 
     def close(self) -> None:
         """Signal the worker to drain and stop, then wait briefly. If it is still running (e.g.
@@ -183,6 +190,18 @@ class CompositeEventPublisher:
 
     def __init__(self, publishers: list[EventPublisher]) -> None:
         self._publishers = publishers
+
+    @property
+    def accepted(self) -> int:
+        return sum(getattr(p, "accepted", 0) for p in self._publishers)
+
+    @property
+    def delivered(self) -> int:
+        return sum(getattr(p, "delivered", 0) for p in self._publishers)
+
+    @property
+    def delivery_failures(self) -> int:
+        return sum(getattr(p, "delivery_failures", 0) for p in self._publishers)
 
     def connect(self) -> None:
         for pub in self._publishers:

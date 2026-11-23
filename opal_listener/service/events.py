@@ -13,6 +13,8 @@ class EventBus:
         self._subscribers: dict[asyncio.Queue[dict[str, Any]], tuple[asyncio.AbstractEventLoop, bool]] = {}
         self._lock = threading.Lock()
         self._max_queue = max_queue
+        # messages evicted from bounded per-subscriber queues (oldest-first drop policy)
+        self.dropped_events = 0
 
     def subscribe(self, debug: bool = False) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self._max_queue)
@@ -38,9 +40,12 @@ class EventBus:
             with contextlib.suppress(RuntimeError):  # loop closed
                 loop.call_soon_threadsafe(self._put, queue, message)
 
-    @staticmethod
-    def _put(queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]) -> None:
+    def _put(self, queue: asyncio.Queue[dict[str, Any]], message: dict[str, Any]) -> None:
         if queue.full():
-            with contextlib.suppress(asyncio.QueueEmpty):
+            try:
                 queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            else:
+                self.dropped_events += 1
         queue.put_nowait(message)

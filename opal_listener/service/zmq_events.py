@@ -51,6 +51,11 @@ class ZmqEventPublisher:
         self._lock = threading.Lock()
         self._context: Any = None
         self._socket: Any = None
+        # ZMQ is fire-and-forget: `delivered` means frames were handed to the socket, not
+        # that a subscriber received them; failures cover oversize drops and socket errors.
+        self.accepted = 0
+        self.delivered = 0
+        self.delivery_failures = 0
 
     def connect(self) -> None:
         with self._lock:
@@ -70,13 +75,17 @@ class ZmqEventPublisher:
             envelope = build_event_envelope(topic, payload)
             frames = [topic.encode("utf-8"), json.dumps(envelope, default=str).encode("utf-8")]
             if sum(len(frame) for frame in frames) > MAX_EVENT_BYTES:
+                self.delivery_failures += 1
                 log.warning("dropping event '%s': exceeds %d bytes", topic, MAX_EVENT_BYTES)
                 return
             with self._lock:
                 socket = self._ensure_socket()
                 log.info("sending ZeroMQ event to topic '%s' via %s: %s", topic, self._xpub_url, envelope)
                 socket.send_multipart(frames)
+                self.accepted += 1
+                self.delivered += 1
         except Exception:  # noqa: BLE001 - event delivery must never break recognition
+            self.delivery_failures += 1
             log.warning("failed to publish event '%s' to %s", topic, self._xpub_url, exc_info=True)
 
     def close(self) -> None:

@@ -466,7 +466,7 @@ class RecognitionResult(BaseModel):
 
 class PipelineStatus(BaseModel):
     running: bool
-    state: Literal["stopped", "starting", "running", "stopping", "error"]
+    state: Literal["stopped", "starting", "running", "stopping", "recovering", "error"]
     provider: str
     profile_name: str | None
     audio_device: str | None
@@ -481,9 +481,16 @@ class PipelineStatus(BaseModel):
     last_audio_level: float | None
     last_result_at: datetime | None
     last_error: str | None
+    # consecutive failed start attempts in the current recovery episode (0 while capture is healthy)
+    recovery_attempts: int = 0
+    # backoff delay currently in effect while `recovering`
+    recovery_retry_delay_s: float | None = None
+    last_recovery_reason: str | None = None
+    last_capture_at: datetime | None = None
     # lightweight reliability counters, reset per run: mic_overflows, dropped_audio_blocks,
     # audio_queue_depth/utilization, refine_queue_depth, refinement_completed/failed,
-    # recoveries, and last-result stt/refine/intent/publish latencies (ms)
+    # recoveries, events_accepted/events_delivered/event_delivery_failures, sse_dropped_events,
+    # and last-result stt/refine/intent/publish latencies (ms)
     metrics: dict[str, float] = {}
 
 
